@@ -5,7 +5,7 @@
 <div align="center">
 
 # 🚨 Real-Time Abandoned Luggage Detection  
-## Enhanced YOLOv12 + Tracking-by-Detection + Spatio-Temporal Reasoning
+## Dual YOLOv12 Models + Tracking-by-Detection + Spatio-Temporal Reasoning
 
 <p>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white" />
@@ -16,7 +16,7 @@
 </p>
 
 <p>
-A real-time abandoned luggage detection framework integrating dual YOLOv12 models, motion-based tracking-by-detection, and explicit spatio-temporal reasoning for reliable public safety surveillance.
+A real-time surveillance framework that detects and classifies unattended luggage using specialized object detection models and interpretable spatio-temporal constraints.
 </p>
 
 </div>
@@ -29,31 +29,37 @@ A real-time abandoned luggage detection framework integrating dual YOLOv12 model
 <img width="761" src="https://github.com/user-attachments/assets/beec2c70-dd65-403a-90a1-1b331a8028ab">
 </p>
 
-### 🔍 Architecture Overview
+### 🔍 Overview
 
-The proposed system formulates abandoned luggage detection as a **spatio-temporal reasoning problem**, not merely a frame-wise detection task.
+Abandoned luggage detection is formulated as a **spatio-temporal reasoning task**, not simply frame-level object detection.
 
-The architecture consists of:
+The framework integrates:
 
-- 🧳 **YOLOv12m (Custom-trained)** — optimized for luggage detection (backpack, bag, trolley) with improved small-object sensitivity.
-- 🧍 **YOLOv12x** — high-recall person detector for crowded surveillance environments.
+- 🧳 **YOLOv12m (custom-trained)** — optimized for small and deformable luggage (backpack, bag, trolley)
+- 🧍 **YOLOv12x** — high-recall person detection for crowded scenes
+- 🔄 **Custom tracking-by-detection** — motion-based geometric association
+- 📏 **Distance-based supervision constraint**
+- ⏱ **Duration-based abandonment logic**
 
-Rather than relying on appearance-based trackers (e.g., DeepSORT), the system uses a **custom motion-based tracking-by-detection strategy**:
+Unlike appearance-based trackers (e.g., DeepSORT), the system relies on:
 
-- Geometric matching via IoU and distance constraints
-- Constant-velocity motion prediction
-- Track-level smoothing for stability
+- IoU-based matching
+- Distance gating
+- Constant-velocity prediction
+- Track smoothing
 
-### 🎯 Abandonment Logic
+This ensures stable identities while maintaining computational efficiency.
 
-A luggage track ℓ is considered *abandoned* if:
+### 🎯 Abandonment Condition
 
-- No person track p satisfies  
+A luggage track ℓ is declared **abandoned** if:
+
+- No person p satisfies  
   `||c_ℓ − c_p||₂ ≤ R`
 - For a continuous duration  
   `u(t) ≥ T_unattended`
 
-This interpretable formulation ensures robust behavior under occlusions, short-term separation, and detection noise.
+This interpretable formulation prevents false alarms from brief separations or detector noise.
 
 ---
 
@@ -65,25 +71,22 @@ This interpretable formulation ensures robust behavior under occlusions, short-t
 
 ### 📸 Dataset Characteristics
 
-The dataset contains surveillance-style frames extracted from approximately **600 publicly available YouTube videos**, primarily recorded from fixed or quasi-static viewpoints in:
+The dataset was constructed from approximately **600 publicly available YouTube surveillance videos**, primarily recorded from fixed or quasi-static viewpoints.
 
-- Airports  
-- Railway stations  
-- Indoor public areas  
+It reflects realistic operational conditions, including:
 
-Key challenges include:
+- 👥 Crowd density variation  
+- 🌗 Illumination changes  
+- 🧳 Small and medium-scale luggage  
+- 🔁 Partial occlusions  
+- ⚖ Natural class imbalance  
+- 📷 Compression artifacts and motion blur  
 
-- Frequent occlusions  
-- Illumination variability  
-- Small-scale luggage instances  
-- Natural class imbalance  
-- Realistic crowd density  
-
-These properties closely match real-world deployment conditions.
+These characteristics make it representative of real-world public safety deployments.
 
 ---
 
-# 📊 Dataset Summary (Official Statistics)
+# 📊 Dataset Summary
 
 ## 🔎 General Information
 
@@ -94,10 +97,16 @@ These properties closely match real-world deployment conditions.
 | 🧳 Classes | backpack, bag, trolley |
 | 📦 Format | YOLO (normalized coordinates) |
 | 📜 License | MIT |
-| 🌍 Hosting | https://universe.roboflow.com/guns-detection-cvwjs/luggagedataset-24pgo |
-| 📊 Model Results | https://drive.google.com/drive/folders/12aaS7CwZfGqb7__BK1UX54j1gQS_DoPi |
+| 🌍 Hosting | Roboflow Universe |
+| 📊 Model Results | Google Drive (link above) |
 
-The natural class distribution (≈51% trolley, ≈27% backpack, ≈22% bag) was preserved to avoid artificial balancing bias.
+The class distribution is naturally imbalanced:
+
+- **Trolley** ≈ 51%  
+- **Backpack** ≈ 27%  
+- **Bag** ≈ 22%  
+
+The imbalance was intentionally preserved to reflect real surveillance data.
 
 ---
 
@@ -110,15 +119,15 @@ The natural class distribution (≈51% trolley, ≈27% backpack, ≈22% bag) was
 | **Test** | 797 (2.7%) | 3,890 (3.0%) | 24.1% | 22.5% | 53.4% |
 | **Total** | 29,053 (100%) | 130,475 (100%) | 26.7% | 21.9% | 51.3% |
 
-The training-heavy distribution supports robust optimization while maintaining realistic validation and testing subsets.
+The training-heavy split ensures strong optimization while maintaining representative validation and test subsets.
 
 ---
 
 # 📏 Object Scale Distribution
 
-To quantify scale sensitivity, instances were categorized using normalized area thresholds.
+To analyze scale sensitivity, instances were categorized using normalized area thresholds.
 
-Many objects lie near small-object boundaries, motivating scale-aware training.
+Many luggage objects lie near small-object boundaries, motivating the use of scale-aware training modifications.
 
 ## 🔹 S = 0.001400 (~24×24) | M = 0.022500 (~96×96)
 
@@ -129,13 +138,14 @@ Many objects lie near small-object boundaries, motivating scale-aware training.
 | bag | 28,628 | 3,632 (12.7%) | 19,136 (66.8%) | 5,860 (20.5%) |
 | trolley | 66,946 | 9,354 (14.0%) | 49,637 (74.1%) | 7,955 (11.9%) |
 
-Increasing the small threshold to ~40×40 pixels raises the small-instance proportion to 39.2%, confirming the dataset’s scale-sensitive nature.
+Raising the small-object threshold increases small-instance proportion to **39.2%**, confirming strong scale sensitivity within the dataset.
 
 ---
 
-# 🎨 Preprocessing & Augmentation (Roboflow Pipeline)
+# 🎨 Preprocessing & Augmentation (Roboflow Platform)
 
-All preprocessing and augmentation operations were performed **offline on the Roboflow platform prior to training**.
+All preprocessing and augmentation operations were performed **offline on the Roboflow platform prior to training**.  
+The augmented images were exported as part of the final fixed training dataset.
 
 ## 🔹 Preprocessing
 
@@ -143,27 +153,40 @@ All preprocessing and augmentation operations were performed **offline on the Ro
 - Resize to **640×640**
 - Adaptive histogram equalization (contrast enhancement)
 
-## 🔹 Augmentation (Roboflow Dataset Expansion)
+These steps standardize scale, prevent rotational bias, and improve boundary visibility for small objects.
 
-Each training image generated **three independent augmented variants (3× expansion)**.
+---
+
+## 🔹 Dataset Expansion (3× Augmentation)
+
+Each training image generated **three independent augmented variants**.
 
 Stochastic augmentations included:
 
-- Horizontal flip
-- Rotation (−14° to +14°)
-- Shear (±13°)
-- Grayscale conversion (10% probability)
-- Gaussian blur (≤ 1.6 px kernel)
+- Horizontal flip  
+- Rotation (−14° to +14°)  
+- Shear (±13°)  
+- Grayscale conversion (10% probability)  
+- Gaussian blur (≤1.6 px kernel)
 
-Because augmentation was applied during dataset generation, the training set was fixed prior to model optimization.
+### 🔎 Why This Matters
 
-This strategy improves robustness to:
+Surveillance imagery often suffers from:
 
-- Illumination changes
-- Motion blur
-- Scale variation
-- Perspective distortion
-- Small-object localization challenges
+- Motion blur  
+- Perspective distortion  
+- Lighting variability  
+- Camera misalignment  
+- Reduced color fidelity  
+
+The Roboflow-based augmentation pipeline increases appearance diversity while preserving label integrity.
+
+This leads to:
+
+- Improved small-object localization
+- Greater illumination robustness
+- Reduced overfitting
+- Stronger generalization to unseen surveillance footage
 
 ---
 
@@ -175,6 +198,6 @@ This strategy improves robustness to:
 | mAP@0.50–0.95 | +7.0% |
 | F1-score | +7.4% |
 
-The strongest gains are observed for small and medium-scale luggage instances, validating the proposed scale-aware training modification.
+Performance gains are most pronounced for small and medium-scale luggage instances, validating the scale-aware training strategy.
 
 ---
