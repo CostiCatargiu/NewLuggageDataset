@@ -26,6 +26,7 @@ Real-time abandoned luggage detection framework using enhanced YOLOv12 models an
 </div>
 
 ---
+<img width="924" height="842" alt="image" src="https://github.com/user-attachments/assets/6b436ba9-0d92-4bc3-b14d-9e35fa155664" />
 
 ## 🎯 What this project does
 
