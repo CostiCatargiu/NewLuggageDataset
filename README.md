@@ -57,6 +57,7 @@ Video → Luggage Detector (YOLOv12m)┘
 
 
 ## ✨ Key contributions
+---
 
 - ✅ **Large-scale public dataset**: 29,053 images / 130,475 instances (bag, backpack, trolley)  
 - ✅ **Small-object–aware loss (training-only change)** — YOLOv12m architecture unchanged  
@@ -64,7 +65,6 @@ Video → Luggage Detector (YOLOv12m)┘
 - ✅ **Interpretable spatio-temporal constraints** (distance + time) to reduce false alarms  
 - ✅ **Real-time** pipeline suitable for surveillance deployments
 
----
 
 ## 📊 Results (YOLOv12m baseline vs enhanced training)
 
