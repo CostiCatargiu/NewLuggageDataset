@@ -57,6 +57,10 @@ This repo provides a **complete pipeline**:
 
 Compared to the original YOLOv12m trained under identical conditions:
 
+D_t^P = {(b_i^P, c_i^P)}
+D_t^L = {(b_j^L, k_j^L, c_j^L)}
+
+
 | Metric | Gain |
 |---|---:|
 | mAP@0.50 | **+7.1%** |
