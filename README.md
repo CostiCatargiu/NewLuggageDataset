@@ -29,6 +29,14 @@ Real-time abandoned luggage detection framework using enhanced YOLOv12 models an
 <img width="761" src="https://github.com/user-attachments/assets/beec2c70-dd65-403a-90a1-1b331a8028ab">
 </p>
 
+# 🖼 Example Dataset Samples
+
+<p align="center">
+<img width="924" src="https://github.com/user-attachments/assets/6b436ba9-0d92-4bc3-b14d-9e35fa155664">
+</p>
+
+
+---
 The system integrates:
 
 - 🧳 YOLOv12m → luggage detection  
@@ -105,18 +113,7 @@ The dataset was analyzed under multiple normalized area thresholds.
 
 ---
 
-# 🖼 Example Dataset Samples
 
-<p align="center">
-<img width="924" src="https://github.com/user-attachments/assets/6b436ba9-0d92-4bc3-b14d-9e35fa155664">
-</p>
-
-<p align="center">
-<!-- PUT YOUR SECOND IMAGE LINK HERE -->
-<img width="924" src="YOUR_SECOND_IMAGE_LINK_HERE">
-</p>
-
----
 
 # 🎨 Data Augmentation
 
