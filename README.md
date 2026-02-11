@@ -44,20 +44,7 @@ This repo provides a **complete pipeline**:
 
 ---
 
-## 🧠 Pipeline overview
-
-```text
-Video → Person Detector (YOLOv12x) ┐
-                                   ├→ Tracking-by-Detection → Pairing
-Video → Luggage Detector (YOLOv12m)┘
-                          ↓
-              Spatio-temporal logic:
-  "outside supervision radius R for >= T seconds" → ABANDONED
-
-
-
 ## ✨ Key contributions
----
 
 - ✅ **Large-scale public dataset**: 29,053 images / 130,475 instances (bag, backpack, trolley)  
 - ✅ **Small-object–aware loss (training-only change)** — YOLOv12m architecture unchanged  
@@ -65,6 +52,7 @@ Video → Luggage Detector (YOLOv12m)┘
 - ✅ **Interpretable spatio-temporal constraints** (distance + time) to reduce false alarms  
 - ✅ **Real-time** pipeline suitable for surveillance deployments
 
+---
 
 ## 📊 Results (YOLOv12m baseline vs enhanced training)
 
@@ -224,4 +212,14 @@ These characteristics directly motivate:
 ---
 
 
+## 🧠 Pipeline overview
 
+```text
+Video → Person Detector (YOLOv12x) ┐
+                                   ├→ Tracking-by-Detection → Pairing
+Video → Luggage Detector (YOLOv12m)┘
+                          ↓
+              Spatio-temporal logic:
+  "outside supervision radius R for >= T seconds" → ABANDONED
+
+---
