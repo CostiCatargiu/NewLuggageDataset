@@ -57,9 +57,6 @@ This repo provides a **complete pipeline**:
 
 Compared to the original YOLOv12m trained under identical conditions:
 
-D_t^P = {(b_i^P, c_i^P)}
-D_t^L = {(b_j^L, k_j^L, c_j^L)}
-
 
 | Metric | Gain |
 |---|---:|
@@ -75,6 +72,145 @@ Largest improvements are observed for **small** and **deformable** luggage items
 
 ---
 
+---
+
+# 📦 Dataset Split and Class Distribution
+
+## 🔎 Dataset Overview
+
+The dataset used in this project is **publicly available** and hosted on Roboflow to ensure transparency and reproducibility.
+
+It was constructed from approximately **600 publicly available YouTube videos**, primarily recorded from fixed or quasi-static surveillance viewpoints in:
+
+- Airports
+- Railway stations
+- Public transport hubs
+- Indoor public spaces
+
+The dataset targets **luggage detection** and contains three object classes:
+
+- 🎒 Backpack  
+- 👜 Bag  
+- 🧳 Trolley  
+
+### 📊 Global Statistics
+
+- **29,053 images**
+- **130,475 annotated instances**
+- Natural class imbalance preserved intentionally
+
+| Class | Percentage |
+|-------|------------|
+| Backpack | 26.7% |
+| Bag | 21.9% |
+| Trolley | 51.3% |
+
+The natural imbalance reflects realistic surveillance distributions and avoids artificial bias during training.
+
+---
+
+## 📂 Dataset Split
+
+| Split | Images (%) | Instances (%) | Backpack (%) | Bag (%) | Trolley (%) |
+|--------|------------|---------------|--------------|----------|-------------|
+| **Train** | 25,302 (87.1%) | 112,214 (86.0%) | 26.8% | 22.2% | 51.0% |
+| **Valid** | 2,954 (10.2%) | 14,371 (11.0%) | 26.9% | 20.1% | 53.0% |
+| **Test** | 797 (2.7%) | 3,890 (3.0%) | 24.1% | 22.5% | 53.4% |
+| **Total** | 29,053 (100%) | 130,475 (100%) | 26.7% | 21.9% | 51.3% |
+
+The split follows a realistic distribution strategy with a dominant training portion to support robust model learning.
+
+---
+
+# 📏 Object Scale Distribution Analysis
+
+To analyze scale sensitivity, object instances were categorized into **small**, **medium**, and **large** using normalized area thresholds.
+
+Increasing the small-object threshold shifts many instances into the small category, revealing that numerous luggage objects lie near size boundaries.
+
+---
+
+## 🔢 Global Size Distribution
+
+| Small Threshold (S) | Medium Threshold (M) | Small (%) | Medium (%) | Large (%) |
+|----------------------|----------------------|-----------|------------|------------|
+| 0.0014 (~24×24) | 0.0225 (~96×96) | 12.6% | 71.6% | 15.8% |
+| 0.0025 (~32×32) | 0.0225 (~96×96) | 26.4% | 57.8% | 15.8% |
+| 0.0039 (~40×40) | 0.0225 (~96×96) | 39.2% | 45.0% | 15.8% |
+| 0.0014 (~24×24) | 0.0100 (~64×64) | 12.6% | 54.2% | 33.2% |
+| 0.0025 (~32×32) | 0.0100 (~64×64) | 26.4% | 40.4% | 33.2% |
+
+This confirms that the dataset is **scale-sensitive**, motivating small-object–aware training strategies.
+
+---
+
+## 📊 Per-Class Size Distribution Example  
+(S = 0.0025, M = 0.0225)
+
+| Class | Total | Small (%) | Medium (%) | Large (%) |
+|--------|--------|-----------|------------|------------|
+| Backpack | 34,901 | 22.5% | 58.2% | 19.3% |
+| Bag | 28,628 | 26.6% | 52.9% | 20.5% |
+| Trolley | 66,946 | 28.4% | 59.8% | 11.9% |
+
+Across all configurations, increasing the small threshold consistently increases the proportion of small objects while reducing medium-sized instances.
+
+---
+
+# 🎨 Data Preprocessing and Augmentation
+
+## 🔆 Automatic Contrast Enhancement
+
+Histogram equalization was applied to improve visibility in:
+
+- Low-contrast indoor terminals  
+- Poorly illuminated areas  
+- Shadow-dominant scenes  
+
+This enhances object boundaries and improves feature extraction reliability.
+
+---
+
+## 🔁 Data Augmentation Strategy
+
+To improve robustness and viewpoint diversity, the following transformations were applied:
+
+- 🔄 **Horizontal flipping** → Left–right invariance  
+- 🔁 **Discrete 90° rotations** → Unconventional camera orientations  
+- ↩️ **Small-angle rotations (−15° to +15°)** → Natural camera tilt  
+- 🔀 **Shearing (±10°)** → Perspective distortions  
+
+Each original training image generated **three additional augmented samples**, resulting in a:
+
+### 🚀 3× Increase in Training Data Volume
+
+This augmentation strategy significantly improves generalization, especially for:
+
+- Small objects  
+- Deformable luggage  
+- Partially occluded instances  
+- Borderline-scale objects  
+
+---
+
+## 🎯 Why This Matters
+
+The dataset exhibits:
+
+- Natural class imbalance  
+- High scale sensitivity  
+- Frequent small-object presence  
+- Real-world surveillance complexity  
+
+These characteristics directly motivate:
+
+- Small-object–aware loss functions  
+- Robust augmentation strategies  
+- Specialized detection models  
+
+---
+
+
 ## 🧠 Pipeline overview
 
 ```text
@@ -84,3 +220,6 @@ Video → Luggage Detector (YOLOv12m)┘
                           ↓
               Spatio-temporal logic:
   "outside supervision radius R for >= T seconds" → ABANDONED
+
+
+
