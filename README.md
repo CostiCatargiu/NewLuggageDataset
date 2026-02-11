@@ -23,11 +23,29 @@ Real-time abandoned luggage detection framework using enhanced YOLOv12 models an
 
 ---
 
-# 🧠 System Overview
+# 🧠 System Architecture
 
 <p align="center">
 <img width="761" src="https://github.com/user-attachments/assets/beec2c70-dd65-403a-90a1-1b331a8028ab">
 </p>
+
+### 🔍 Architecture Description
+
+The proposed system integrates **dual deep-learning detectors** with explicit temporal reasoning:
+
+- 🧳 **YOLOv12m** — specialized for luggage detection (backpack, bag, trolley)  
+- 🧍 **YOLOv12x** — optimized for robust person detection in crowded scenes  
+
+Instead of relying on off-the-shelf multi-object trackers, the system employs a **motion-based tracking-by-detection strategy**. Bounding boxes are associated across frames using geometric consistency and motion prediction, ensuring stable object identities.
+
+Abandonment is determined through:
+
+- 📏 A supervision radius **R**
+- ⏱ A minimum unattended duration **T_unattended**
+
+This explicit formulation ensures interpretability and reduces false alarms caused by brief separations or detection noise.
+
+---
 
 # 🖼 Example Dataset Samples
 
@@ -35,17 +53,19 @@ Real-time abandoned luggage detection framework using enhanced YOLOv12 models an
 <img width="924" src="https://github.com/user-attachments/assets/6b436ba9-0d92-4bc3-b14d-9e35fa155664">
 </p>
 
+### 📸 Sample Description
 
----
-The system integrates:
+The dataset consists of surveillance-style frames captured from real-world environments such as airports, train stations, and indoor terminals.  
 
-- 🧳 YOLOv12m → luggage detection  
-- 🧍 YOLOv12x → person detection  
-- 🔄 Motion-based tracking-by-detection  
-- 📏 Distance-based supervision radius  
-- ⏱ Duration-based unattended logic  
+Key characteristics include:
 
-A luggage item is flagged as abandoned only if it remains outside supervision radius **R** for at least **T_unattended** seconds.
+- Frequent occlusions
+- Varying illumination conditions
+- Small and medium-sized luggage instances
+- Natural class imbalance
+- Realistic crowd density
+
+These properties make the dataset highly representative of practical surveillance deployments.
 
 ---
 
@@ -63,6 +83,12 @@ A luggage item is flagged as abandoned only if it remains outside supervision ra
 | 🌍 Hosting | https://universe.roboflow.com/guns-detection-cvwjs/luggagedataset-24pgo |
 | 📊 Training Results | https://drive.google.com/drive/folders/12aaS7CwZfGqb7__BK1UX54j1gQS_DoPi |
 
+### 📖 Description
+
+The dataset was curated from approximately **600 publicly available YouTube videos**, primarily recorded from fixed or quasi-static surveillance viewpoints.
+
+The natural class imbalance (≈51% trolleys, ≈27% backpacks, ≈22% bags) was intentionally preserved to reflect real-world distribution patterns.
+
 ---
 
 # 📂 Dataset Split
@@ -74,11 +100,25 @@ A luggage item is flagged as abandoned only if it remains outside supervision ra
 | **Test** | 797 (2.7%) | 3,890 (3.0%) | 24.1% | 22.5% | 53.4% |
 | **Total** | 29,053 (100%) | 130,475 (100%) | 26.7% | 21.9% | 51.3% |
 
+### 📖 Split Description
+
+The dataset was divided following a realistic training-heavy strategy:
+
+- 87.1% training data
+- 10.2% validation data
+- 2.7% testing data
+
+This ensures sufficient data for robust model optimization while maintaining representative evaluation subsets.
+
 ---
 
 # 📏 Object Scale Distribution
 
-The dataset was analyzed under multiple normalized area thresholds.
+The dataset was analyzed under multiple normalized area thresholds to quantify scale sensitivity.
+
+Many luggage instances lie near small-object boundaries, motivating the introduction of a **small-object–aware loss function**.
+
+---
 
 ## 🔹 S=0.001400 (~24×24) | M=0.022500 (~96×96)
 
@@ -89,33 +129,14 @@ The dataset was analyzed under multiple normalized area thresholds.
 | bag | 28,628 | 3,632 (12.7%) | 19,136 (66.8%) | 5,860 (20.5%) |
 | trolley | 66,946 | 9,354 (14.0%) | 49,637 (74.1%) | 7,955 (11.9%) |
 
----
+### 📖 Interpretation
 
-## 🔹 S=0.002500 (~32×32) | M=0.022500 (~96×96)
-
-| Group | Total | Small | Medium | Large |
-|--------|--------|--------|--------|--------|
-| TOTAL | 130,475 | 34,449 (26.4%) | 75,462 (57.8%) | 20,564 (15.8%) |
-| backpack | 34,901 | 7,846 (22.5%) | 20,306 (58.2%) | 6,749 (19.3%) |
-| bag | 28,628 | 7,617 (26.6%) | 15,151 (52.9%) | 5,860 (20.5%) |
-| trolley | 66,946 | 18,986 (28.4%) | 40,005 (59.8%) | 7,955 (11.9%) |
+Under the strictest small-object threshold (~24×24 pixels), only 12.6% of instances are categorized as small.  
+However, as the threshold increases, the proportion of small objects rises significantly, confirming the dataset’s scale-sensitive nature.
 
 ---
 
-## 🔹 S=0.003900 (~40×40) | M=0.022500 (~96×96)
-
-| Group | Total | Small | Medium | Large |
-|--------|--------|--------|--------|--------|
-| TOTAL | 130,475 | 51,149 (39.2%) | 58,762 (45.0%) | 20,564 (15.8%) |
-| backpack | 34,901 | 12,104 (34.7%) | 16,048 (46.0%) | 6,749 (19.3%) |
-| bag | 28,628 | 11,266 (39.4%) | 11,502 (40.2%) | 5,860 (20.5%) |
-| trolley | 66,946 | 27,779 (41.5%) | 31,212 (46.6%) | 7,955 (11.9%) |
-
----
-
-
-
-# 🎨 Data Augmentation
+# 🎨 Data Augmentation Strategy
 
 Applied during training:
 
@@ -125,7 +146,24 @@ Applied during training:
 - Shearing (±10°)  
 - Histogram equalization  
 
-Each image generated **3 augmented variants**, resulting in **3× training expansion**.
+### 📖 Augmentation Description
+
+To enhance generalization and simulate real surveillance variability:
+
+- Horizontal flipping introduces viewpoint invariance.
+- Rotations simulate unconventional camera orientations.
+- Small-angle rotations model camera tilt.
+- Shearing reproduces perspective distortions.
+- Histogram equalization improves visibility in low-light scenes.
+
+Each image generated **three augmented variants**, effectively producing a **3× increase in training data volume**.
+
+This significantly improves robustness for:
+
+- Small objects
+- Deformable luggage
+- Partial occlusions
+- Borderline-scale instances
 
 ---
 
@@ -137,6 +175,6 @@ Each image generated **3 augmented variants**, resulting in **3× training expan
 | mAP@0.50–0.95 | +7.0% |
 | F1-score | +7.4% |
 
-Largest improvements observed for small and deformable luggage instances.
+The strongest improvements are observed for small and medium-scale luggage items, validating the scale-aware training strategy.
 
 ---
