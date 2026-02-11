@@ -43,6 +43,8 @@ This repo provides a **complete pipeline**:
 - **Abandonment decision** → interpretable **radius + duration** rules
 
 ---
+## 🧠 Pipeline overview
+<img width="761" height="435" alt="image" src="https://github.com/user-attachments/assets/beec2c70-dd65-403a-90a1-1b331a8028ab" />
 
 ## ✨ Key contributions
 
@@ -212,14 +214,5 @@ These characteristics directly motivate:
 ---
 
 
-## 🧠 Pipeline overview
 
-```text
-Video → Person Detector (YOLOv12x) ┐
-                                   ├→ Tracking-by-Detection → Pairing
-Video → Luggage Detector (YOLOv12m)┘
-                          ↓
-              Spatio-temporal logic:
-  "outside supervision radius R for >= T seconds" → ABANDONED
 
----
