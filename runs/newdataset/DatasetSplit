@@ -1,0 +1,267 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/GIthubWeaponDataset/NewLuggageDataset/runs/DATASETanalyze.py
+
+██████████████████████████████████████████████████████████████████████
+  🔶 DATASET: FULL
+     Path: /home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12
+██████████████████████████████████████████████████████████████████████
+
+======================================================================
+  DATASET SUMMARY: FULL
+======================================================================
+
+  📂 TRAIN  (25302 images, 112223 instances)
+     Inst/img    : mean 4.44 | median 4 | max 21 | std 3.00
+     Percentiles : P50=4 | P90=9 | P95=10 | P99=13
+     Density     : ≥8 obj: 3945 (15.6%)  |  ≥12 obj: 624 (2.5%)
+     Sizes       : S=25.3% | M=58.0% | L=16.7%
+     Classes     : bag=26.8% | backpack=22.2% | trolley=51.0%
+     Box stats   : median area 2380px² | median H/W ratio 1.39
+
+  📂 VALID  (2954 images, 14371 instances)
+     Inst/img    : mean 4.86 | median 4 | max 18 | std 3.01
+     Percentiles : P50=4 | P90=9 | P95=11 | P99=13
+     Density     : ≥8 obj: 548 (18.6%)  |  ≥12 obj: 83 (2.8%)
+     Sizes       : S=33.3% | M=57.5% | L=9.1%
+     Classes     : bag=26.9% | backpack=20.1% | trolley=53.0%
+     Box stats   : median area 1763px² | median H/W ratio 2.59
+
+  📂 TEST  (797 images, 3890 instances)
+     Inst/img    : mean 4.88 | median 4 | max 18 | std 3.34
+     Percentiles : P50=4 | P90=9 | P95=11 | P99=16
+     Density     : ≥8 obj: 151 (18.9%)  |  ≥12 obj: 35 (4.4%)
+     Sizes       : S=33.9% | M=53.8% | L=12.3%
+     Classes     : bag=24.1% | backpack=22.5% | trolley=53.4%
+     Box stats   : median area 1752px² | median H/W ratio 2.58
+
+  🔍 TRAIN ↔ TEST SHIFT  [FULL]
+  ──────────────────────────────────────────────────────────────────
+     ⚠️  small: train  25.3% → test  33.9%  (rel +34.0%)
+     ✓ medium: train  58.0% → test  53.8%  (rel  -7.2%)
+     ⚠️  large: train  16.7% → test  12.3%  (rel -26.4%)
+     ✓       bag: train  26.8% → test  24.1%  (rel -10.1%)
+     ✓  backpack: train  22.2% → test  22.5%  (rel  +1.4%)
+     ✓   trolley: train  51.0% → test  53.4%  (rel  +4.7%)
+
+──────────────────────────────────────────────────────────────────────
+  🎬 FILENAME / SOURCE OVERLAP  [FULL]
+──────────────────────────────────────────────────────────────────────
+  Exact filename overlap:
+     ✓ train ∩ valid: 0 shared
+     ✓ test ∩ train: 0 shared
+     ✓ test ∩ valid: 0 shared
+     (no exact overlaps — good)
+
+  Source-prefix overlap:
+     ✓ train ∩ valid: 0 shared sources
+     ✓ test ∩ train: 0 shared sources
+     ✓ test ∩ valid: 0 shared sources
+
+██████████████████████████████████████████████████████████████████████
+  🔶 DATASET: ABLATION_OLD
+     Path: /home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30percentagesubset
+██████████████████████████████████████████████████████████████████████
+
+======================================================================
+  DATASET SUMMARY: ABLATION_OLD
+======================================================================
+
+  📂 TRAIN  (7590 images, 38458 instances)
+     Inst/img    : mean 5.07 | median 5 | max 21 | std 2.99
+     Percentiles : P50=5 | P90=9 | P95=11 | P99=13
+     Density     : ≥8 obj: 1477 (19.5%)  |  ≥12 obj: 240 (3.2%)
+     Sizes       : S=26.4% | M=59.3% | L=14.3%
+     Classes     : bag=27.0% | backpack=22.3% | trolley=50.7%
+     Box stats   : median area 2231px² | median H/W ratio 1.48
+
+  📂 VALID  (1181 images, 6282 instances)
+     Inst/img    : mean 5.32 | median 5 | max 17 | std 3.02
+     Percentiles : P50=5 | P90=9 | P95=11 | P99=14
+     Density     : ≥8 obj: 263 (22.3%)  |  ≥12 obj: 41 (3.5%)
+     Sizes       : S=33.6% | M=58.0% | L=8.4%
+     Classes     : bag=28.1% | backpack=20.1% | trolley=51.7%
+     Box stats   : median area 1724px² | median H/W ratio 2.59
+
+  📂 TEST  (398 images, 2150 instances)
+     Inst/img    : mean 5.40 | median 5 | max 18 | std 3.49
+     Percentiles : P50=5 | P90=10 | P95=12 | P99=17
+     Density     : ≥8 obj: 86 (21.6%)  |  ≥12 obj: 25 (6.3%)
+     Sizes       : S=33.7% | M=55.7% | L=10.6%
+     Classes     : bag=24.5% | backpack=21.5% | trolley=54.0%
+     Box stats   : median area 1700px² | median H/W ratio 2.60
+
+  🔍 TRAIN ↔ TEST SHIFT  [ABLATION_OLD]
+  ──────────────────────────────────────────────────────────────────
+     ⚠️  small: train  26.4% → test  33.7%  (rel +27.8%)
+     ✓ medium: train  59.3% → test  55.7%  (rel  -6.1%)
+     ⚠️  large: train  14.3% → test  10.6%  (rel -25.9%)
+     ✓       bag: train  27.0% → test  24.5%  (rel  -9.3%)
+     ✓  backpack: train  22.3% → test  21.5%  (rel  -3.6%)
+     ✓   trolley: train  50.7% → test  54.0%  (rel  +6.5%)
+
+──────────────────────────────────────────────────────────────────────
+  🎬 FILENAME / SOURCE OVERLAP  [ABLATION_OLD]
+──────────────────────────────────────────────────────────────────────
+  Exact filename overlap:
+     ✓ train ∩ valid: 0 shared
+     ✓ test ∩ train: 0 shared
+     ✓ test ∩ valid: 0 shared
+     (no exact overlaps — good)
+
+  Source-prefix overlap:
+     ✓ train ∩ valid: 0 shared sources
+     ✓ test ∩ train: 0 shared sources
+     ✓ test ∩ valid: 0 shared sources
+
+██████████████████████████████████████████████████████████████████████
+  🔶 DATASET: ABLATION_NEW
+     Path: /home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30percentagesubsetNEW
+██████████████████████████████████████████████████████████████████████
+
+======================================================================
+  DATASET SUMMARY: ABLATION_NEW
+======================================================================
+
+  📂 TRAIN  (7591 images, 33897 instances)
+     Inst/img    : mean 4.47 | median 4 | max 21 | std 3.03
+     Percentiles : P50=4 | P90=9 | P95=10 | P99=13
+     Density     : ≥8 obj: 1201 (15.8%)  |  ≥12 obj: 204 (2.7%)
+     Sizes       : S=25.2% | M=58.0% | L=16.8%
+     Classes     : bag=26.8% | backpack=22.3% | trolley=50.9%
+     Box stats   : median area 2380px² | median H/W ratio 1.38
+
+  📂 VALID  (1182 images, 5895 instances)
+     Inst/img    : mean 4.99 | median 4 | max 17 | std 3.02
+     Percentiles : P50=4 | P90=9 | P95=10 | P99=14
+     Density     : ≥8 obj: 234 (19.8%)  |  ≥12 obj: 35 (3.0%)
+     Sizes       : S=33.9% | M=57.2% | L=8.9%
+     Classes     : bag=26.9% | backpack=19.7% | trolley=53.4%
+     Box stats   : median area 1713px² | median H/W ratio 2.58
+
+  📂 TEST  (398 images, 1918 instances)
+     Inst/img    : mean 4.82 | median 4 | max 18 | std 3.30
+     Percentiles : P50=4 | P90=9 | P95=11 | P99=16
+     Density     : ≥8 obj: 75 (18.8%)  |  ≥12 obj: 17 (4.3%)
+     Sizes       : S=33.6% | M=54.2% | L=12.1%
+     Classes     : bag=24.2% | backpack=22.2% | trolley=53.6%
+     Box stats   : median area 1717px² | median H/W ratio 2.60
+
+  🔍 TRAIN ↔ TEST SHIFT  [ABLATION_NEW]
+  ──────────────────────────────────────────────────────────────────
+     ⚠️  small: train  25.2% → test  33.6%  (rel +33.5%)
+     ✓ medium: train  58.0% → test  54.2%  (rel  -6.6%)
+     ⚠️  large: train  16.8% → test  12.1%  (rel -27.6%)
+     ✓       bag: train  26.8% → test  24.2%  (rel  -9.8%)
+     ✓  backpack: train  22.3% → test  22.2%  (rel  -0.6%)
+     ✓   trolley: train  50.9% → test  53.6%  (rel  +5.4%)
+
+──────────────────────────────────────────────────────────────────────
+  🎬 FILENAME / SOURCE OVERLAP  [ABLATION_NEW]
+──────────────────────────────────────────────────────────────────────
+  Exact filename overlap:
+     ✓ train ∩ valid: 0 shared
+     ✓ test ∩ train: 0 shared
+     ✓ test ∩ valid: 0 shared
+     (no exact overlaps — good)
+
+  Source-prefix overlap:
+     ✓ train ∩ valid: 0 shared sources
+     ✓ test ∩ train: 0 shared sources
+     ✓ test ∩ valid: 0 shared sources
+
+======================================================================
+  📊 CROSS-DATASET COMPARISON (SIDE-BY-SIDE)
+======================================================================
+
+  ── Image / instance counts per split ──
+  Split    FULL                   ABLATION_OLD           ABLATION_NEW
+  ─────────────────────────────────────────────────────────────────────────────
+  train    25302 img / 112223 inst   7590 img /  38458 inst   7591 img /  33897 inst
+  valid     2954 img /  14371 inst   1181 img /   6282 inst   1182 img /   5895 inst
+  test       797 img /   3890 inst    398 img /   2150 inst    398 img /   1918 inst
+
+  ── Size distribution: TRAIN ──
+  Size                         FULL           ABLATION_OLD           ABLATION_NEW
+  ───────────────────────────────────────────────────────────────────────────────
+  small                      25.3%                  26.4%                  25.2%
+  medium                     58.0%                  59.3%                  58.0%
+  large                      16.7%                  14.3%                  16.8%
+
+  ── Size distribution: VALID ──
+  Size                         FULL           ABLATION_OLD           ABLATION_NEW
+  ───────────────────────────────────────────────────────────────────────────────
+  small                      33.3%                  33.6%                  33.9%
+  medium                     57.5%                  58.0%                  57.2%
+  large                       9.1%                   8.4%                   8.9%
+
+  ── Size distribution: TEST ──
+  Size                         FULL           ABLATION_OLD           ABLATION_NEW
+  ───────────────────────────────────────────────────────────────────────────────
+  small                      33.9%                  33.7%                  33.6%
+  medium                     53.8%                  55.7%                  54.2%
+  large                      12.3%                  10.6%                  12.1%
+
+  ── Class distribution: TRAIN ──
+  Class                        FULL           ABLATION_OLD           ABLATION_NEW
+  ───────────────────────────────────────────────────────────────────────────────
+  bag                        26.8%                  27.0%                  26.8%
+  backpack                   22.2%                  22.3%                  22.3%
+  trolley                    51.0%                  50.7%                  50.9%
+
+  ── Class distribution: VALID ──
+  Class                        FULL           ABLATION_OLD           ABLATION_NEW
+  ───────────────────────────────────────────────────────────────────────────────
+  bag                        26.9%                  28.1%                  26.9%
+  backpack                   20.1%                  20.1%                  19.7%
+  trolley                    53.0%                  51.7%                  53.4%
+
+  ── Class distribution: TEST ──
+  Class                        FULL           ABLATION_OLD           ABLATION_NEW
+  ───────────────────────────────────────────────────────────────────────────────
+  bag                        24.1%                  24.5%                  24.2%
+  backpack                   22.5%                  21.5%                  22.2%
+  trolley                    53.4%                  54.0%                  53.6%
+
+  ── Mean instances per image per split ──
+  Split                      FULL           ABLATION_OLD           ABLATION_NEW
+  ─────────────────────────────────────────────────────────────────────────────
+  train                     4.44                   5.07                   4.47
+  valid                     4.86                   5.32                   4.99
+  test                      4.88                   5.40                   4.82
+
+  ── Train ↔ Test SHIFT (relative %) ──
+  Metric                           FULL           ABLATION_OLD           ABLATION_NEW
+  ───────────────────────────────────────────────────────────────────────────────────
+  small                         +34.0%                 +27.8%                 +33.5%
+  medium                         -7.2%                  -6.1%                  -6.6%
+  large                         -26.4%                 -25.9%                 -27.6%
+  bag                           -10.1%                  -9.3%                  -9.8%
+  backpack                       +1.4%                  -3.6%                  -0.6%
+  trolley                        +4.7%                  +6.5%                  +5.4%
+
+======================================================================
+  🎯 ABLATION FIDELITY REPORT
+  (How well does each ablation reproduce the FULL dataset?)
+======================================================================
+
+  Reference: FULL
+
+  ── ABLATION_OLD vs FULL ──
+     Size deviation : max 2.43pp | mean 1.12pp
+     Class deviation: max 1.32pp | mean 0.57pp
+     Verdict        : 🔴 POOR (deviations ≥ 2.0pp)
+     Worst size dev : train/large = -2.43pp
+     Worst class dev: valid/trolley = -1.32pp
+
+  ── ABLATION_NEW vs FULL ──
+     Size deviation : max 0.58pp | mean 0.23pp
+     Class deviation: max 0.35pp | mean 0.18pp
+     Verdict        : 🟢 GOOD (deviations < 1.0pp)
+     Worst size dev : valid/small = +0.58pp
+     Worst class dev: valid/trolley = +0.35pp
+
+
+======================================================================
+  ✅ Analysis complete.
+======================================================================
+
+Process finished with exit code 0
