@@ -84,6 +84,54 @@ head:
   - [[14, 17, 20], 1, Detect, [nc]]
 """
 
+# SKA v2: LSKA + CoordinateAttention
+# CoordinateAttention adds H/W positional encoding that complements LSKA's large kernel
+ARCH_SKA_V2 = """# SKA v2: LSKA + CoordinateAttention at P3
+# 
+# LSKA captures large receptive field context (7x7 decomposed kernel)
+# CoordinateAttention adds cheap H/W positional encoding
+# Together: large context + precise positional info for small objects
+#
+# Key difference from LD+SKA (which failed):
+# - LD+SKA: both target feature flow/capacity (competing)
+# - SKA+CoordAttn: large RF + positional info (complementary)
+
+nc: 3
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]              # 0-P1/2
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]       # 1-P2/4
+  - [-1, 2, C3k2,  [256, False, 0.25]]      # 2
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]       # 3-P3/8
+  - [-1, 2, C3k2,  [512, False, 0.25]]      # 4
+  - [-1, 1, Conv,  [512, 3, 2]]             # 5-P4/16
+  - [-1, 4, A2C2f, [512, True, 4]]          # 6
+  - [-1, 1, Conv,  [1024, 3, 2]]            # 7-P5/32
+  - [-1, 4, A2C2f, [1024, True, 1]]         # 8
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA, [256, False]]          # 14 — LSKA at P3 (large kernel context)
+  - [-1, 1, CoordinateAttention, []]        # 15 — CoordAttn (H/W positional info)
+
+  - [14, 1, Conv, [256, 3, 2]]              # 16 — downsample from LSKA (before CoordAttn)
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 18
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 21
+
+  - [[15, 18, 21], 1, Detect, [nc]]         # Detect from CoordAttn-refined P3
+"""
+
 ARCH_LUG3= """#  LD-Redistribute
 nc: 3
 scales:
@@ -709,10 +757,15 @@ RUNS = [
     #     "yaml_content": ARCH_ORIGINAL,
     #     "batch": 58,
     # },
+    # {
+    #     "name": "top0_ARCH_SOR",
+    #     "yaml_content": ARCH_SOR,
+    #     "batch": 56,
+    # },
     {
-        "name": "top0_ARCH_SOR",
-        "yaml_content": ARCH_SOR,
-        "batch": 56,  # slightly lower batch due to extra params
+        "name": "top0_ARCH_SKA_V2",
+        "yaml_content": ARCH_SKA_V2,
+        "batch": 56,  # LSKA + CoordinateAttention
     },
     # {
     #     "name": "new3_bidi_lateral",
