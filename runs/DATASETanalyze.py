@@ -1,18 +1,25 @@
 """
-Extended dataset analysis for the luggage detection project.
+Extended dataset analysis for the luggage detection project — v2.
 
-Adds to the original instance-distribution analysis:
-  1. Per-split SIZE distribution (small/medium/large) — to detect train/test shift
-  2. Per-split CLASS distribution — to detect class imbalance shift
-  3. Cross-split FILENAME / source overlap detection (video-frame leakage)
-  4. Near-duplicate detection via perceptual hashing (image leakage)
-  5. Side-by-side comparison of FULL vs ABLATION dataset
+Supports THREE datasets in a single run:
+  - ORIGINAL (full)
+  - ABLATION 1 (old 30% subset)
+  - ABLATION 2 (new 30% subset)
+
+In addition to the per-dataset analyses, produces:
+  6. CROSS-DATASET COMPARISON of:
+       - per-split size distributions
+       - per-split class distributions
+       - train↔test shift magnitudes
+       - per-image instance density
+  7. FIDELITY REPORT — quantifies how faithfully each ablation reproduces
+     the FULL dataset's distributions. Lower error = better proxy.
+  8. PER-IMAGE DENSITY comparison (crowded scenes proxy)
 
 Usage:
-    python dataset_analysis.py
+    python dataset_analysis_v2.py
 
-Requires: Pillow (PIL)  — install with `pip install pillow`
-          imagehash      — install with `pip install imagehash`  (optional, for dup detection)
+Requires: Pillow + imagehash (optional, for perceptual hash leakage check)
 """
 
 import os
@@ -25,12 +32,13 @@ from pathlib import Path
 # ─────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────
-IMAGE_SIZE = 640                # used for COCO-style size thresholds
-SMALL_AREA_NORM = (32 * 32) / (IMAGE_SIZE * IMAGE_SIZE)  # 0.0025
-MEDIUM_AREA_NORM = (96 * 96) / (IMAGE_SIZE * IMAGE_SIZE)  # 0.0225
+IMAGE_SIZE = 640
+SMALL_AREA_NORM = (32 * 32) / (IMAGE_SIZE * IMAGE_SIZE)
+MEDIUM_AREA_NORM = (96 * 96) / (IMAGE_SIZE * IMAGE_SIZE)
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp")
+SPLITS = ["train", "valid", "test"]
+CLASS_NAMES = ["bag", "backpack", "trolley"]
 
-# Optional dependencies — script degrades gracefully if not installed
 try:
     from PIL import Image
     import imagehash
@@ -48,33 +56,34 @@ def get_label_files(labels_dir):
 
 
 def parse_label_file(label_path):
-    """Yields (class_id, x_center, y_center, width, height) tuples."""
-    with open(label_path, "r") as f:
-        for line in f:
-            parts = line.strip().split()
-            if len(parts) < 5:
-                continue
-            try:
-                cid = int(parts[0])
-                x, y, w, h = map(float, parts[1:5])
-                yield cid, x, y, w, h
-            except ValueError:
-                continue
+    annotations = []
+    try:
+        with open(label_path, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) < 5:
+                    continue
+                try:
+                    cid = int(float(parts[0]))
+                    x, y, w, h = map(float, parts[1:5])
+                    annotations.append((cid, x, y, w, h))
+                except ValueError:
+                    continue
+    except Exception:
+        pass
+    return annotations
 
 
 def classify_size(w_norm, h_norm):
-    """COCO-style: small <32², medium <96², large >=96² (at 640px)."""
     area = w_norm * h_norm
     if area < SMALL_AREA_NORM:
         return "small"
     elif area < MEDIUM_AREA_NORM:
         return "medium"
-    else:
-        return "large"
+    return "large"
 
 
 def get_image_for_label(label_path, images_dir):
-    """Find the matching image file for a given label .txt."""
     stem = Path(label_path).stem
     for ext in IMAGE_EXTS:
         candidate = os.path.join(images_dir, stem + ext)
@@ -83,177 +92,379 @@ def get_image_for_label(label_path, images_dir):
     return None
 
 
+def format_pct(value, total):
+    return 100 * value / total if total else 0.0
+
+
 # ─────────────────────────────────────────────────────────────────
-# Original analysis (kept intact, lightly cleaned)
+# Core: compute summary statistics for a single dataset
 # ─────────────────────────────────────────────────────────────────
-def detailed_instance_analysis(dataset_root):
-    """Original instance-per-image analysis."""
-
-    splits = ["train", "valid", "test"]
-    print("=" * 70)
-    print("         DETAILED INSTANCES-PER-IMAGE ANALYSIS")
-    print("=" * 70)
-
-    all_counts = []
-
-    for split in splits:
+def compute_dataset_stats(dataset_root):
+    """
+    Computes a full statistics dictionary for a dataset.
+    Returns nested dict: stats[split] = { ... metrics ... }
+    """
+    stats = {}
+    for split in SPLITS:
         labels_dir = os.path.join(dataset_root, split, "labels")
         if not os.path.isdir(labels_dir):
             continue
 
         label_files = get_label_files(labels_dir)
         counts = []
-        per_class_counts = {}
+        size_counts = Counter()
+        class_counts = Counter()
+        per_image_small_ratio = []
+        per_class_per_image = defaultdict(list)
+        box_areas = []  # normalized areas
+        box_aspect_ratios = []  # h/w
 
         for lf in label_files:
-            ann = list(parse_label_file(lf))
+            ann = parse_label_file(lf)
             counts.append(len(ann))
-            class_in_image = Counter(cid for cid, *_ in ann)
-            for cid, cnt in class_in_image.items():
-                per_class_counts.setdefault(cid, []).append(cnt)
+            cls_in_img = Counter()
+            small_in_img = 0
+            for cid, x, y, w, h in ann:
+                sz = classify_size(w, h)
+                size_counts[sz] += 1
+                class_counts[cid] += 1
+                cls_in_img[cid] += 1
+                if sz == "small":
+                    small_in_img += 1
+                box_areas.append(w * h)
+                if w > 0:
+                    box_aspect_ratios.append(h / w)
+            for cid, c in cls_in_img.items():
+                per_class_per_image[cid].append(c)
+            per_image_small_ratio.append(
+                small_in_img / len(ann) if ann else 0.0
+            )
 
+        total = sum(size_counts.values())
+        stats[split] = {
+            "n_images": len(counts),
+            "n_instances": total,
+            "counts": counts,
+            "size_counts": dict(size_counts),
+            "class_counts": dict(class_counts),
+            "per_image_small_ratio": per_image_small_ratio,
+            "per_class_per_image": dict(per_class_per_image),
+            "box_areas": box_areas,
+            "box_aspect_ratios": box_aspect_ratios,
+        }
+    return stats
+
+
+# ─────────────────────────────────────────────────────────────────
+# Per-dataset print: detailed instance + per-split distributions
+# ─────────────────────────────────────────────────────────────────
+def print_dataset_summary(stats, label):
+    print(f"\n{'=' * 70}")
+    print(f"  DATASET SUMMARY: {label}")
+    print(f"{'=' * 70}")
+
+    for split in SPLITS:
+        if split not in stats:
+            continue
+        s = stats[split]
+        counts = s["counts"]
         if not counts:
             continue
-        all_counts.extend(counts)
 
-        print(f"\n{'─' * 70}")
-        print(f"  📂 {split.upper()} ({len(counts)} images)")
-        print(f"{'─' * 70}")
-
-        print(f"\n  ── Basic Statistics ──")
-        print(f"     Mean   : {statistics.mean(counts):.2f}")
-        print(f"     Median : {statistics.median(counts):.2f}")
-        print(f"     Mode   : {statistics.mode(counts)}")
-        print(f"     Min    : {min(counts)}")
-        print(f"     Max    : {max(counts)}")
-        print(f"     Std    : {statistics.stdev(counts) if len(counts) > 1 else 0:.2f}")
-        print(f"     Total  : {sum(counts)}")
+        print(f"\n  📂 {split.upper()}  ({s['n_images']} images, "
+              f"{s['n_instances']} instances)")
+        print(f"     Inst/img    : mean {statistics.mean(counts):.2f} | "
+              f"median {statistics.median(counts):.0f} | "
+              f"max {max(counts)} | "
+              f"std {statistics.stdev(counts) if len(counts) > 1 else 0:.2f}")
 
         sorted_counts = sorted(counts)
         n = len(sorted_counts)
-        print(f"\n  ── Percentiles ──")
-        for p in [10, 25, 50, 75, 90, 95, 99]:
+        pct_str = []
+        for p in [50, 90, 95, 99]:
             idx = min(int(n * p / 100), n - 1)
-            print(f"     P{p:>2d}  : {sorted_counts[idx]}")
+            pct_str.append(f"P{p}={sorted_counts[idx]}")
+        print(f"     Percentiles : {' | '.join(pct_str)}")
 
+        # Density buckets
+        crowded = sum(1 for c in counts if c >= 8)
+        very_crowded = sum(1 for c in counts if c >= 12)
+        print(f"     Density     : ≥8 obj: {crowded} ({100*crowded/n:.1f}%)"
+              f"  |  ≥12 obj: {very_crowded} ({100*very_crowded/n:.1f}%)")
 
-# ─────────────────────────────────────────────────────────────────
-# NEW: per-split size + class distribution
-# ─────────────────────────────────────────────────────────────────
-def split_distribution_analysis(dataset_root):
-    """Compute per-split size and class distributions for shift detection."""
-    splits = ["train", "valid", "test"]
-    summary = {}
-
-    print("\n" + "=" * 70)
-    print("         📊 PER-SPLIT SIZE & CLASS DISTRIBUTION")
-    print("=" * 70)
-
-    for split in splits:
-        labels_dir = os.path.join(dataset_root, split, "labels")
-        if not os.path.isdir(labels_dir):
-            continue
-        label_files = get_label_files(labels_dir)
-
-        size_counts = Counter()
-        class_counts = Counter()
-        total = 0
-        per_image_small_ratio = []
-
-        for lf in label_files:
-            ann = list(parse_label_file(lf))
-            if not ann:
-                per_image_small_ratio.append(0.0)
-                continue
-            small_in_img = 0
-            for cid, x, y, w, h in ann:
-                size = classify_size(w, h)
-                size_counts[size] += 1
-                class_counts[cid] += 1
-                total += 1
-                if size == "small":
-                    small_in_img += 1
-            per_image_small_ratio.append(small_in_img / len(ann))
-
-        summary[split] = {
-            "size_counts": size_counts,
-            "class_counts": class_counts,
-            "total": total,
-            "per_image_small_ratio": per_image_small_ratio,
-        }
-
-        print(f"\n  📂 {split.upper()}")
-        print(f"     Total annotations: {total}")
-        print(f"     ── Size distribution ──")
+        total = s["n_instances"]
+        size_str = []
         for sz in ["small", "medium", "large"]:
-            c = size_counts[sz]
-            pct = 100 * c / total if total else 0
-            print(f"       {sz:>6s} : {c:>6d} ({pct:5.1f}%)")
-        print(f"     ── Class distribution ──")
-        for cid in sorted(class_counts):
-            c = class_counts[cid]
-            pct = 100 * c / total if total else 0
-            print(f"       Class {cid} : {c:>6d} ({pct:5.1f}%)")
-        if per_image_small_ratio:
-            avg_small = statistics.mean(per_image_small_ratio)
-            print(f"     Avg per-image small-object ratio: {avg_small:.3f}")
+            c = s["size_counts"].get(sz, 0)
+            size_str.append(f"{sz[0].upper()}={format_pct(c, total):.1f}%")
+        print(f"     Sizes       : {' | '.join(size_str)}")
 
-    # ── Shift detection ──
-    if "train" in summary and "test" in summary:
-        print("\n" + "─" * 70)
-        print("  🔍 TRAIN ↔ TEST SHIFT DETECTION")
-        print("─" * 70)
-        train_total = summary["train"]["total"]
-        test_total = summary["test"]["total"]
-        if train_total and test_total:
-            for sz in ["small", "medium", "large"]:
-                tr = 100 * summary["train"]["size_counts"][sz] / train_total
-                te = 100 * summary["test"]["size_counts"][sz] / test_total
-                shift = te - tr
-                rel = (shift / tr * 100) if tr else 0
-                tag = "⚠️ shift" if abs(rel) > 15 else "✓ ok"
-                print(f"     {sz:>6s}: train {tr:5.1f}% → test {te:5.1f}%  "
-                      f"(Δ {shift:+5.1f}pp / {rel:+5.1f}% rel)  {tag}")
-            for cid in sorted(set(summary["train"]["class_counts"]) |
-                              set(summary["test"]["class_counts"])):
-                tr = 100 * summary["train"]["class_counts"][cid] / train_total
-                te = 100 * summary["test"]["class_counts"][cid] / test_total
-                shift = te - tr
-                rel = (shift / tr * 100) if tr else 0
-                tag = "⚠️ shift" if abs(rel) > 15 else "✓ ok"
-                print(f"     Class{cid:>2d}: train {tr:5.1f}% → test {te:5.1f}%  "
-                      f"(Δ {shift:+5.1f}pp / {rel:+5.1f}% rel)  {tag}")
+        class_str = []
+        for cid, name in enumerate(CLASS_NAMES):
+            c = s["class_counts"].get(cid, 0)
+            class_str.append(f"{name}={format_pct(c, total):.1f}%")
+        print(f"     Classes     : {' | '.join(class_str)}")
 
-    return summary
+        if s["box_areas"]:
+            med_area = statistics.median(s["box_areas"]) * IMAGE_SIZE * IMAGE_SIZE
+            med_ar = statistics.median(s["box_aspect_ratios"]) if s["box_aspect_ratios"] else 0
+            print(f"     Box stats   : median area {med_area:.0f}px² | "
+                  f"median H/W ratio {med_ar:.2f}")
 
 
 # ─────────────────────────────────────────────────────────────────
-# NEW: cross-split filename / source overlap (video-frame leakage)
+# Per-dataset shift detection
 # ─────────────────────────────────────────────────────────────────
-def filename_source_analysis(dataset_root):
-    """Detect possible video-frame leakage via filename patterns."""
+def print_shift_report(stats, label):
+    print(f"\n  🔍 TRAIN ↔ TEST SHIFT  [{label}]")
+    print("  " + "─" * 66)
+    if "train" not in stats or "test" not in stats:
+        print("     (missing train or test split)")
+        return
+
+    tr = stats["train"]
+    te = stats["test"]
+    if not tr["n_instances"] or not te["n_instances"]:
+        return
+
+    for sz in ["small", "medium", "large"]:
+        tr_pct = format_pct(tr["size_counts"].get(sz, 0), tr["n_instances"])
+        te_pct = format_pct(te["size_counts"].get(sz, 0), te["n_instances"])
+        rel = ((te_pct - tr_pct) / tr_pct * 100) if tr_pct else 0
+        tag = "⚠️" if abs(rel) > 15 else "✓"
+        print(f"     {tag} {sz:>6s}: train {tr_pct:5.1f}% → test {te_pct:5.1f}%  "
+              f"(rel {rel:+5.1f}%)")
+
+    for cid, name in enumerate(CLASS_NAMES):
+        tr_pct = format_pct(tr["class_counts"].get(cid, 0), tr["n_instances"])
+        te_pct = format_pct(te["class_counts"].get(cid, 0), te["n_instances"])
+        rel = ((te_pct - tr_pct) / tr_pct * 100) if tr_pct else 0
+        tag = "⚠️" if abs(rel) > 15 else "✓"
+        print(f"     {tag} {name:>9s}: train {tr_pct:5.1f}% → test {te_pct:5.1f}%  "
+              f"(rel {rel:+5.1f}%)")
+
+
+# ─────────────────────────────────────────────────────────────────
+# NEW: cross-dataset side-by-side comparison
+# ─────────────────────────────────────────────────────────────────
+def cross_dataset_comparison(datasets):
+    """
+    datasets: dict of label -> stats (output of compute_dataset_stats)
+    Produces side-by-side tables for size, class, density across all datasets.
+    """
+    labels = list(datasets.keys())
+
     print("\n" + "=" * 70)
-    print("         🎬 FILENAME / SOURCE OVERLAP DETECTION")
+    print("  📊 CROSS-DATASET COMPARISON (SIDE-BY-SIDE)")
     print("=" * 70)
 
-    splits = ["train", "valid", "test"]
+    # ── Table 1: Per-split image and instance counts ──
+    print("\n  ── Image / instance counts per split ──")
+    header = f"  {'Split':<8} " + " ".join(f"{lbl:<22}" for lbl in labels)
+    print(header)
+    print("  " + "─" * (len(header) - 2))
+    for split in SPLITS:
+        row = f"  {split:<8} "
+        for lbl in labels:
+            if split in datasets[lbl]:
+                s = datasets[lbl][split]
+                row += f"{s['n_images']:>5d} img / {s['n_instances']:>6d} inst  "
+            else:
+                row += "—".center(22) + " "
+        print(row)
+
+    # ── Table 2: Size distribution per split, per dataset ──
+    for split in SPLITS:
+        print(f"\n  ── Size distribution: {split.upper()} ──")
+        header = f"  {'Size':<10} " + " ".join(f"{lbl:>22}" for lbl in labels)
+        print(header)
+        print("  " + "─" * (len(header) - 2))
+        for sz in ["small", "medium", "large"]:
+            row = f"  {sz:<10} "
+            for lbl in labels:
+                if split in datasets[lbl]:
+                    s = datasets[lbl][split]
+                    pct = format_pct(s["size_counts"].get(sz, 0), s["n_instances"])
+                    row += f"{pct:>20.1f}%  "
+                else:
+                    row += "—".rjust(22) + " "
+            print(row)
+
+    # ── Table 3: Class distribution per split, per dataset ──
+    for split in SPLITS:
+        print(f"\n  ── Class distribution: {split.upper()} ──")
+        header = f"  {'Class':<10} " + " ".join(f"{lbl:>22}" for lbl in labels)
+        print(header)
+        print("  " + "─" * (len(header) - 2))
+        for cid, name in enumerate(CLASS_NAMES):
+            row = f"  {name:<10} "
+            for lbl in labels:
+                if split in datasets[lbl]:
+                    s = datasets[lbl][split]
+                    pct = format_pct(s["class_counts"].get(cid, 0), s["n_instances"])
+                    row += f"{pct:>20.1f}%  "
+                else:
+                    row += "—".rjust(22) + " "
+            print(row)
+
+    # ── Table 4: Per-image density (crowdedness) per split ──
+    print(f"\n  ── Mean instances per image per split ──")
+    header = f"  {'Split':<8} " + " ".join(f"{lbl:>22}" for lbl in labels)
+    print(header)
+    print("  " + "─" * (len(header) - 2))
+    for split in SPLITS:
+        row = f"  {split:<8} "
+        for lbl in labels:
+            if split in datasets[lbl]:
+                s = datasets[lbl][split]
+                mean_inst = statistics.mean(s["counts"]) if s["counts"] else 0
+                row += f"{mean_inst:>21.2f}  "
+            else:
+                row += "—".rjust(22) + " "
+        print(row)
+
+    # ── Table 5: Train↔test shift summary across datasets ──
+    print(f"\n  ── Train ↔ Test SHIFT (relative %) ──")
+    header = f"  {'Metric':<14} " + " ".join(f"{lbl:>22}" for lbl in labels)
+    print(header)
+    print("  " + "─" * (len(header) - 2))
+
+    metrics = [("small", "size", "small"),
+               ("medium", "size", "medium"),
+               ("large", "size", "large"),
+               ("bag", "class", 0),
+               ("backpack", "class", 1),
+               ("trolley", "class", 2)]
+    for display_name, kind, key in metrics:
+        row = f"  {display_name:<14} "
+        for lbl in labels:
+            ds = datasets[lbl]
+            if "train" not in ds or "test" not in ds:
+                row += "—".rjust(22) + " "
+                continue
+            tr = ds["train"]
+            te = ds["test"]
+            if not tr["n_instances"] or not te["n_instances"]:
+                row += "—".rjust(22) + " "
+                continue
+            counts_key = "size_counts" if kind == "size" else "class_counts"
+            tr_pct = format_pct(tr[counts_key].get(key, 0), tr["n_instances"])
+            te_pct = format_pct(te[counts_key].get(key, 0), te["n_instances"])
+            rel = ((te_pct - tr_pct) / tr_pct * 100) if tr_pct else 0
+            row += f"{rel:>+20.1f}%  "
+        print(row)
+
+
+# ─────────────────────────────────────────────────────────────────
+# NEW: fidelity report — does the ablation faithfully represent the full?
+# ─────────────────────────────────────────────────────────────────
+def fidelity_report(datasets, reference_label):
+    """
+    For each ablation dataset, compute how much its distributions deviate from
+    the reference (full) dataset. Lower = better proxy.
+
+    Reports max absolute deviation (in pp) and mean absolute deviation across:
+      - size distribution (all 3 sizes × 3 splits = 9 metrics)
+      - class distribution (3 classes × 3 splits = 9 metrics)
+    """
+    print("\n" + "=" * 70)
+    print("  🎯 ABLATION FIDELITY REPORT")
+    print("  (How well does each ablation reproduce the FULL dataset?)")
+    print("=" * 70)
+
+    if reference_label not in datasets:
+        print(f"  Reference dataset '{reference_label}' not found.")
+        return
+
+    ref = datasets[reference_label]
+    other_labels = [lbl for lbl in datasets if lbl != reference_label]
+
+    if not other_labels:
+        print("  (only one dataset provided — nothing to compare)")
+        return
+
+    print(f"\n  Reference: {reference_label}\n")
+
+    for lbl in other_labels:
+        target = datasets[lbl]
+        size_deviations = []
+        class_deviations = []
+
+        for split in SPLITS:
+            if split not in ref or split not in target:
+                continue
+            r = ref[split]
+            t = target[split]
+            if not r["n_instances"] or not t["n_instances"]:
+                continue
+
+            for sz in ["small", "medium", "large"]:
+                r_pct = format_pct(r["size_counts"].get(sz, 0), r["n_instances"])
+                t_pct = format_pct(t["size_counts"].get(sz, 0), t["n_instances"])
+                size_deviations.append((split, sz, t_pct - r_pct))
+
+            for cid, name in enumerate(CLASS_NAMES):
+                r_pct = format_pct(r["class_counts"].get(cid, 0), r["n_instances"])
+                t_pct = format_pct(t["class_counts"].get(cid, 0), t["n_instances"])
+                class_deviations.append((split, name, t_pct - r_pct))
+
+        # Summary stats
+        size_abs = [abs(d) for _, _, d in size_deviations]
+        class_abs = [abs(d) for _, _, d in class_deviations]
+        size_max = max(size_abs) if size_abs else 0
+        size_mean = statistics.mean(size_abs) if size_abs else 0
+        class_max = max(class_abs) if class_abs else 0
+        class_mean = statistics.mean(class_abs) if class_abs else 0
+
+        print(f"  ── {lbl} vs {reference_label} ──")
+        print(f"     Size deviation : max {size_max:.2f}pp | mean {size_mean:.2f}pp")
+        print(f"     Class deviation: max {class_max:.2f}pp | mean {class_mean:.2f}pp")
+
+        # Quality grade
+        worst = max(size_max, class_max)
+        if worst < 0.5:
+            grade = "🟢 EXCELLENT (deviations < 0.5pp)"
+        elif worst < 1.0:
+            grade = "🟢 GOOD (deviations < 1.0pp)"
+        elif worst < 2.0:
+            grade = "🟡 ACCEPTABLE (deviations < 2.0pp)"
+        else:
+            grade = "🔴 POOR (deviations ≥ 2.0pp)"
+        print(f"     Verdict        : {grade}")
+
+        # Show worst deviations for transparency
+        size_deviations.sort(key=lambda x: abs(x[2]), reverse=True)
+        class_deviations.sort(key=lambda x: abs(x[2]), reverse=True)
+
+        if size_deviations:
+            split, sz, dev = size_deviations[0]
+            print(f"     Worst size dev : {split}/{sz} = {dev:+.2f}pp")
+        if class_deviations:
+            split, name, dev = class_deviations[0]
+            print(f"     Worst class dev: {split}/{name} = {dev:+.2f}pp")
+        print()
+
+
+# ─────────────────────────────────────────────────────────────────
+# Filename / source overlap (unchanged from v1)
+# ─────────────────────────────────────────────────────────────────
+def filename_source_analysis(dataset_root, label):
+    print("\n" + "─" * 70)
+    print(f"  🎬 FILENAME / SOURCE OVERLAP  [{label}]")
+    print("─" * 70)
+
     split_stems = {}
     split_sources = {}
 
-    # Heuristic: extract the "source" prefix from a filename.
-    # Roboflow / video-derived datasets typically have names like:
-    #   videoName_frame_00012_jpg.rf.<hash>.jpg
-    #   scene01_001.jpg
-    # We strip frame numbers, hashes, and roboflow suffixes to recover the source.
     def extract_source(stem):
         s = stem
-        s = re.sub(r"\.rf\.[a-f0-9]+$", "", s, flags=re.IGNORECASE)  # roboflow hash
-        s = re.sub(r"[-_]frame[-_]?\d+", "", s, flags=re.IGNORECASE)  # frame indicator
-        s = re.sub(r"[-_]?\d{3,}$", "", s)                            # trailing frame number
+        s = re.sub(r"\.rf\.[a-f0-9]+$", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"[-_]frame[-_]?\d+", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"[-_]?\d{3,}$", "", s)
         s = re.sub(r"_jpg$|_png$|_jpeg$", "", s, flags=re.IGNORECASE)
         return s
 
-    for split in splits:
+    for split in SPLITS:
         labels_dir = os.path.join(dataset_root, split, "labels")
         if not os.path.isdir(labels_dir):
             continue
@@ -262,73 +473,53 @@ def filename_source_analysis(dataset_root):
         split_stems[split] = set(stems)
         split_sources[split] = Counter(extract_source(s) for s in stems)
 
-    # ── Exact filename overlap (the worst case) ──
-    print("\n  ── Exact filename overlap across splits ──")
-    found_any = False
-    for s1 in splits:
-        for s2 in splits:
+    print("  Exact filename overlap:")
+    any_overlap = False
+    for s1 in SPLITS:
+        for s2 in SPLITS:
             if s1 >= s2 or s1 not in split_stems or s2 not in split_stems:
                 continue
             overlap = split_stems[s1] & split_stems[s2]
+            tag = "⚠️" if overlap else "✓"
+            print(f"     {tag} {s1} ∩ {s2}: {len(overlap)} shared")
             if overlap:
-                found_any = True
-                print(f"     ⚠️ {s1} ∩ {s2}: {len(overlap)} shared filenames")
-            else:
-                print(f"     ✓ {s1} ∩ {s2}: no shared filenames")
-    if not found_any:
+                any_overlap = True
+    if not any_overlap:
         print("     (no exact overlaps — good)")
 
-    # ── Source overlap (video-frame leakage) ──
-    print("\n  ── Source-prefix overlap (video-frame leakage check) ──")
-    for s1 in splits:
-        for s2 in splits:
+    print("\n  Source-prefix overlap:")
+    for s1 in SPLITS:
+        for s2 in SPLITS:
             if s1 >= s2 or s1 not in split_sources or s2 not in split_sources:
                 continue
             common = set(split_sources[s1]) & set(split_sources[s2])
-            if common:
-                # how many frames each side has from the overlapping sources
-                n1 = sum(split_sources[s1][src] for src in common)
-                n2 = sum(split_sources[s2][src] for src in common)
-                tag = "⚠️" if len(common) > 5 else "ℹ️"
-                print(f"     {tag} {s1} ∩ {s2}: {len(common)} shared sources "
-                      f"({n1} frames in {s1}, {n2} in {s2})")
-                if len(common) <= 10:
-                    for src in list(common)[:10]:
-                        print(f"        - '{src}': {split_sources[s1][src]}/{split_sources[s2][src]}")
-            else:
-                print(f"     ✓ {s1} ∩ {s2}: no shared sources")
-
-    print("\n  Note: source extraction is heuristic. If your filenames don't follow")
-    print("  a video-frame pattern, this section may be unreliable.")
+            tag = "⚠️" if len(common) > 5 else ("ℹ️" if common else "✓")
+            print(f"     {tag} {s1} ∩ {s2}: {len(common)} shared sources")
 
 
 # ─────────────────────────────────────────────────────────────────
-# NEW: perceptual-hash near-duplicate detection
+# Perceptual hash leakage check
 # ─────────────────────────────────────────────────────────────────
-def perceptual_hash_analysis(dataset_root, max_per_split=None, hash_distance=4):
-    """Detect near-duplicate images within and across splits using pHash."""
-    print("\n" + "=" * 70)
-    print("         🖼️  PERCEPTUAL HASH NEAR-DUPLICATE DETECTION")
-    print("=" * 70)
+def perceptual_hash_analysis(dataset_root, label, max_per_split=2000, hash_distance=4):
+    print("\n" + "─" * 70)
+    print(f"  🖼️  PERCEPTUAL HASH LEAKAGE  [{label}]")
+    print("─" * 70)
 
     if not HASH_AVAILABLE:
-        print("\n  ⚠️ Skipped: install Pillow + imagehash to enable this check.")
-        print("     pip install pillow imagehash")
+        print("  ⚠️ Skipped: pip install pillow imagehash")
         return
 
-    splits = ["train", "valid", "test"]
     split_hashes = {}
-
-    for split in splits:
+    for split in SPLITS:
         images_dir = os.path.join(dataset_root, split, "images")
         labels_dir = os.path.join(dataset_root, split, "labels")
         if not os.path.isdir(images_dir):
             continue
         label_files = get_label_files(labels_dir)
-        hashes = {}  # stem -> phash
-        n_processed = 0
+        hashes = {}
+        n = 0
         for lf in label_files:
-            if max_per_split and n_processed >= max_per_split:
+            if max_per_split and n >= max_per_split:
                 break
             img_path = get_image_for_label(lf, images_dir)
             if not img_path:
@@ -337,87 +528,86 @@ def perceptual_hash_analysis(dataset_root, max_per_split=None, hash_distance=4):
                 with Image.open(img_path) as img:
                     h = imagehash.phash(img.convert("RGB"))
                 hashes[Path(lf).stem] = h
-                n_processed += 1
+                n += 1
             except Exception:
                 continue
         split_hashes[split] = hashes
         print(f"  Hashed {len(hashes)} images in {split}")
 
-    # ── Within-split near-duplicates ──
-    print("\n  ── Within-split near-duplicates (Hamming distance ≤ "
-          f"{hash_distance}) ──")
-    for split, hashes in split_hashes.items():
-        items = list(hashes.items())
-        dup_pairs = 0
-        # Sample to keep this O(n^2) tractable on large splits
-        sample = items if len(items) <= 2000 else items[:2000]
-        for i in range(len(sample)):
-            for j in range(i + 1, len(sample)):
-                if sample[i][1] - sample[j][1] <= hash_distance:
-                    dup_pairs += 1
-        note = "" if len(items) <= 2000 else f"  (sampled first 2000 of {len(items)})"
-        tag = "⚠️" if dup_pairs > 50 else "✓"
-        print(f"     {tag} {split}: {dup_pairs} near-duplicate pairs{note}")
-
-    # ── Cross-split near-duplicates (this is the LEAKAGE check) ──
-    print("\n  ── Cross-split near-duplicates (LEAKAGE check) ──")
-    for s1 in splits:
-        for s2 in splits:
+    print("\n  Cross-split near-duplicates (Hamming ≤ "
+          f"{hash_distance}) — LEAKAGE CHECK:")
+    for s1 in SPLITS:
+        for s2 in SPLITS:
             if s1 >= s2 or s1 not in split_hashes or s2 not in split_hashes:
                 continue
-            h1 = list(split_hashes[s1].items())
-            h2 = list(split_hashes[s2].items())
-            # cap to keep tractable
-            h1 = h1[:2000]
-            h2 = h2[:2000]
+            h1 = list(split_hashes[s1].items())[:2000]
+            h2 = list(split_hashes[s2].items())[:2000]
             leaks = 0
-            examples = []
             for stem1, hash1 in h1:
                 for stem2, hash2 in h2:
                     if hash1 - hash2 <= hash_distance:
                         leaks += 1
-                        if len(examples) < 5:
-                            examples.append((stem1, stem2, hash1 - hash2))
-                        break  # one match per s1 image is enough to count
-            tag = "⚠️ LEAKAGE" if leaks > 5 else ("ℹ️" if leaks > 0 else "✓")
-            print(f"     {tag} {s1} ↔ {s2}: {leaks} near-duplicate pairs")
-            for ex in examples:
-                print(f"        - '{ex[0]}' ↔ '{ex[1]}' (dist={ex[2]})")
+                        break
+            tag = "⚠️ LEAKAGE" if leaks > 5 else ("ℹ️" if leaks else "✓")
+            print(f"     {tag} {s1} ↔ {s2}: {leaks} near-duplicate matches")
 
 
 # ─────────────────────────────────────────────────────────────────
-# Top-level: run everything for a given dataset root
+# Master orchestrator
 # ─────────────────────────────────────────────────────────────────
-def full_analysis(dataset_root, label, run_hash=True):
-    print("\n\n" + "=" * 70)
-    print(f"  ANALYZING: {label}")
-    print(f"  Path: {dataset_root}")
+def run_full_analysis(datasets_config, run_hash=False):
+    """
+    datasets_config: list of (label, path) tuples
+    """
+    all_stats = {}
+
+    # ── Phase 1: per-dataset analysis ──
+    for label, path in datasets_config:
+        print("\n" + "█" * 70)
+        print(f"  🔶 DATASET: {label}")
+        print(f"     Path: {path}")
+        print("█" * 70)
+
+        if not os.path.isdir(path):
+            print(f"  ⚠️ Directory not found: {path}")
+            continue
+
+        stats = compute_dataset_stats(path)
+        all_stats[label] = stats
+
+        print_dataset_summary(stats, label)
+        print_shift_report(stats, label)
+        filename_source_analysis(path, label)
+        if run_hash:
+            perceptual_hash_analysis(path, label)
+
+    # ── Phase 2: cross-dataset comparison ──
+    if len(all_stats) >= 2:
+        cross_dataset_comparison(all_stats)
+
+    # ── Phase 3: fidelity report (vs FULL) ──
+    full_label = datasets_config[0][0]  # first is treated as reference
+    if len(all_stats) >= 2 and full_label in all_stats:
+        fidelity_report(all_stats, full_label)
+
+    print("\n" + "=" * 70)
+    print("  ✅ Analysis complete.")
     print("=" * 70)
-    detailed_instance_analysis(dataset_root)
-    split_distribution_analysis(dataset_root)
-    filename_source_analysis(dataset_root)
-    if run_hash:
-        perceptual_hash_analysis(dataset_root, max_per_split=2000, hash_distance=4)
 
 
 # ─────────────────────────────────────────────────────────────────
 # RUN
 # ─────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    ORIGINAL = r"/home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12"
-    ABLATION1 = r"/home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30percentagesubset"
-    ABLATION2 = r"/home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30percentagesubsetNEW"
+    # Order matters: first entry is treated as the REFERENCE for fidelity check
+    datasets = [
+        ("FULL",
+         r"/home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12"),
+        ("ABLATION_OLD",
+         r"/home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30percentagesubset"),
+        ("ABLATION_NEW",
+         r"/home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30percentagesubsetNEW"),
+    ]
 
-    print("\n" + "🔶" * 35)
-    print("  ORIGINAL (FULL) DATASET")
-    print("🔶" * 35)
-    full_analysis(ORIGINAL, "ORIGINAL (FULL)", run_hash=True)
-
-    print("\n\n" + "🔷" * 35)
-    print("  ABLATION (30%) DATASET")
-    print("🔷" * 35)
-    full_analysis(ABLATION, "ABLATION (30%)", run_hash=True)
-
-    print("\n\n" + "=" * 70)
-    print("  ✅ Full analysis complete.")
-    print("=" * 70)
+    # Set run_hash=True if pillow+imagehash are installed and you want leakage detection
+    run_full_analysis(datasets, run_hash=False)
