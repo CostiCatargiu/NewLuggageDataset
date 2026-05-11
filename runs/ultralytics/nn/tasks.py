@@ -1079,8 +1079,12 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1 = ch[f]
             c2 = args[0] if args else c1  # c2 defaults to c1 if not specified
             args = [c1, c2]
-        elif m in {LuggageCBAM, LuggageCBAMv2, CoordinateAttention}:
+        elif m in {LuggageCBAM, LuggageCBAMv2}:
             args = [ch[f], *args]  # c1 = input channels, optional args
+        elif m is CoordinateAttention:
+            c1 = ch[f]
+            c2 = args[0] if args else c1  # c2 defaults to c1 if not specified
+            args = [c1, c2]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
         elif m in {Detect, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
