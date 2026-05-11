@@ -570,6 +570,61 @@ head:
 """
 
 # ============================================================
+# NEW: SmallObjectRefinement Architecture
+# ============================================================
+ARCH_SOR = """# SmallObjectRefinement at P3 detection feature
+# 
+# Key innovation: Multi-scale dilated context + coordinate attention
+# - 3 parallel dilated convolutions (dilation 1, 2, 3) for multi-RF features
+# - Coordinate attention for precise H/W positional info
+# - Specifically designed for small-object detection at P3
+#
+# Different from:
+# - CBAM: single receptive field, channel+spatial attention
+# - LSKA: single large kernel receptive field
+# - ChannelSE: channel attention only
+# 
+# SmallObjectRefinement captures 3 receptive field ranges simultaneously
+# which is more robust for varied-size small objects (11-1024 px²)
+
+nc: 3
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]              # 0-P1/2
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]       # 1-P2/4
+  - [-1, 2, C3k2,  [256, False, 0.25]]      # 2
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]       # 3-P3/8
+  - [-1, 2, C3k2,  [512, False, 0.25]]      # 4
+  - [-1, 1, Conv,  [512, 3, 2]]             # 5-P4/16
+  - [-1, 4, A2C2f, [512, True, 4]]          # 6
+  - [-1, 1, Conv,  [1024, 3, 2]]            # 7-P5/32
+  - [-1, 4, A2C2f, [1024, True, 1]]         # 8
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11 - P4 fusion (clean for propagation)
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]        # 14 - P3 fusion (clean)
+  - [-1, 1, SmallObjectRefinement, [256]]   # 15 - SOR at P3 detection feature
+
+  # Decoupled path: downsample from clean A2C2f (layer 14), not from SOR
+  - [14, 1, Conv, [256, 3, 2]]              # 16 - downsample from layer 14
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 18
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 21
+
+  - [[15, 18, 21], 1, Detect, [nc]]         # Detect from SOR-refined P3
+"""
+
+# ============================================================
 # 3 RUNS
 # ============================================================
 
@@ -649,12 +704,16 @@ RUNS = [
     #     "yaml_content": ARCH_LUG4,
     #     "batch": 54,
     # },
+    # {
+    #     "name": "top0_ARCH_lug_ORIGINAL",
+    #     "yaml_content": ARCH_ORIGINAL,
+    #     "batch": 58,
+    # },
     {
-        "name": "top0_ARCH_lug_ORIGINAL",
-        "yaml_content": ARCH_ORIGINAL,
-        "batch": 58,
+        "name": "top0_ARCH_SOR",
+        "yaml_content": ARCH_SOR,
+        "batch": 56,  # slightly lower batch due to extra params
     },
-
     # {
     #     "name": "new3_bidi_lateral",
     #     "yaml_content": ARCH_BIDI_LATERAL,

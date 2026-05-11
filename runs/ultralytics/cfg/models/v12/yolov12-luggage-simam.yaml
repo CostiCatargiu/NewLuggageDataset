@@ -1,0 +1,61 @@
+# YOLOv12 with C2fSimAM - Parameter-free attention for luggage detection
+#
+# LIGHTEST OPTION: Zero additional parameters from attention
+#
+# Key features:
+# - SimAM is completely parameter-free (uses energy function)
+# - No learnable attention parameters = no overfitting risk
+# - Standard Bottleneck blocks
+# - Great for baseline comparison
+#
+# Use this to test:
+# - If ANY attention mechanism helps your dataset
+# - Minimal overhead baseline before trying heavier attention
+#
+# Usage:
+#   from ultralytics import YOLO
+#   model = YOLO('yolov12-luggage-simam.yaml')
+#   model.train(data='luggage.yaml', epochs=100)
+
+# Parameters
+nc: 3  # number of classes: backpack, bag, trolley
+scales:
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024]
+  s: [0.50, 0.50, 1024]
+  m: [0.50, 1.00, 512]
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.50, 512]
+
+# YOLOv12 backbone with C2fSimAM at P3/P4
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv,  [64, 3, 2]]              # 0-P1/2
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]       # 1-P2/4
+  - [-1, 2, C3k2,  [256, False, 0.25]]      # 2
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]       # 3-P3/8
+  - [-1, 2, C2fSimAM,  [512, False]]        # 4 - SimAM for P3
+  - [-1, 1, Conv,  [512, 3, 2]]             # 5-P4/16
+  - [-1, 4, A2C2f, [512, True, 4]]          # 6 - keep A2C2f
+  - [-1, 1, Conv,  [1024, 3, 2]]            # 7-P5/32
+  - [-1, 4, A2C2f, [1024, True, 1]]         # 8
+
+# YOLOv12 head with C2fSimAM at outputs
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]               # cat backbone P4
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11 - keep A2C2f
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]               # cat backbone P3
+  - [-1, 2, C2fSimAM, [256, False]]         # 14 - SimAM for P3 output
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]              # cat head P4
+  - [-1, 2, C2fSimAM, [512, False]]         # 17 - SimAM for P4 output
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]               # cat head P5
+  - [-1, 2, C3k2, [1024, True]]             # 20
+
+  - [[14, 17, 20], 1, Detect, [nc]]         # Detect(P3, P4, P5)

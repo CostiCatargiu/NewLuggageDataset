@@ -1,0 +1,78 @@
+# YOLOv12 with ChannelSE for luggage detection
+#
+# PAPER CONTRIBUTION:
+# "Channel attention (SE) learns discriminative features for luggage classification"
+#
+# Key innovation: Squeeze-and-Excitation attention learns which feature channels
+# are important and amplifies them while suppressing unimportant ones.
+# 
+# Why this helps bag vs backpack confusion:
+# - Amplifies discriminative channels (straps, handles, wheels)
+# - Suppresses generic channels (textures, edges, background)
+# - A2C2f does spatial attention (WHERE to look)
+# - ChannelSE does channel attention (WHAT features matter)
+#
+# From SENet (Hu et al., CVPR 2018) - Won ImageNet 2017
+# Used in: EfficientNet, MobileNetV3, RegNet
+# Proven: +0.3-1.0% mAP on COCO detection
+#
+# Cost:
+# - ChannelSE(256): ~16K params
+# - ChannelSE(512): ~65K params  
+# - Total: ~82K params (0.3% of model)
+# - Speed/memory impact: negligible
+#
+# Dataset characteristics:
+# - Classes: backpack (27%), bag (22%), trolley (51%)
+# - Object sizes: Small 27% | Medium 57% | Large 16%
+#
+# Usage:
+#   from ultralytics import YOLO
+#   model = YOLO('yolov12-luggage-channelse.yaml')
+#   model.train(data='luggage.yaml', epochs=80, close_mosaic=10)
+
+# Parameters
+nc: 3  # number of classes: backpack, bag, trolley
+scales:
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024]  # nano
+  s: [0.50, 0.50, 1024]  # small
+  m: [0.50, 1.00, 512]   # medium
+  l: [1.00, 1.00, 512]   # large
+  x: [1.00, 1.50, 512]   # extra large
+
+# YOLOv12 backbone - standard
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv,  [64, 3, 2]]              # 0-P1/2
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]       # 1-P2/4
+  - [-1, 2, C3k2,  [256, False, 0.25]]      # 2
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]       # 3-P3/8
+  - [-1, 2, C3k2,  [512, False, 0.25]]      # 4
+  - [-1, 1, Conv,  [512, 3, 2]]             # 5-P4/16
+  - [-1, 4, A2C2f, [512, True, 4]]          # 6 - A2C2f area-attention
+  - [-1, 1, Conv,  [1024, 3, 2]]            # 7-P5/32
+  - [-1, 4, A2C2f, [1024, True, 1]]         # 8 - A2C2f for P5
+
+# YOLOv12 head with ChannelSE after P3/P4 fusion
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]               # cat backbone P4
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11 - A2C2f for P4 fusion
+  - [-1, 1, ChannelSE, []]                  # 12 - SE: reweight P4 channels
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]               # cat backbone P3
+  - [-1, 2, A2C2f, [256, False, -1]]        # 15 - A2C2f for P3 fusion
+  - [-1, 1, ChannelSE, []]                  # 16 - SE: reweight P3 channels (small objects)
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 12], 1, Concat, [1]]              # cat head P4 (after SE)
+  - [-1, 2, A2C2f, [512, False, -1]]        # 19 - A2C2f for P4 output
+  - [-1, 1, ChannelSE, []]                  # 20 - SE: reweight P4 output (medium objects)
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]               # cat head P5
+  - [-1, 2, C3k2, [1024, True]]             # 23 (P5/32-large)
+
+  - [[16, 20, 23], 1, Detect, [nc]]         # Detect(P3, P4, P5)

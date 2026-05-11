@@ -1,0 +1,57 @@
+# Ultralytics YOLO11 with LuggageCBAM for enhanced luggage detection
+# Optimized for detecting backpacks, bags, and trolleys with small/medium objects
+# 
+# Key changes from base YOLO11:
+# 1. C2fCBAM blocks in strategic positions for attention-enhanced features
+# 2. Optimized for class imbalance (trolley 51%, backpack 27%, bag 22%)
+# 3. Multi-scale attention for small (27%) / medium (57%) / large (16%) objects
+#
+# Usage:
+#   from ultralytics import YOLO
+#   model = YOLO('yolo11-luggage-cbam.yaml')
+#   model.train(data='luggage.yaml', epochs=100)
+
+# Parameters
+nc: 3  # number of classes: backpack, bag, trolley
+scales:
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024]  # nano - fast training for experiments
+  s: [0.50, 0.50, 1024]  # small - good balance
+  m: [0.50, 1.00, 512]   # medium - better accuracy
+  l: [1.00, 1.00, 512]   # large - high accuracy
+  x: [1.00, 1.50, 512]   # extra large - maximum accuracy
+
+# YOLO11 backbone with LuggageCBAM attention
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]        # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]       # 1-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]]  # 2
+  - [-1, 1, Conv, [256, 3, 2]]       # 3-P3/8 - critical for small objects
+  - [-1, 2, C2fCBAM, [512, False]]   # 4 - C2fCBAM for P3 attention (small objects 27%)
+  - [-1, 1, Conv, [512, 3, 2]]       # 5-P4/16 - critical for medium objects
+  - [-1, 2, C2fCBAM, [512, True]]    # 6 - C2fCBAM for P4 attention (medium objects 57%)
+  - [-1, 1, Conv, [1024, 3, 2]]      # 7-P5/32
+  - [-1, 2, C3k2, [1024, True]]      # 8
+  - [-1, 1, SPPF, [1024, 5]]         # 9
+  - [-1, 2, C2PSA, [1024]]           # 10
+
+# YOLO11 head with LuggageCBAM in critical fusion points
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]        # cat backbone P4
+  - [-1, 2, C2fCBAM, [512, False]]   # 13 - attention after P4 fusion
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]        # cat backbone P3
+  - [-1, 2, C2fCBAM, [256, False]]   # 16 (P3/8-small) - attention for small object output
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 13], 1, Concat, [1]]       # cat head P4
+  - [-1, 2, C3k2, [512, False]]      # 19 (P4/16-medium)
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 10], 1, Concat, [1]]       # cat head P5
+  - [-1, 2, C3k2, [1024, True]]      # 22 (P5/32-large)
+
+  - [[16, 19, 22], 1, Detect, [nc]]  # Detect(P3, P4, P5)
