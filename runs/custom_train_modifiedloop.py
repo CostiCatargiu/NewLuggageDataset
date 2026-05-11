@@ -119,7 +119,7 @@ head:
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 4], 1, Concat, [1]]
   - [-1, 2, C2fLSKA, [256, False]]          # 14 — LSKA at P3 (large kernel context)
-  - [-1, 1, CoordinateAttention, []]        # 15 — CoordAttn (H/W positional info)
+  - [-1, 1, CoordinateAttention, [256]]     # 15 — CoordAttn (H/W positional info), c2=256
 
   - [14, 1, Conv, [256, 3, 2]]              # 16 — downsample from LSKA (before CoordAttn)
   - [[-1, 11], 1, Concat, [1]]
