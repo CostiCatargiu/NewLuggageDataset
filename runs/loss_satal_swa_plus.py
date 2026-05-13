@@ -39,7 +39,11 @@ from .tal import bbox2dist
 # Wasserstein-2 distance. This provides smooth gradients even for small objects
 # where IoU degrades rapidly.
 #
-# FIXED: Proper normalization to output values in [0, 1] range like IoU
+# Paper convention:
+# - Each bbox modeled as 2D Gaussian with Σ = diag((w/2)², (h/2)²)
+# - W2² = ||center_diff||² + ||sigma_diff||²  
+# - NWD = exp(-W2 / C) where C is a constant (paper uses ~12.8 for AI-TOD)
+# - For YOLO at 640px input, C ≈ 12-16 works well
 # =============================================================================
 
 
@@ -49,7 +53,8 @@ def bbox2gaussian(bboxes, eps=1e-7):
     
     Each bbox is modeled as a 2D Gaussian:
     - Mean (μ) = center of bbox (cx, cy)  
-    - Std (σ) = (w/4, h/4) so that 2σ covers the bbox
+    - Std (σ) = (w/2, h/2) following paper convention
+      Σ = diag((w/2)², (h/2)²)
     
     Args:
         bboxes: Bounding boxes in xyxy format (..., 4)
@@ -58,16 +63,15 @@ def bbox2gaussian(bboxes, eps=1e-7):
     Returns:
         cx, cy, sigma_x, sigma_y: Gaussian parameters
     """
-    # Convert to center format
     cx = (bboxes[..., 0] + bboxes[..., 2]) / 2
     cy = (bboxes[..., 1] + bboxes[..., 3]) / 2
     w = (bboxes[..., 2] - bboxes[..., 0]).clamp(min=eps)
     h = (bboxes[..., 3] - bboxes[..., 1]).clamp(min=eps)
     
-    # Standard deviation: w/4 and h/4 (so 2σ = w/2, covering half-width)
-    # This follows the NWD paper convention
-    sigma_x = w / 4
-    sigma_y = h / 4
+    # Paper convention: Σ = diag((w/2)², (h/2)²)
+    # So σ_x = w/2, σ_y = h/2
+    sigma_x = w / 2
+    sigma_y = h / 2
     
     return cx, cy, sigma_x, sigma_y
 
@@ -76,8 +80,10 @@ def wasserstein2_squared(pred_bboxes, target_bboxes, eps=1e-7):
     """
     Compute squared Wasserstein-2 distance between bbox Gaussians.
     
-    For 2D Gaussians with diagonal covariance:
+    For 2D Gaussians with diagonal covariance (Bures metric):
     W2² = ||μ₁ - μ₂||² + ||σ₁ - σ₂||²
+    
+    Where ||σ₁ - σ₂||² = (σ_x1 - σ_x2)² + (σ_y1 - σ_y2)²
     
     Args:
         pred_bboxes: Predicted boxes in xyxy format (N, 4)
@@ -94,7 +100,7 @@ def wasserstein2_squared(pred_bboxes, target_bboxes, eps=1e-7):
     # Squared distance between means (centers)
     center_dist_sq = (pred_cx - tgt_cx) ** 2 + (pred_cy - tgt_cy) ** 2
     
-    # Squared distance between standard deviations
+    # Squared distance between standard deviations  
     sigma_dist_sq = (pred_sx - tgt_sx) ** 2 + (pred_sy - tgt_sy) ** 2
     
     # Total W2²
@@ -103,20 +109,59 @@ def wasserstein2_squared(pred_bboxes, target_bboxes, eps=1e-7):
     return w2_squared
 
 
-def nwd_loss(pred_bboxes, target_bboxes, eps=1e-7):
+# =============================================================================
+# NWD Debug Helpers (defined BEFORE nwd_loss for proper ordering)
+# =============================================================================
+
+_NWD_DEBUG_DONE = False
+
+
+def nwd_debug_print(w2, nwd, C):
+    """Print NWD debug stats once per training run."""
+    global _NWD_DEBUG_DONE
+    if _NWD_DEBUG_DONE:
+        return
+    
+    print(f"\n{'='*60}")
+    print(f"[NWD DEBUG] First batch stats:")
+    print(f"{'='*60}")
+    print(f"  W2: mean={w2.mean().item():.3f}, median={w2.median().item():.3f}, max={w2.max().item():.3f}")
+    print(f"  C={C}")
+    print(f"  NWD: mean={nwd.mean().item():.4f}, min={nwd.min().item():.4f}, max={nwd.max().item():.4f}")
+    print(f"  Loss: mean={(1-nwd).mean().item():.4f}")
+    print(f"")
+    print(f"  → If NWD mean ≈ 1.0, C is too large (try C={C/2})")
+    print(f"  → If NWD mean ≈ 0.0, C is too small (try C={C*2})")
+    print(f"  → Target: NWD mean ≈ 0.3-0.7 for useful gradients")
+    print(f"{'='*60}\n")
+    
+    _NWD_DEBUG_DONE = True
+
+
+def reset_nwd_debug():
+    """Call this to re-enable debug print for next training run."""
+    global _NWD_DEBUG_DONE
+    _NWD_DEBUG_DONE = False
+
+
+# =============================================================================
+# NWD Loss Function
+# =============================================================================
+
+def nwd_loss(pred_bboxes, target_bboxes, C=4.0, eps=1e-7):
     """
     Compute Normalized Wasserstein Distance (NWD) loss.
     
     NWD = exp(-sqrt(W2²) / C)
-    
-    Where C is the "constant" that normalizes based on target box size.
-    Following the paper: C = (w_gt + h_gt) / 4
-    
     Loss = 1 - NWD (in range [0, 1], like IoU loss)
     
     Args:
         pred_bboxes: Predicted boxes in xyxy format (N, 4)
         target_bboxes: Target boxes in xyxy format (N, 4)
+        C: Normalization constant (scalar).
+           - Paper uses ~12.8 for AI-TOD in PIXEL coordinates
+           - For YOLO stride-normalized coords, use C ≈ 2-6
+           - Luggage dataset with 640px input: start with C=4
         eps: Small value for numerical stability
     
     Returns:
@@ -124,56 +169,20 @@ def nwd_loss(pred_bboxes, target_bboxes, eps=1e-7):
     """
     # Compute squared Wasserstein distance
     w2_squared = wasserstein2_squared(pred_bboxes, target_bboxes, eps)
-    w2 = torch.sqrt(w2_squared + eps)
-    
-    # Compute normalization constant C based on target box size
-    # C = (w + h) / 4, which is proportional to the "average radius"
-    tgt_w = (target_bboxes[..., 2] - target_bboxes[..., 0]).clamp(min=eps)
-    tgt_h = (target_bboxes[..., 3] - target_bboxes[..., 1]).clamp(min=eps)
-    C = (tgt_w + tgt_h) / 4
+    w2 = torch.sqrt(w2_squared.clamp(min=eps))
     
     # NWD = exp(-W2 / C) ∈ (0, 1]
+    # C is a scalar constant (paper-faithful approach)
     # When pred == target: W2=0, NWD=1
     # When pred is far from target: W2 large, NWD→0
     nwd = torch.exp(-w2 / C)
     
+    # Debug: print stats once to help tune C (no recompute after first batch)
+    if not _NWD_DEBUG_DONE:
+        nwd_debug_print(w2, nwd, C)
+    
     # Loss = 1 - NWD ∈ [0, 1)
-    # Same scale as IoU loss!
     loss = 1.0 - nwd
-    
-    return loss
-
-
-def nwd_iou_loss(pred_bboxes, target_bboxes, iou, nwd_weight=0.5, eps=1e-7):
-    """
-    Compute blended NWD + IoU loss.
-    
-    This combines the benefits of both:
-    - IoU: Good for large objects, well-understood
-    - NWD: Better gradients for small objects
-    
-    Loss = (1 - nwd_weight) * IoU_loss + nwd_weight * NWD_loss
-    
-    Both IoU_loss and NWD_loss are in [0, 1], so the blend is also in [0, 1].
-    
-    Args:
-        pred_bboxes: Predicted boxes in xyxy format (N, 4)
-        target_bboxes: Target boxes in xyxy format (N, 4)
-        iou: Pre-computed IoU values (N,) - can be CIoU, DIoU, etc.
-        nwd_weight: Weight for NWD loss (0-1), default 0.5
-        eps: Small value for numerical stability
-    
-    Returns:
-        Blended loss in range [0, 1] (N,)
-    """
-    # IoU loss (already computed outside, just use 1 - iou)
-    iou_loss = 1.0 - iou
-    
-    # NWD loss
-    nwd_loss_val = nwd_loss(pred_bboxes, target_bboxes, eps)
-    
-    # Blend
-    loss = (1.0 - nwd_weight) * iou_loss + nwd_weight * nwd_loss_val
     
     return loss
 
@@ -286,7 +295,10 @@ class BboxLoss(nn.Module):
         self.use_nwd = False              # Enable NWD loss
         self.nwd_mode = 'blend'           # 'pure', 'blend', 'small_only'
         self.nwd_weight = 0.5             # Weight for NWD when blending (0-1)
-        self.nwd_small_threshold = 32.0   # Area threshold for 'small_only' mode (in grid cells squared)
+        self.nwd_C = 4.0                  # NWD normalization constant
+                                          # Paper uses ~12.8 for PIXEL coords
+                                          # For stride-normalized coords, use 2-6
+        self.nwd_small_threshold = 32.0   # Area threshold for 'small_only' mode (stride-normalized coords²)
 
     def set_params(self, hyp):
         """Set parameters from hyperparameters (model.args)."""
@@ -309,6 +321,7 @@ class BboxLoss(nn.Module):
         self.use_nwd = getattr(hyp, 'use_nwd', self.use_nwd)
         self.nwd_mode = getattr(hyp, 'nwd_mode', self.nwd_mode)
         self.nwd_weight = getattr(hyp, 'nwd_weight', self.nwd_weight)
+        self.nwd_C = getattr(hyp, 'nwd_C', self.nwd_C)
         self.nwd_small_threshold = getattr(hyp, 'nwd_small_threshold', self.nwd_small_threshold)
 
     def _get_dynamic_alpha(self):
@@ -388,8 +401,10 @@ class BboxLoss(nn.Module):
         ciou_loss = 1.0 - iou  # CIoU loss in [0, 1]
         
         if self.use_nwd:
-            # Compute NWD loss (also in [0, 1] range after fix)
-            nwd_loss_val = nwd_loss(pred_fg, target_fg)
+            # Compute NWD loss with scalar C constant (paper-faithful)
+            # Both CIoU and NWD losses are in [0, 1] range
+            # Debug print fires once inside nwd_loss() on first batch
+            nwd_loss_val = nwd_loss(pred_fg, target_fg, C=self.nwd_C)
             
             if self.nwd_mode == 'pure':
                 # Pure NWD loss (no CIoU)
@@ -403,6 +418,7 @@ class BboxLoss(nn.Module):
                 
             elif self.nwd_mode == 'small_only':
                 # Use NWD only for small objects, CIoU for larger ones
+                # Note: target_fg is in stride-normalized coordinates
                 target_areas = (target_fg[..., 2] - target_fg[..., 0]) * \
                                (target_fg[..., 3] - target_fg[..., 1])
                 is_small = target_areas < self.nwd_small_threshold
@@ -594,9 +610,12 @@ class v8DetectionLoss:
         #   - 'pure': Use only NWD (no CIoU)
         #   - 'blend': Weighted combination of CIoU + NWD (recommended)
         #   - 'small_only': NWD for small objects, CIoU for larger ones
+        # C: Paper uses ~12.8 for AI-TOD in PIXEL coords
+        #    For stride-normalized coords (YOLO), use C ≈ 2-6
         self.use_nwd = getattr(h, 'use_nwd', False)
         self.nwd_mode = getattr(h, 'nwd_mode', 'blend')
         self.nwd_weight = getattr(h, 'nwd_weight', 0.5)  # Weight for NWD in blend mode
+        self.nwd_C = getattr(h, 'nwd_C', 4.0)            # Start with 4, tune based on debug output
         self.nwd_small_threshold = getattr(h, 'nwd_small_threshold', 32.0)  # For small_only mode
 
         # =====================================================================
@@ -664,6 +683,7 @@ class v8DetectionLoss:
             if self.use_nwd:
                 print(f"      nwd_mode:        {self.nwd_mode}")
                 print(f"      nwd_weight:      {self.nwd_weight}")
+                print(f"      nwd_C:           {self.nwd_C}")
                 if self.nwd_mode == 'small_only':
                     print(f"      nwd_small_thresh: {self.nwd_small_threshold}")
             print(f"  epochs:              {self.total_epochs}")
