@@ -113,7 +113,7 @@ def wasserstein2_squared(pred_bboxes, target_bboxes, eps=1e-7):
 # NWD Debug Helpers (defined BEFORE nwd_loss for proper ordering)
 # =============================================================================
 
-_NWD_DEBUG_DONE = True
+_NWD_DEBUG_DONE = False  # Start as False so debug prints once
 
 
 def nwd_debug_print(w2, nwd, C):
@@ -135,7 +135,7 @@ def nwd_debug_print(w2, nwd, C):
     print(f"  → Target: NWD mean ≈ 0.3-0.7 for useful gradients")
     print(f"{'=' * 60}\n")
 
-    _NWD_DEBUG_DONE = True
+    _NWD_DEBUG_DONE = True  # Set to True AFTER printing (inside function)
 
 
 def reset_nwd_debug():
@@ -292,12 +292,12 @@ class BboxLoss(nn.Module):
 
         # Section H: NWD (Normalized Wasserstein Distance) defaults
         # NWD provides better gradient signal for small objects
-        self.use_nwd = False  # Enable NWD loss
+        self.use_nwd = True  # Enable NWD loss by default
         self.nwd_mode = 'blend'  # 'pure', 'blend', 'small_only'
         self.nwd_weight = 0.5  # Weight for NWD when blending (0-1)
-        self.nwd_C = 4.0  # NWD normalization constant
+        self.nwd_C = 12.0  # NWD normalization constant (increased from 4.0)
         # Paper uses ~12.8 for PIXEL coords
-        # For stride-normalized coords, use 2-6
+        # For YOLO grid-normalized coords, use 10-15
         self.nwd_small_threshold = 32.0  # Area threshold for 'small_only' mode (stride-normalized coords²)
 
     def set_params(self, hyp):
@@ -611,11 +611,11 @@ class v8DetectionLoss:
         #   - 'blend': Weighted combination of CIoU + NWD (recommended)
         #   - 'small_only': NWD for small objects, CIoU for larger ones
         # C: Paper uses ~12.8 for AI-TOD in PIXEL coords
-        #    For stride-normalized coords (YOLO), use C ≈ 2-6
+        #    For YOLO grid-normalized coords, use C ≈ 10-15
         self.use_nwd = getattr(h, 'use_nwd', True)
         self.nwd_mode = getattr(h, 'nwd_mode', 'blend')
         self.nwd_weight = getattr(h, 'nwd_weight', 0.5)  # Weight for NWD in blend mode
-        self.nwd_C = getattr(h, 'nwd_C', 4.0)  # Start with 4, tune based on debug output
+        self.nwd_C = getattr(h, 'nwd_C', 12.0)  # Increased from 4.0
         self.nwd_small_threshold = getattr(h, 'nwd_small_threshold', 32.0)  # For small_only mode
 
         # =====================================================================
