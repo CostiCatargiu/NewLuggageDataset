@@ -113,7 +113,7 @@ def wasserstein2_squared(pred_bboxes, target_bboxes, eps=1e-7):
 # NWD Debug Helpers (defined BEFORE nwd_loss for proper ordering)
 # =============================================================================
 
-_NWD_DEBUG_DONE = False
+_NWD_DEBUG_DONE = True
 
 
 def nwd_debug_print(w2, nwd, C):
@@ -612,7 +612,7 @@ class v8DetectionLoss:
         #   - 'small_only': NWD for small objects, CIoU for larger ones
         # C: Paper uses ~12.8 for AI-TOD in PIXEL coords
         #    For stride-normalized coords (YOLO), use C ≈ 2-6
-        self.use_nwd = getattr(h, 'use_nwd', False)
+        self.use_nwd = getattr(h, 'use_nwd', True)
         self.nwd_mode = getattr(h, 'nwd_mode', 'blend')
         self.nwd_weight = getattr(h, 'nwd_weight', 0.5)  # Weight for NWD in blend mode
         self.nwd_C = getattr(h, 'nwd_C', 4.0)            # Start with 4, tune based on debug output
