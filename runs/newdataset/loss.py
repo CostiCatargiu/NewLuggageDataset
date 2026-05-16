@@ -387,6 +387,9 @@ class BboxLoss(nn.Module):
 
         # Combined weight (SWA)
         weight = alpha * area_weight + (1 - alpha) * score_weight
+        # Squeeze weight to 1D to match loss shapes (N,)
+        if weight.dim() > 1:
+            weight = weight.squeeze(-1)
 
         # Get foreground boxes
         pred_fg = pred_bboxes[fg_mask]
