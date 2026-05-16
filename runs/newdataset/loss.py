@@ -113,7 +113,7 @@ def wasserstein2_squared(pred_bboxes, target_bboxes, eps=1e-7):
 # NWD Debug Helpers (defined BEFORE nwd_loss for proper ordering)
 # =============================================================================
 
-_NWD_DEBUG_DONE = True
+_NWD_DEBUG_DONE = False  # Start as False so debug prints once
 
 
 def nwd_debug_print(w2, nwd, C):
@@ -135,7 +135,7 @@ def nwd_debug_print(w2, nwd, C):
     print(f"  → Target: NWD mean ≈ 0.3-0.7 for useful gradients")
     print(f"{'=' * 60}\n")
 
-    _NWD_DEBUG_DONE = True
+    _NWD_DEBUG_DONE = True  # Set to True AFTER printing (inside function)
 
 
 def reset_nwd_debug():
@@ -292,12 +292,11 @@ class BboxLoss(nn.Module):
 
         # Section H: NWD (Normalized Wasserstein Distance) defaults
         # NWD provides better gradient signal for small objects
-        self.use_nwd = False  # Enable NWD loss
+        self.use_nwd = True  # Enable NWD loss by default
         self.nwd_mode = 'blend'  # 'pure', 'blend', 'small_only'
         self.nwd_weight = 0.5  # Weight for NWD when blending (0-1)
-        self.nwd_C = 4.0  # NWD normalization constant
-        # Paper uses ~12.8 for PIXEL coords
-        # For stride-normalized coords, use 2-6
+        self.nwd_C = 6.0  # NWD normalization constant (debug showed C=12 gave NWD mean=0.88, too high)
+        # Target: NWD mean 0.3-0.7 for useful gradients
         self.nwd_small_threshold = 32.0  # Area threshold for 'small_only' mode (stride-normalized coords²)
 
     def set_params(self, hyp):
@@ -398,6 +397,8 @@ class BboxLoss(nn.Module):
         # =====================================================================
         # Always compute CIoU first
         iou = bbox_iou(pred_fg, target_fg, xywh=False, CIoU=True)
+        if iou.dim() > 1:
+            iou = iou.squeeze(-1)  # Remove extra dimension from bbox_iou
         ciou_loss = 1.0 - iou  # CIoU loss in [0, 1]
 
         if self.use_nwd:
@@ -610,12 +611,12 @@ class v8DetectionLoss:
         #   - 'pure': Use only NWD (no CIoU)
         #   - 'blend': Weighted combination of CIoU + NWD (recommended)
         #   - 'small_only': NWD for small objects, CIoU for larger ones
-        # C: Paper uses ~12.8 for AI-TOD in PIXEL coords
-        #    For stride-normalized coords (YOLO), use C ≈ 2-6
+        # C: Debug showed C=12 gave NWD mean=0.88 (too high), use C=6
+        #    Target: NWD mean 0.3-0.7 for useful gradients
         self.use_nwd = getattr(h, 'use_nwd', True)
         self.nwd_mode = getattr(h, 'nwd_mode', 'blend')
         self.nwd_weight = getattr(h, 'nwd_weight', 0.5)  # Weight for NWD in blend mode
-        self.nwd_C = getattr(h, 'nwd_C', 4.0)  # Start with 4, tune based on debug output
+        self.nwd_C = getattr(h, 'nwd_C', 6.0)  # Reduced from 12.0 based on debug output
         self.nwd_small_threshold = getattr(h, 'nwd_small_threshold', 32.0)  # For small_only mode
 
         # =====================================================================
