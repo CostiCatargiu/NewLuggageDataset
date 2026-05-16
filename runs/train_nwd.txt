@@ -38,9 +38,9 @@ Starting in 5 seconds... (Ctrl+C to cancel)
 
   [OK] Model loaded: yolov12s.pt
   [OK] Epoch sync callback registered
-New https://pypi.org/project/ultralytics/8.4.50 available 😃 Update with 'pip install -U ultralytics'
+New https://pypi.org/project/ultralytics/8.4.51 available 😃 Update with 'pip install -U ultralytics'
 Ultralytics 8.3.63 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
-engine/trainer: task=detect, mode=train, model=yolov12s.pt, data=/home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30percentagesubsetNEW/data.yaml, epochs=80, time=None, patience=100, batch=58, imgsz=640, save=True, save_period=-1, cache=False, device=0, workers=8, project=runs_satal3_ablation, name=R3_factor1.5_beta5.035, exist_ok=False, pretrained=True, optimizer=auto, verbose=True, seed=0, deterministic=True, single_cls=False, rect=False, cos_lr=False, close_mosaic=10, resume=False, amp=True, fraction=1.0, profile=False, freeze=None, multi_scale=False, overlap_mask=True, mask_ratio=4, dropout=0.0, val=True, split=val, save_json=False, save_hybrid=False, conf=None, iou=0.7, max_det=300, half=False, dnn=False, plots=True, source=None, vid_stride=1, stream_buffer=False, visualize=False, augment=False, agnostic_nms=False, classes=None, retina_masks=False, embed=None, show=False, save_frames=False, save_txt=False, save_conf=False, save_crop=False, show_labels=True, show_conf=True, show_boxes=True, line_width=None, format=torchscript, keras=False, optimize=False, int8=False, dynamic=False, simplify=True, opset=None, workspace=None, nms=False, lr0=0.01, lrf=0.01, momentum=0.937, weight_decay=0.0005, warmup_epochs=3.0, warmup_momentum=0.8, warmup_bias_lr=0.0, box=7.5, cls=0.5, dfl=1.5, pose=12.0, kobj=1.0, nbs=64, hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, degrees=0.0, translate=0.1, scale=0.5, shear=0.0, perspective=0.0, flipud=0.0, fliplr=0.5, bgr=0.0, mosaic=1.0, mixup=0.0, copy_paste=0.1, copy_paste_mode=flip, auto_augment=randaugment, erasing=0.4, crop_fraction=1.0, cfg=None, tracker=botsort.yaml, alpha_start=0.7, alpha_end=0.4, alpha_min=0.3, alpha_max=0.7, small_obj_px=48, small_obj_boost=1.0, area_weight_min=0.4, area_weight_mode=log_inverse, center_loss_weight_init=0.0, center_loss_weight_min=0.0, center_loss_decay_epochs=35, iou_clip_start=1000.0, iou_clip_end=1000.0, dfl_clip_start=1000.0, dfl_clip_end=1000.0, use_percentile_clip=False, clip_percentile=0.95, class_frequencies=[0.267, 0.219, 0.513], class_balance_strength=1.0, use_satal=True, satal_alpha_small=1.2, satal_beta_small=5.0, satal_alpha_large=1.0, satal_beta_large=6.0, satal_small_area=0.0025, satal_large_area=0.0225, satal_topk_factor=1.5, tal_topk=10, tal_alpha=0.6, tal_beta=5.0, use_size_weighting=False, save_dir=runs_satal3_ablation/R3_factor1.5_beta5.035
+engine/trainer: task=detect, mode=train, model=yolov12s.pt, data=/home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30percentagesubsetNEW/data.yaml, epochs=80, time=None, patience=100, batch=58, imgsz=640, save=True, save_period=-1, cache=False, device=0, workers=8, project=runs_satal3_ablation, name=R3_factor1.5_beta5.036, exist_ok=False, pretrained=True, optimizer=auto, verbose=True, seed=0, deterministic=True, single_cls=False, rect=False, cos_lr=False, close_mosaic=10, resume=False, amp=True, fraction=1.0, profile=False, freeze=None, multi_scale=False, overlap_mask=True, mask_ratio=4, dropout=0.0, val=True, split=val, save_json=False, save_hybrid=False, conf=None, iou=0.7, max_det=300, half=False, dnn=False, plots=True, source=None, vid_stride=1, stream_buffer=False, visualize=False, augment=False, agnostic_nms=False, classes=None, retina_masks=False, embed=None, show=False, save_frames=False, save_txt=False, save_conf=False, save_crop=False, show_labels=True, show_conf=True, show_boxes=True, line_width=None, format=torchscript, keras=False, optimize=False, int8=False, dynamic=False, simplify=True, opset=None, workspace=None, nms=False, lr0=0.01, lrf=0.01, momentum=0.937, weight_decay=0.0005, warmup_epochs=3.0, warmup_momentum=0.8, warmup_bias_lr=0.0, box=7.5, cls=0.5, dfl=1.5, pose=12.0, kobj=1.0, nbs=64, hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, degrees=0.0, translate=0.1, scale=0.5, shear=0.0, perspective=0.0, flipud=0.0, fliplr=0.5, bgr=0.0, mosaic=1.0, mixup=0.0, copy_paste=0.1, copy_paste_mode=flip, auto_augment=randaugment, erasing=0.4, crop_fraction=1.0, cfg=None, tracker=botsort.yaml, alpha_start=0.7, alpha_end=0.4, alpha_min=0.3, alpha_max=0.7, small_obj_px=48, small_obj_boost=1.0, area_weight_min=0.4, area_weight_mode=log_inverse, center_loss_weight_init=0.0, center_loss_weight_min=0.0, center_loss_decay_epochs=35, iou_clip_start=1000.0, iou_clip_end=1000.0, dfl_clip_start=1000.0, dfl_clip_end=1000.0, use_percentile_clip=False, clip_percentile=0.95, class_frequencies=[0.267, 0.219, 0.513], class_balance_strength=1.0, use_satal=True, satal_alpha_small=1.2, satal_beta_small=5.0, satal_alpha_large=1.0, satal_beta_large=6.0, satal_small_area=0.0025, satal_large_area=0.0225, satal_topk_factor=1.5, tal_topk=10, tal_alpha=0.6, tal_beta=5.0, use_size_weighting=False, save_dir=runs_satal3_ablation/R3_factor1.5_beta5.036
 Overriding model.yaml nc=80 with nc=3
 
                    from  n    params  module                                       arguments                     
@@ -81,12 +81,12 @@ train: WARNING ⚠️ /home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30per
 train: WARNING ⚠️ /home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30percentagesubsetNEW/train/images/train_Handbag_d7994600d2ee72d9_jpg.rf.cb923b3a51e94c301feb202da43204ec.jpg: 1 duplicate labels removed
 WARNING ⚠️ Box and segment counts should be equal, but got len(segments) = 5, len(boxes) = 33891. To resolve this only boxes will be used and all segments will be removed. To avoid this please supply either a detect or segment dataset, not a detect-segment mixed dataset.
 val: Scanning /home/constantin/Doctorat/LuggageDataset_v2i_YOLOV12_30percentagesubsetNEW/test/labels.cache... 398 images, 0 backgrounds, 0 corrupt: 100%|██████████| 398/398 [00:00<?, ?it/s]
-Plotting labels to runs_satal3_ablation/R3_factor1.5_beta5.035/labels.jpg... 
+Plotting labels to runs_satal3_ablation/R3_factor1.5_beta5.036/labels.jpg... 
 optimizer: 'optimizer=auto' found, ignoring 'lr0=0.01' and 'momentum=0.937' and determining best 'optimizer', 'lr0' and 'momentum' automatically... 
 optimizer: AdamW(lr=0.001429, momentum=0.9) with parameter groups 121 weight(decay=0.0), 128 weight(decay=0.000453125), 127 bias(decay=0.0)
 Image sizes 640 train, 640 val
 Using 8 dataloader workers
-Logging results to runs_satal3_ablation/R3_factor1.5_beta5.035
+Logging results to runs_satal3_ablation/R3_factor1.5_beta5.036
 Starting training for 80 epochs...
 
       Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
@@ -142,7 +142,7 @@ SATAL-SWA-Plus-NWD Detection Loss Configuration
   → Target: NWD mean ≈ 0.3-0.7 for useful gradients
 ============================================================
 
-       1/80      22.2G       3237      2.568     0.6183        371        640: 100%|██████████| 131/131 [00:52<00:00,  2.50it/s]
+       1/80      22.2G       3237      2.568     0.6183        371        640: 100%|██████████| 131/131 [00:52<00:00,  2.49it/s]
                  Class     Images  Instances      Box(P          R      mAP50  mAP50-95):   0%|          | 0/4 [00:00<?, ?it/s]
 ============================================================
 SATAL-SWA-Plus-NWD Detection Loss Configuration
@@ -181,13 +181,30 @@ SATAL-SWA-Plus-NWD Detection Loss Configuration
 =======================================================
 
 [Alpha] Epoch 0/80: α=0.700
-                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 4/4 [00:01<00:00,  3.38it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 4/4 [00:01<00:00,  3.37it/s]
                    all        398       1918      0.467      0.133      0.146     0.0661
 
       Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
-       2/80      22.3G       3682      2.389     0.7133        288        640: 100%|██████████| 131/131 [00:52<00:00,  2.51it/s]
-                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 4/4 [00:01<00:00,  3.34it/s]
+       2/80      22.3G       3682      2.389     0.7133        288        640: 100%|██████████| 131/131 [00:52<00:00,  2.48it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 4/4 [00:01<00:00,  3.73it/s]
                    all        398       1918      0.168      0.177      0.107     0.0435
 
       Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
-       3/80      22.2G       3866      2.406     0.7488        432        640:  82%|████████▏ | 107/131 [00:43<00:10,  2.37it/s]
+       3/80      22.2G       3854      2.401     0.7511        328        640: 100%|██████████| 131/131 [00:52<00:00,  2.51it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 4/4 [00:01<00:00,  3.31it/s]
+                   all        398       1918     0.0604       0.12     0.0289    0.00685
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+       4/80      22.3G       3866      2.339     0.7669        359        640: 100%|██████████| 131/131 [00:52<00:00,  2.50it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 4/4 [00:01<00:00,  3.80it/s]
+                   all        398       1918      0.234      0.224      0.181     0.0781
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+       5/80      22.2G       3790      2.223     0.7574        301        640: 100%|██████████| 131/131 [00:52<00:00,  2.50it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 4/4 [00:01<00:00,  3.95it/s]
+                   all        398       1918      0.388      0.314      0.277      0.126
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+       6/80      22.4G       3847      2.197     0.7738        374        640: 100%|██████████| 131/131 [00:53<00:00,  2.46it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 4/4 [00:01<00:00,  3.92it/s]
+                   all        398       1918      0.397      0.285      0.269      0.128
