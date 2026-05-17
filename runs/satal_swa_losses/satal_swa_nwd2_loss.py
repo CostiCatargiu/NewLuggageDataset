@@ -1,23 +1,18 @@
 # Ultralytics AGPL-3.0 License - https://ultralytics.com/license
 # =============================================================================
-# SATAL-SWA-Plus-NWD: Combined Loss Function with Normalized Wasserstein Distance
+# SATAL-SWA-Plus: Combined Loss Function
 # =============================================================================
-# 
+#
 # Base: loss_satal_swa.py (SATAL + SWA)
 # Added from CustomLoss2:
 #   - Class Weighting (inverse-frequency weights for class imbalance)
 #   - Varifocal Loss (better for dense scenes)
-# Added NWD:
-#   - Normalized Wasserstein Distance for small object detection
-#   - Better gradient signal for small boxes (IoU degrades rapidly)
-#   - Paper: "A Normalized Gaussian Wasserstein Distance for Tiny Object Detection"
 #
 # =============================================================================
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
 
 from ultralytics.utils.ops import xywh2xyxy, xyxy2xywh, crop_mask
 from ultralytics.utils.tal import RotatedTaskAlignedAssigner, TaskAlignedAssigner, dist2bbox, dist2rbox, make_anchors
@@ -26,123 +21,6 @@ from ultralytics.utils.metrics import OKS_SIGMA
 
 from .metrics import bbox_iou, probiou
 from .tal import bbox2dist
-
-
-# =============================================================================
-# NWD (Normalized Wasserstein Distance) IMPLEMENTATION
-# =============================================================================
-
-
-def xyxy2cxcywh(bboxes):
-    """Convert xyxy format to center-x, center-y, width, height format."""
-    cx = (bboxes[..., 0] + bboxes[..., 2]) / 2
-    cy = (bboxes[..., 1] + bboxes[..., 3]) / 2
-    w = bboxes[..., 2] - bboxes[..., 0]
-    h = bboxes[..., 3] - bboxes[..., 1]
-    return torch.stack([cx, cy, w, h], dim=-1)
-
-
-def wasserstein_distance(pred_bboxes, target_bboxes, eps=1e-7):
-    """
-    Compute Wasserstein distance between two sets of bounding boxes.
-    
-    Treats each bbox as a 2D Gaussian distribution:
-    - Center (cx, cy) as the mean
-    - (w/2, h/2) as the standard deviation
-    
-    Wasserstein-2 distance between two Gaussians:
-    W2^2 = ||μ1 - μ2||^2 + ||σ1 - σ2||^2
-    
-    Args:
-        pred_bboxes: Predicted boxes in xyxy format (N, 4)
-        target_bboxes: Target boxes in xyxy format (N, 4)
-        eps: Small value for numerical stability
-    
-    Returns:
-        Wasserstein distance (N,)
-    """
-    # Convert to center format
-    pred_cxcywh = xyxy2cxcywh(pred_bboxes)
-    target_cxcywh = xyxy2cxcywh(target_bboxes)
-    
-    # Extract components
-    pred_cx, pred_cy = pred_cxcywh[..., 0], pred_cxcywh[..., 1]
-    pred_w, pred_h = pred_cxcywh[..., 2].clamp(min=eps), pred_cxcywh[..., 3].clamp(min=eps)
-    
-    target_cx, target_cy = target_cxcywh[..., 0], target_cxcywh[..., 1]
-    target_w, target_h = target_cxcywh[..., 2].clamp(min=eps), target_cxcywh[..., 3].clamp(min=eps)
-    
-    # Gaussian parameters: σ = size / 2 (half-width/height as std dev)
-    pred_sigma_x, pred_sigma_y = pred_w / 2, pred_h / 2
-    target_sigma_x, target_sigma_y = target_w / 2, target_h / 2
-    
-    # Wasserstein-2 distance squared
-    # W2^2 = (cx1-cx2)^2 + (cy1-cy2)^2 + (σx1-σx2)^2 + (σy1-σy2)^2
-    center_dist_sq = (pred_cx - target_cx) ** 2 + (pred_cy - target_cy) ** 2
-    sigma_dist_sq = (pred_sigma_x - target_sigma_x) ** 2 + (pred_sigma_y - target_sigma_y) ** 2
-    
-    wasserstein_sq = center_dist_sq + sigma_dist_sq
-    wasserstein = torch.sqrt(wasserstein_sq + eps)
-    
-    return wasserstein
-
-
-def normalized_wasserstein_distance(pred_bboxes, target_bboxes, C=2.0, eps=1e-7):
-    """
-    Compute Normalized Wasserstein Distance (NWD) between bounding boxes.
-    
-    NWD = exp(-W2 / C)
-    
-    Where:
-    - W2 is the Wasserstein-2 distance
-    - C is a normalization constant (typically sqrt(w_gt * h_gt) or fixed)
-    
-    Args:
-        pred_bboxes: Predicted boxes in xyxy format (N, 4)
-        target_bboxes: Target boxes in xyxy format (N, 4)
-        C: Normalization constant. If float, uses fixed value.
-           If 'adaptive', uses sqrt(target_area) for each box.
-        eps: Small value for numerical stability
-    
-    Returns:
-        NWD score in range (0, 1] where 1 = perfect match (N,)
-    """
-    wasserstein = wasserstein_distance(pred_bboxes, target_bboxes, eps)
-    
-    # Adaptive normalization based on target box size
-    target_cxcywh = xyxy2cxcywh(target_bboxes)
-    target_w = target_cxcywh[..., 2].clamp(min=eps)
-    target_h = target_cxcywh[..., 3].clamp(min=eps)
-    
-    # C = sqrt(w * h) = sqrt(area) - scales with object size
-    C_adaptive = torch.sqrt(target_w * target_h)
-    
-    # Use adaptive C but with a minimum to avoid explosion for tiny objects
-    C_final = C_adaptive.clamp(min=C)
-    
-    # NWD = exp(-W2 / C)
-    nwd = torch.exp(-wasserstein / C_final)
-    
-    return nwd
-
-
-def nwd_loss(pred_bboxes, target_bboxes, C=2.0, eps=1e-7):
-    """
-    Compute NWD-based loss for bounding box regression.
-    
-    Loss = 1 - NWD (so lower is better, like IoU loss)
-    
-    Args:
-        pred_bboxes: Predicted boxes in xyxy format (N, 4)
-        target_bboxes: Target boxes in xyxy format (N, 4)
-        C: Normalization constant for NWD
-        eps: Small value for numerical stability
-    
-    Returns:
-        NWD loss in range [0, 1) where 0 = perfect match (N,)
-    """
-    nwd = normalized_wasserstein_distance(pred_bboxes, target_bboxes, C, eps)
-    return 1.0 - nwd
 
 
 # =============================================================================
@@ -219,10 +97,8 @@ class DFLoss(nn.Module):
 
 class BboxLoss(nn.Module):
     """
-    Bounding box loss with SWA (Size Weight Adaptive) and NWD (Normalized Wasserstein Distance).
-    
-    NWD is especially beneficial for small objects where IoU degrades rapidly.
-    Can use pure NWD, pure CIoU, or a blend of both.
+    Bounding box loss with SWA (Size Weight Adaptive) from loss_satal_swa.py.
+    Same as original - no changes needed here.
     """
 
     def __init__(self, reg_max=16):
@@ -247,13 +123,32 @@ class BboxLoss(nn.Module):
         self.iou_clip_end = 10.0
         self.dfl_clip_start = 10.0
         self.dfl_clip_end = 5.0
+        # NWD for tiny objects (Step 1: regression only)
+        self.use_nwd = True
+        self.nwd_ratio = 0.5
+        self.nwd_constant = 2.0
 
-        # Section H: NWD (Normalized Wasserstein Distance) defaults
-        self.use_nwd = False              # Enable NWD loss
-        self.nwd_mode = 'blend'           # 'pure', 'blend', 'small_only'
-        self.nwd_weight = 0.5             # Weight for NWD when blending (0-1)
-        self.nwd_C = 2.0                  # NWD normalization constant
-        self.nwd_small_threshold = 0.01   # Area threshold for 'small_only' mode (normalized)
+    def normalized_wasserstein_distance(self, pred, target, constant=4.0, eps=1e-7):
+        """
+        NWD similarity in [0, 1] for xyxy boxes in the SAME coordinate space.
+        Each box -> 2D Gaussian (center = mean, half-extent = sigma).
+        """
+        pred_cx = (pred[..., 0] + pred[..., 2]) / 2
+        pred_cy = (pred[..., 1] + pred[..., 3]) / 2
+        tgt_cx = (target[..., 0] + target[..., 2]) / 2
+        tgt_cy = (target[..., 1] + target[..., 3]) / 2
+
+        pred_w = (pred[..., 2] - pred[..., 0]).clamp(min=eps)
+        pred_h = (pred[..., 3] - pred[..., 1]).clamp(min=eps)
+        tgt_w = (target[..., 2] - target[..., 0]).clamp(min=eps)
+        tgt_h = (target[..., 3] - target[..., 1]).clamp(min=eps)
+
+        center_dist = (pred_cx - tgt_cx).pow(2) + (pred_cy - tgt_cy).pow(2)
+        size_dist = ((pred_w - tgt_w) / 2).pow(2) + ((pred_h - tgt_h) / 2).pow(2)
+
+        w2 = center_dist + size_dist
+        nwd = torch.exp(-torch.sqrt(w2 + eps) / constant)
+        return nwd
 
     def set_params(self, hyp):
         """Set parameters from hyperparameters (model.args)."""
@@ -272,12 +167,10 @@ class BboxLoss(nn.Module):
         self.dfl_clip_start = getattr(hyp, 'dfl_clip_start', self.dfl_clip_start)
         self.dfl_clip_end = getattr(hyp, 'dfl_clip_end', self.dfl_clip_end)
 
-        # Section H: NWD parameters
+        # NWD
         self.use_nwd = getattr(hyp, 'use_nwd', self.use_nwd)
-        self.nwd_mode = getattr(hyp, 'nwd_mode', self.nwd_mode)
-        self.nwd_weight = getattr(hyp, 'nwd_weight', self.nwd_weight)
-        self.nwd_C = getattr(hyp, 'nwd_C', self.nwd_C)
-        self.nwd_small_threshold = getattr(hyp, 'nwd_small_threshold', self.nwd_small_threshold)
+        self.nwd_ratio = getattr(hyp, 'nwd_ratio', self.nwd_ratio)
+        self.nwd_constant = getattr(hyp, 'nwd_constant', self.nwd_constant)
 
     def _get_dynamic_alpha(self):
         """Calculate dynamic alpha based on training progress."""
@@ -334,7 +227,7 @@ class BboxLoss(nn.Module):
 
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes,
                 target_scores, target_scores_sum, fg_mask, stride=None):
-        """Compute IoU/NWD and DFL losses with SWA weighting."""
+        """Compute IoU and DFL losses with SWA weighting."""
 
         alpha = self._get_dynamic_alpha()
         score_weight, area_weight = self._compute_weights(
@@ -344,62 +237,38 @@ class BboxLoss(nn.Module):
         # Combined weight (SWA)
         weight = alpha * area_weight + (1 - alpha) * score_weight
 
-        # Get foreground boxes
-        pred_fg = pred_bboxes[fg_mask]
-        target_fg = target_bboxes[fg_mask]
+        # IoU loss per sample
+        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
+        ciou_loss = 1.0 - iou
 
-        # =====================================================================
-        # Compute box regression loss (IoU, NWD, or blend)
-        # =====================================================================
         if self.use_nwd:
-            # Compute both IoU and NWD
-            iou = bbox_iou(pred_fg, target_fg, xywh=False, CIoU=True)
-            nwd = normalized_wasserstein_distance(pred_fg, target_fg, C=self.nwd_C)
-            
-            ciou_loss = 1.0 - iou
-            nwd_loss_val = 1.0 - nwd
-            
-            if self.nwd_mode == 'pure':
-                # Pure NWD loss
-                per_sample_box_loss = nwd_loss_val * weight
-                
-            elif self.nwd_mode == 'blend':
-                # Weighted blend of CIoU and NWD
-                # loss = (1 - nwd_weight) * CIoU_loss + nwd_weight * NWD_loss
-                blended_loss = (1 - self.nwd_weight) * ciou_loss + self.nwd_weight * nwd_loss_val
-                per_sample_box_loss = blended_loss * weight
-                
-            elif self.nwd_mode == 'small_only':
-                # Use NWD only for small objects, CIoU for larger ones
-                # Compute normalized areas for foreground targets
-                target_areas = (target_fg[..., 2] - target_fg[..., 0]) * \
-                               (target_fg[..., 3] - target_fg[..., 1])
-                # Note: target_bboxes are already normalized by stride
-                is_small = target_areas < self.nwd_small_threshold
-                
-                # Use NWD for small, CIoU for large
-                per_sample_loss = torch.where(
-                    is_small.unsqueeze(-1) if is_small.dim() < weight.dim() else is_small,
-                    nwd_loss_val,
-                    ciou_loss
-                )
-                per_sample_box_loss = per_sample_loss * weight
-            else:
-                # Fallback to pure CIoU
-                per_sample_box_loss = ciou_loss * weight
+            nwd = self.normalized_wasserstein_distance(
+                pred_bboxes[fg_mask], target_bboxes[fg_mask],
+                constant=self.nwd_constant
+            ).unsqueeze(-1)
+            box_term = (1.0 - self.nwd_ratio) * ciou_loss + self.nwd_ratio * (1.0 - nwd)
         else:
-            # Standard CIoU loss (no NWD)
-            iou = bbox_iou(pred_fg, target_fg, xywh=False, CIoU=True)
-            per_sample_box_loss = (1.0 - iou) * weight
+            box_term = ciou_loss
+
+        per_sample_iou_loss = box_term * weight
+
+        if self.use_nwd:
+            if not hasattr(self, '_nwd_dbg_count'):
+                self._nwd_dbg_count = 0
+            if self._nwd_dbg_count < 50:
+                print(f"[NWD debug] nwd mean={nwd.mean().item():.4f} "
+                      f"min={nwd.min().item():.4f} max={nwd.max().item():.4f}")
+                self._nwd_dbg_count += 1
+
 
         # Get adaptive clip values
         max_iou_clip, max_dfl_clip = self._get_gradient_clip_values()
 
         # Clip PER-SAMPLE
-        per_sample_box_loss = per_sample_box_loss.clamp(max=max_iou_clip / 10.0)
+        per_sample_iou_loss = per_sample_iou_loss.clamp(max=max_iou_clip / 10.0)
 
         # Aggregate
-        loss_iou = per_sample_box_loss.sum() / target_scores_sum
+        loss_iou = per_sample_iou_loss.sum() / target_scores_sum
 
         # DFL loss per sample
         if self.dfl_loss:
@@ -471,7 +340,7 @@ class KeypointLoss(nn.Module):
 class v8DetectionLoss:
     """
     SATAL-SWA-Plus Detection Loss.
-    
+
     Base: loss_satal_swa.py (SATAL + SWA)
     Added from CustomLoss2:
       - Class Weighting (inverse-frequency weights)
@@ -561,20 +430,6 @@ class v8DetectionLoss:
         # Using BCE + Class Weighting (no VFL - VFL hurt performance with SATAL)
 
         # =====================================================================
-        # Section H: NWD (Normalized Wasserstein Distance) for small objects
-        # =====================================================================
-        # NWD provides better gradient signal for small objects where IoU degrades
-        # Modes:
-        #   - 'pure': Use only NWD (no CIoU)
-        #   - 'blend': Weighted combination of CIoU + NWD (recommended)
-        #   - 'small_only': NWD for small objects, CIoU for larger ones
-        self.use_nwd = getattr(h, 'use_nwd', False)
-        self.nwd_mode = getattr(h, 'nwd_mode', 'blend')
-        self.nwd_weight = getattr(h, 'nwd_weight', 0.5)  # Weight for NWD in blend mode
-        self.nwd_C = getattr(h, 'nwd_C', 2.0)            # Normalization constant
-        self.nwd_small_threshold = getattr(h, 'nwd_small_threshold', 0.01)  # For small_only mode
-
-        # =====================================================================
         # LOSS FUNCTIONS
         # =====================================================================
 
@@ -616,7 +471,7 @@ class v8DetectionLoss:
         """Print current configuration for verification."""
         if not hasattr(self, '_config_printed'):
             print("\n" + "=" * 60)
-            print("SATAL-SWA-Plus-NWD Detection Loss Configuration")
+            print("SATAL-SWA-Plus Detection Loss Configuration")
             print("=" * 60)
             print(f"  [A] alpha_start:     {self.alpha_start}")
             print(f"  [A] alpha_end:       {self.alpha_end}")
@@ -635,13 +490,6 @@ class v8DetectionLoss:
             print(f"  [F] Class Weighting: ALWAYS ON")
             print(f"      weights (bp/bg/tr): {self.class_weights.cpu().numpy().round(3)}")
             print(f"  [G] Cls Loss: BCE + Class Weighting (no VFL)")
-            print(f"  [H] use_nwd:         {self.use_nwd}")
-            if self.use_nwd:
-                print(f"      nwd_mode:        {self.nwd_mode}")
-                print(f"      nwd_weight:      {self.nwd_weight}")
-                print(f"      nwd_C:           {self.nwd_C}")
-                if self.nwd_mode == 'small_only':
-                    print(f"      nwd_small_thresh: {self.nwd_small_threshold}")
             print(f"  epochs:              {self.total_epochs}")
             print("=" * 60 + "\n")
             self._config_printed = True
@@ -727,29 +575,29 @@ class v8DetectionLoss:
                                    target_labels_for_fg, target_scores_sum):
         """
         Compute class-weighted BCE classification loss.
-        
+
         Uses standard BCE with per-anchor class weighting based on inverse
         class frequency. No Varifocal Loss - just simple weighted BCE.
-        
+
         Class weights: backpack≈1.08, bag≈1.19, trolley≈0.78
         """
         dtype = pred_scores.dtype
         bs, num_anchors, nc = pred_scores.shape
-        
+
         # Standard BCE loss
         bce = self.bce(pred_scores, target_scores.to(dtype))  # (bs, num_anchors, nc)
-        
+
         # Build per-anchor weight tensor for class weighting
         weight = torch.ones(bs, num_anchors, 1, device=self.device, dtype=dtype)
-        
+
         if fg_mask.any() and target_labels_for_fg.numel() > 0:
             # Apply class weights to foreground anchors
             fg_class_weights = self.class_weights.to(dtype)[target_labels_for_fg]
             weight[fg_mask] = fg_class_weights.unsqueeze(-1)
-        
+
         # Weighted sum, normalized by target_scores_sum
         loss = (bce * weight).sum() / target_scores_sum
-        
+
         return loss
 
     # =========================================================================
@@ -1031,7 +879,8 @@ class v8PoseLoss(v8DetectionLoss):
         y[..., 1] += anchor_points[:, [1]] - 0.5
         return y
 
-    def calculate_keypoints_loss(self, masks, target_gt_idx, keypoints, batch_idx, stride_tensor, target_bboxes, pred_kpts):
+    def calculate_keypoints_loss(self, masks, target_gt_idx, keypoints, batch_idx, stride_tensor, target_bboxes,
+                                 pred_kpts):
         batch_idx = batch_idx.flatten()
         batch_size = len(masks)
 
@@ -1132,7 +981,8 @@ class v8SegmentationLoss(v8DetectionLoss):
         return loss.sum() * batch_size, loss.detach()
 
     @staticmethod
-    def calculate_segmentation_loss(fg_mask, masks, target_gt_idx, target_bboxes, batch_idx, proto, pred_masks, imgsz, overlap):
+    def calculate_segmentation_loss(fg_mask, masks, target_gt_idx, target_bboxes, batch_idx, proto, pred_masks, imgsz,
+                                    overlap):
         mask_h, mask_w = masks.shape[1:]
         loss = 0
 
@@ -1142,7 +992,7 @@ class v8SegmentationLoss(v8DetectionLoss):
         mxyxy = target_bboxes_normalized * torch.tensor([mask_w, mask_h, mask_w, mask_h], device=proto.device)
 
         for i, single_i in enumerate(
-            zip(fg_mask, target_gt_idx, pred_masks, proto, mxyxy, marea, target_bboxes_normalized)
+                zip(fg_mask, target_gt_idx, pred_masks, proto, mxyxy, marea, target_bboxes_normalized)
         ):
             fg_mask_i, target_gt_idx_i, pred_masks_i, proto_i, mxyxy_i, marea_i, target_bboxes_i = single_i
 
@@ -1163,6 +1013,7 @@ class v8SegmentationLoss(v8DetectionLoss):
         pred_mask = (pred @ proto.view(proto.shape[0], -1)).view(-1, proto.shape[1], proto.shape[2])
         loss = F.binary_cross_entropy_with_logits(pred_mask, gt_mask, reduction="none")
         return (crop_mask(loss, xyxy).mean(dim=(1, 2)) / area).sum()
+
 
 class E2EDetectLoss:
     """
