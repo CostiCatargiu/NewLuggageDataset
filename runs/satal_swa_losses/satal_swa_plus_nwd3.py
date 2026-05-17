@@ -126,13 +126,15 @@ class BboxLoss(nn.Module):
         # NWD for tiny objects (Step 1: regression only)
         self.use_nwd = True
         self.nwd_ratio = 0.5
-        self.nwd_constant = 2.0
+        self.nwd_constant = 1.0
         self.nwd_small_only = True       # <-- gate NWD to small boxes only
 
-    def normalized_wasserstein_distance(self, pred, target, constant=4.0, eps=1e-7):
+    def normalized_wasserstein_distance(self, pred, target, constant=1.0, eps=1e-7):
         """
-        NWD similarity in [0, 1] for xyxy boxes in the SAME coordinate space.
-        Each box -> 2D Gaussian (center = mean, half-extent = sigma).
+        Scale-normalized NWD similarity in [0, 1] for xyxy boxes.
+        Center and size distances are normalized by target box dimensions,
+        making the metric scale- and aspect-ratio-invariant. This addresses
+        the train/test box-shape shift (H/W ~1.4 train vs ~2.6 test).
         """
         pred_cx = (pred[..., 0] + pred[..., 2]) / 2
         pred_cy = (pred[..., 1] + pred[..., 3]) / 2
@@ -144,12 +146,18 @@ class BboxLoss(nn.Module):
         tgt_w = (target[..., 2] - target[..., 0]).clamp(min=eps)
         tgt_h = (target[..., 3] - target[..., 1]).clamp(min=eps)
 
-        center_dist = (pred_cx - tgt_cx).pow(2) + (pred_cy - tgt_cy).pow(2)
-        size_dist = ((pred_w - tgt_w) / 2).pow(2) + ((pred_h - tgt_h) / 2).pow(2)
+        # Center distance normalized by target box size (scale-invariant)
+        center_dist = ((pred_cx - tgt_cx) / tgt_w).pow(2) + \
+                      ((pred_cy - tgt_cy) / tgt_h).pow(2)
+
+        # Size distance as relative width/height error (aspect-invariant)
+        size_dist = ((pred_w - tgt_w) / tgt_w).pow(2) + \
+                    ((pred_h - tgt_h) / tgt_h).pow(2)
 
         w2 = center_dist + size_dist
         nwd = torch.exp(-torch.sqrt(w2 + eps) / constant)
         return nwd
+
 
     def set_params(self, hyp):
         """Set parameters from hyperparameters (model.args)."""
