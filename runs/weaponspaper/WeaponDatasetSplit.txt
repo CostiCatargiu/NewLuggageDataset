@@ -74,13 +74,13 @@
      Classes     : knife=16.7% | long_gun=30.4% | other=15.9% | pistol=37.0%
      Box stats   : median area 25406px² | median H/W ratio 1.24
 
-  📂 VALID  (1284 images, 1658 instances)
-     Inst/img    : mean 1.29 | median 1 | max 10 | std 0.83
+  📂 VALID  (2725 images, 3544 instances)
+     Inst/img    : mean 1.30 | median 1 | max 18 | std 0.87
      Percentiles : P50=1 | P90=2 | P95=3 | P99=5
-     Density     : ≥8 obj: 4 (0.3%)  |  ≥12 obj: 0 (0.0%)
-     Sizes       : S=2.2% | M=29.5% | L=68.3%
-     Classes     : knife=18.8% | long_gun=27.3% | other=13.9% | pistol=40.0%
-     Box stats   : median area 18264px² | median H/W ratio 1.21
+     Density     : ≥8 obj: 9 (0.3%)  |  ≥12 obj: 1 (0.0%)
+     Sizes       : S=2.4% | M=32.9% | L=64.7%
+     Classes     : knife=18.9% | long_gun=29.9% | other=14.4% | pistol=36.8%
+     Box stats   : median area 17129px² | median H/W ratio 1.27
 
   📂 TEST  (2674 images, 3523 instances)
      Inst/img    : mean 1.32 | median 1 | max 16 | std 0.92
@@ -110,9 +110,9 @@
      (no exact overlaps — good)
 
   Source-prefix overlap:
-     ⚠️ train ∩ valid: 83 shared sources
+     ⚠️ train ∩ valid: 138 shared sources
      ⚠️ test ∩ train: 145 shared sources
-     ⚠️ test ∩ valid: 29 shared sources
+     ⚠️ test ∩ valid: 53 shared sources
 
 ======================================================================
   📊 CROSS-DATASET COMPARISON (SIDE-BY-SIDE)
@@ -122,7 +122,7 @@
   Split    FULL                   ABLATION              
   ──────────────────────────────────────────────────────
   train    49079 img /  63447 inst   8343 img /  10821 inst  
-  valid     7552 img /   9730 inst   1284 img /   1658 inst  
+  valid     7552 img /   9730 inst   2725 img /   3544 inst  
   test      2674 img /   3523 inst   2674 img /   3523 inst  
 
   ── Size distribution: TRAIN ──
@@ -135,9 +135,9 @@
   ── Size distribution: VALID ──
   Size                         FULL               ABLATION
   ────────────────────────────────────────────────────────
-  small                       2.1%                   2.2%  
-  medium                     29.5%                  29.5%  
-  large                      68.4%                  68.3%  
+  small                       2.1%                   2.4%  
+  medium                     29.5%                  32.9%  
+  large                      68.4%                  64.7%  
 
   ── Size distribution: TEST ──
   Size                         FULL               ABLATION
@@ -157,10 +157,10 @@
   ── Class distribution: VALID ──
   Class                        FULL               ABLATION
   ────────────────────────────────────────────────────────
-  knife                      18.6%                  18.8%  
-  long_gun                   28.3%                  27.3%  
-  other                      13.6%                  13.9%  
-  pistol                     39.5%                  40.0%  
+  knife                      18.6%                  18.9%  
+  long_gun                   28.3%                  29.9%  
+  other                      13.6%                  14.4%  
+  pistol                     39.5%                  36.8%  
 
   ── Class distribution: TEST ──
   Class                        FULL               ABLATION
@@ -174,7 +174,7 @@
   Split                      FULL               ABLATION
   ──────────────────────────────────────────────────────
   train                     1.29                   1.30  
-  valid                     1.29                   1.29  
+  valid                     1.29                   1.30  
   test                      1.32                   1.32  
 
   ── Train ↔ Test SHIFT (relative %) ──
@@ -195,11 +195,11 @@
   Reference: FULL
 
   ── ABLATION vs FULL ──
-     Size deviation : max 0.12pp | mean 0.04pp
-     Class deviation: max 0.94pp | mean 0.19pp
-     Verdict        : 🟢 GOOD (deviations < 1.0pp)
-     Worst size dev : train/medium = +0.12pp
-     Worst class dev: valid/long_gun = -0.94pp
+     Size deviation : max 3.72pp | mean 0.85pp
+     Class deviation: max 2.73pp | mean 0.49pp
+     Verdict        : 🔴 POOR (deviations ≥ 2.0pp)
+     Worst size dev : valid/large = -3.72pp
+     Worst class dev: valid/pistol = -2.73pp
 
 
 ======================================================================
