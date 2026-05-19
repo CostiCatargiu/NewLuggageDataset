@@ -1,4 +1,4 @@
-/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/DATASETanalyze.py 
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/DATASETanalyze_weapon.py 
 
 ██████████████████████████████████████████████████████████████████████
   🔶 DATASET: FULL
@@ -13,7 +13,10 @@
      Inst/img    : mean 1.29 | median 1 | max 15 | std 0.81
      Percentiles : P50=1 | P90=2 | P95=3 | P99=4
      Density     : ≥8 obj: 128 (0.3%)  |  ≥12 obj: 24 (0.0%)
-     Sizes       : S=1.4% | M=25.4% | L=73.1%
+     Sizes [ 24/72]  : S=  232 (  0.4%) | M=10089 ( 15.9%) | L=53126 ( 83.7%)
+     Sizes [ 32/96] *: S=  908 (  1.4%) | M=16147 ( 25.4%) | L=46392 ( 73.1%)
+     Sizes [48/144]  : S= 3739 (  5.9%) | M=24885 ( 39.2%) | L=34823 ( 54.9%)
+     (* = COCO default threshold)
      Classes     : knife=16.6% | long_gun=30.4% | other=16.0% | pistol=37.0%
      Box stats   : median area 25232px² | median H/W ratio 1.23
 
@@ -21,7 +24,10 @@
      Inst/img    : mean 1.29 | median 1 | max 18 | std 0.82
      Percentiles : P50=1 | P90=2 | P95=3 | P99=4
      Density     : ≥8 obj: 18 (0.2%)  |  ≥12 obj: 3 (0.0%)
-     Sizes       : S=2.1% | M=29.5% | L=68.4%
+     Sizes [ 24/72]  : S=   63 (  0.6%) | M= 1916 ( 19.7%) | L= 7751 ( 79.7%)
+     Sizes [ 32/96] *: S=  208 (  2.1%) | M= 2867 ( 29.5%) | L= 6655 ( 68.4%)
+     Sizes [48/144]  : S=  800 (  8.2%) | M= 4228 ( 43.5%) | L= 4702 ( 48.3%)
+     (* = COCO default threshold)
      Classes     : knife=18.6% | long_gun=28.3% | other=13.6% | pistol=39.5%
      Box stats   : median area 19372px² | median H/W ratio 1.26
 
@@ -29,19 +35,32 @@
      Inst/img    : mean 1.32 | median 1 | max 16 | std 0.92
      Percentiles : P50=1 | P90=2 | P95=3 | P99=5
      Density     : ≥8 obj: 10 (0.4%)  |  ≥12 obj: 2 (0.1%)
-     Sizes       : S=1.9% | M=28.3% | L=69.8%
+     Sizes [ 24/72]  : S=   19 (  0.5%) | M=  655 ( 18.6%) | L= 2849 ( 80.9%)
+     Sizes [ 32/96] *: S=   67 (  1.9%) | M=  997 ( 28.3%) | L= 2459 ( 69.8%)
+     Sizes [48/144]  : S=  261 (  7.4%) | M= 1459 ( 41.4%) | L= 1803 ( 51.2%)
+     (* = COCO default threshold)
      Classes     : knife=19.5% | long_gun=26.7% | other=18.6% | pistol=35.2%
      Box stats   : median area 21698px² | median H/W ratio 1.27
 
   🔍 TRAIN ↔ TEST SHIFT  [FULL]
   ──────────────────────────────────────────────────────────────────
-     ⚠️  small: train   1.4% → test   1.9%  (rel +32.9%)
-     ✓ medium: train  25.4% → test  28.3%  (rel +11.2%)
-     ✓  large: train  73.1% → test  69.8%  (rel  -4.5%)
-     ⚠️     knife: train  16.6% → test  19.5%  (rel +17.5%)
-     ✓  long_gun: train  30.4% → test  26.7%  (rel -12.1%)
-     ⚠️     other: train  16.0% → test  18.6%  (rel +16.3%)
-     ✓    pistol: train  37.0% → test  35.2%  (rel  -5.0%)
+     ── Threshold [24/72] ──
+        ⚠️  small: train   0.4% → test   0.5%  (rel +47.5%)
+        ⚠️ medium: train  15.9% → test  18.6%  (rel +16.9%)
+        ✓  large: train  83.7% → test  80.9%  (rel  -3.4%)
+     ── Threshold [32/96] * ──
+        ⚠️  small: train   1.4% → test   1.9%  (rel +32.9%)
+        ✓ medium: train  25.4% → test  28.3%  (rel +11.2%)
+        ✓  large: train  73.1% → test  69.8%  (rel  -4.5%)
+     ── Threshold [48/144] ──
+        ⚠️  small: train   5.9% → test   7.4%  (rel +25.7%)
+        ✓ medium: train  39.2% → test  41.4%  (rel  +5.6%)
+        ✓  large: train  54.9% → test  51.2%  (rel  -6.8%)
+     ── Class shift ──
+        ⚠️     knife: train  16.6% → test  19.5%  (rel +17.5%)
+        ✓  long_gun: train  30.4% → test  26.7%  (rel -12.1%)
+        ⚠️     other: train  16.0% → test  18.6%  (rel +16.3%)
+        ✓    pistol: train  37.0% → test  35.2%  (rel  -5.0%)
 
 ──────────────────────────────────────────────────────────────────────
   🎬 FILENAME / SOURCE OVERLAP  [FULL]
@@ -70,35 +89,54 @@
      Inst/img    : mean 1.30 | median 1 | max 15 | std 0.84
      Percentiles : P50=1 | P90=2 | P95=3 | P99=5
      Density     : ≥8 obj: 22 (0.3%)  |  ≥12 obj: 5 (0.1%)
-     Sizes       : S=1.4% | M=25.6% | L=73.0%
+     Sizes [ 24/72]  : S=   32 (  0.3%) | M= 1724 ( 15.9%) | L= 9065 ( 83.8%)
+     Sizes [ 32/96] *: S=  150 (  1.4%) | M= 2767 ( 25.6%) | L= 7904 ( 73.0%)
+     Sizes [48/144]  : S=  623 (  5.8%) | M= 4220 ( 39.0%) | L= 5978 ( 55.2%)
+     (* = COCO default threshold)
      Classes     : knife=16.7% | long_gun=30.4% | other=15.9% | pistol=37.0%
      Box stats   : median area 25406px² | median H/W ratio 1.24
 
-  📂 VALID  (2725 images, 3544 instances)
-     Inst/img    : mean 1.30 | median 1 | max 18 | std 0.87
+  📂 VALID  (1284 images, 1658 instances)
+     Inst/img    : mean 1.29 | median 1 | max 10 | std 0.83
      Percentiles : P50=1 | P90=2 | P95=3 | P99=5
-     Density     : ≥8 obj: 9 (0.3%)  |  ≥12 obj: 1 (0.0%)
-     Sizes       : S=2.4% | M=32.9% | L=64.7%
-     Classes     : knife=18.9% | long_gun=29.9% | other=14.4% | pistol=36.8%
-     Box stats   : median area 17129px² | median H/W ratio 1.27
+     Density     : ≥8 obj: 4 (0.3%)  |  ≥12 obj: 0 (0.0%)
+     Sizes [ 24/72]  : S=   10 (  0.6%) | M=  324 ( 19.5%) | L= 1324 ( 79.9%)
+     Sizes [ 32/96] *: S=   36 (  2.2%) | M=  489 ( 29.5%) | L= 1133 ( 68.3%)
+     Sizes [48/144]  : S=  135 (  8.1%) | M=  744 ( 44.9%) | L=  779 ( 47.0%)
+     (* = COCO default threshold)
+     Classes     : knife=18.8% | long_gun=27.3% | other=13.9% | pistol=40.0%
+     Box stats   : median area 18264px² | median H/W ratio 1.21
 
-  📂 TEST  (2674 images, 3523 instances)
-     Inst/img    : mean 1.32 | median 1 | max 16 | std 0.92
-     Percentiles : P50=1 | P90=2 | P95=3 | P99=5
-     Density     : ≥8 obj: 10 (0.4%)  |  ≥12 obj: 2 (0.1%)
-     Sizes       : S=1.9% | M=28.3% | L=69.8%
-     Classes     : knife=19.5% | long_gun=26.7% | other=18.6% | pistol=35.2%
-     Box stats   : median area 21698px² | median H/W ratio 1.27
+  📂 TEST  (722 images, 996 instances)
+     Inst/img    : mean 1.38 | median 1 | max 16 | std 1.14
+     Percentiles : P50=1 | P90=2 | P95=3 | P99=6
+     Density     : ≥8 obj: 4 (0.6%)  |  ≥12 obj: 2 (0.3%)
+     Sizes [ 24/72]  : S=    3 (  0.3%) | M=  170 ( 17.1%) | L=  823 ( 82.6%)
+     Sizes [ 32/96] *: S=   15 (  1.5%) | M=  275 ( 27.6%) | L=  706 ( 70.9%)
+     Sizes [48/144]  : S=   62 (  6.2%) | M=  417 ( 41.9%) | L=  517 ( 51.9%)
+     (* = COCO default threshold)
+     Classes     : knife=18.7% | long_gun=27.5% | other=18.3% | pistol=35.5%
+     Box stats   : median area 22514px² | median H/W ratio 1.27
 
   🔍 TRAIN ↔ TEST SHIFT  [ABLATION]
   ──────────────────────────────────────────────────────────────────
-     ⚠️  small: train   1.4% → test   1.9%  (rel +37.2%)
-     ✓ medium: train  25.6% → test  28.3%  (rel +10.7%)
-     ✓  large: train  73.0% → test  69.8%  (rel  -4.4%)
-     ⚠️     knife: train  16.7% → test  19.5%  (rel +16.3%)
-     ✓  long_gun: train  30.4% → test  26.7%  (rel -12.1%)
-     ⚠️     other: train  15.9% → test  18.6%  (rel +17.1%)
-     ✓    pistol: train  37.0% → test  35.2%  (rel  -4.8%)
+     ── Threshold [24/72] ──
+        ✓  small: train   0.3% → test   0.3%  (rel  +1.9%)
+        ✓ medium: train  15.9% → test  17.1%  (rel  +7.1%)
+        ✓  large: train  83.8% → test  82.6%  (rel  -1.4%)
+     ── Threshold [32/96] * ──
+        ✓  small: train   1.4% → test   1.5%  (rel  +8.6%)
+        ✓ medium: train  25.6% → test  27.6%  (rel  +8.0%)
+        ✓  large: train  73.0% → test  70.9%  (rel  -3.0%)
+     ── Threshold [48/144] ──
+        ✓  small: train   5.8% → test   6.2%  (rel  +8.1%)
+        ✓ medium: train  39.0% → test  41.9%  (rel  +7.4%)
+        ✓  large: train  55.2% → test  51.9%  (rel  -6.0%)
+     ── Class shift ──
+        ✓     knife: train  16.7% → test  18.7%  (rel +11.6%)
+        ✓  long_gun: train  30.4% → test  27.5%  (rel  -9.5%)
+        ✓     other: train  15.9% → test  18.3%  (rel +15.0%)
+        ✓    pistol: train  37.0% → test  35.5%  (rel  -3.9%)
 
 ──────────────────────────────────────────────────────────────────────
   🎬 FILENAME / SOURCE OVERLAP  [ABLATION]
@@ -110,9 +148,9 @@
      (no exact overlaps — good)
 
   Source-prefix overlap:
-     ⚠️ train ∩ valid: 138 shared sources
-     ⚠️ test ∩ train: 145 shared sources
-     ⚠️ test ∩ valid: 53 shared sources
+     ⚠️ train ∩ valid: 83 shared sources
+     ⚠️ test ∩ train: 42 shared sources
+     ⚠️ test ∩ valid: 14 shared sources
 
 ======================================================================
   📊 CROSS-DATASET COMPARISON (SIDE-BY-SIDE)
@@ -122,29 +160,68 @@
   Split    FULL                   ABLATION              
   ──────────────────────────────────────────────────────
   train    49079 img /  63447 inst   8343 img /  10821 inst  
-  valid     7552 img /   9730 inst   2725 img /   3544 inst  
-  test      2674 img /   3523 inst   2674 img /   3523 inst  
+  valid     7552 img /   9730 inst   1284 img /   1658 inst  
+  test      2674 img /   3523 inst    722 img /    996 inst  
 
   ── Size distribution: TRAIN ──
-  Size                         FULL               ABLATION
-  ────────────────────────────────────────────────────────
-  small                       1.4%                   1.4%  
-  medium                     25.4%                  25.6%  
-  large                      73.1%                  73.0%  
+     Threshold [24/72]  (small<24px, med<72px)
+       Size                       FULL               ABLATION
+       ──────────────────────────────────────────────────────
+       small       232 (  0.4%)           32 (  0.3%)       
+       medium    10089 ( 15.9%)         1724 ( 15.9%)       
+       large     53126 ( 83.7%)         9065 ( 83.8%)       
+     Threshold [32/96] *  (small<32px, med<96px)
+       Size                       FULL               ABLATION
+       ──────────────────────────────────────────────────────
+       small       908 (  1.4%)          150 (  1.4%)       
+       medium    16147 ( 25.4%)         2767 ( 25.6%)       
+       large     46392 ( 73.1%)         7904 ( 73.0%)       
+     Threshold [48/144]  (small<48px, med<144px)
+       Size                       FULL               ABLATION
+       ──────────────────────────────────────────────────────
+       small      3739 (  5.9%)          623 (  5.8%)       
+       medium    24885 ( 39.2%)         4220 ( 39.0%)       
+       large     34823 ( 54.9%)         5978 ( 55.2%)       
 
   ── Size distribution: VALID ──
-  Size                         FULL               ABLATION
-  ────────────────────────────────────────────────────────
-  small                       2.1%                   2.4%  
-  medium                     29.5%                  32.9%  
-  large                      68.4%                  64.7%  
+     Threshold [24/72]  (small<24px, med<72px)
+       Size                       FULL               ABLATION
+       ──────────────────────────────────────────────────────
+       small        63 (  0.6%)           10 (  0.6%)       
+       medium     1916 ( 19.7%)          324 ( 19.5%)       
+       large      7751 ( 79.7%)         1324 ( 79.9%)       
+     Threshold [32/96] *  (small<32px, med<96px)
+       Size                       FULL               ABLATION
+       ──────────────────────────────────────────────────────
+       small       208 (  2.1%)           36 (  2.2%)       
+       medium     2867 ( 29.5%)          489 ( 29.5%)       
+       large      6655 ( 68.4%)         1133 ( 68.3%)       
+     Threshold [48/144]  (small<48px, med<144px)
+       Size                       FULL               ABLATION
+       ──────────────────────────────────────────────────────
+       small       800 (  8.2%)          135 (  8.1%)       
+       medium     4228 ( 43.5%)          744 ( 44.9%)       
+       large      4702 ( 48.3%)          779 ( 47.0%)       
 
   ── Size distribution: TEST ──
-  Size                         FULL               ABLATION
-  ────────────────────────────────────────────────────────
-  small                       1.9%                   1.9%  
-  medium                     28.3%                  28.3%  
-  large                      69.8%                  69.8%  
+     Threshold [24/72]  (small<24px, med<72px)
+       Size                       FULL               ABLATION
+       ──────────────────────────────────────────────────────
+       small        19 (  0.5%)            3 (  0.3%)       
+       medium      655 ( 18.6%)          170 ( 17.1%)       
+       large      2849 ( 80.9%)          823 ( 82.6%)       
+     Threshold [32/96] *  (small<32px, med<96px)
+       Size                       FULL               ABLATION
+       ──────────────────────────────────────────────────────
+       small        67 (  1.9%)           15 (  1.5%)       
+       medium      997 ( 28.3%)          275 ( 27.6%)       
+       large      2459 ( 69.8%)          706 ( 70.9%)       
+     Threshold [48/144]  (small<48px, med<144px)
+       Size                       FULL               ABLATION
+       ──────────────────────────────────────────────────────
+       small       261 (  7.4%)           62 (  6.2%)       
+       medium     1459 ( 41.4%)          417 ( 41.9%)       
+       large      1803 ( 51.2%)          517 ( 51.9%)       
 
   ── Class distribution: TRAIN ──
   Class                        FULL               ABLATION
@@ -157,35 +234,56 @@
   ── Class distribution: VALID ──
   Class                        FULL               ABLATION
   ────────────────────────────────────────────────────────
-  knife                      18.6%                  18.9%  
-  long_gun                   28.3%                  29.9%  
-  other                      13.6%                  14.4%  
-  pistol                     39.5%                  36.8%  
+  knife                      18.6%                  18.8%  
+  long_gun                   28.3%                  27.3%  
+  other                      13.6%                  13.9%  
+  pistol                     39.5%                  40.0%  
 
   ── Class distribution: TEST ──
   Class                        FULL               ABLATION
   ────────────────────────────────────────────────────────
-  knife                      19.5%                  19.5%  
-  long_gun                   26.7%                  26.7%  
-  other                      18.6%                  18.6%  
-  pistol                     35.2%                  35.2%  
+  knife                      19.5%                  18.7%  
+  long_gun                   26.7%                  27.5%  
+  other                      18.6%                  18.3%  
+  pistol                     35.2%                  35.5%  
 
   ── Mean instances per image per split ──
   Split                      FULL               ABLATION
   ──────────────────────────────────────────────────────
   train                     1.29                   1.30  
-  valid                     1.29                   1.30  
-  test                      1.32                   1.32  
+  valid                     1.29                   1.29  
+  test                      1.32                   1.38  
 
   ── Train ↔ Test SHIFT (relative %) ──
-  Metric                           FULL               ABLATION
-  ────────────────────────────────────────────────────────────
-  small                         +32.9%                 +37.2%  
-  medium                        +11.2%                 +10.7%  
-  large                          -4.5%                  -4.4%  
-  bag                           +17.5%                 +16.3%  
-  backpack                      -12.1%                 -12.1%  
-  trolley                       +16.3%                 +17.1%  
+
+     Threshold [24/72]
+     Size                         FULL               ABLATION
+     ────────────────────────────────────────────────────────
+     small                     +47.5%                  +1.9%  
+     medium                    +16.9%                  +7.1%  
+     large                      -3.4%                  -1.4%  
+
+     Threshold [32/96] *
+     Size                         FULL               ABLATION
+     ────────────────────────────────────────────────────────
+     small                     +32.9%                  +8.6%  
+     medium                    +11.2%                  +8.0%  
+     large                      -4.5%                  -3.0%  
+
+     Threshold [48/144]
+     Size                         FULL               ABLATION
+     ────────────────────────────────────────────────────────
+     small                     +25.7%                  +8.1%  
+     medium                     +5.6%                  +7.4%  
+     large                      -6.8%                  -6.0%  
+
+     Class shift
+     Class                        FULL               ABLATION
+     ────────────────────────────────────────────────────────
+     knife                     +17.5%                 +11.6%  
+     long_gun                  -12.1%                  -9.5%  
+     other                     +16.3%                 +15.0%  
+     pistol                     -5.0%                  -3.9%  
 
 ======================================================================
   🎯 ABLATION FIDELITY REPORT
@@ -195,11 +293,11 @@
   Reference: FULL
 
   ── ABLATION vs FULL ──
-     Size deviation : max 3.72pp | mean 0.85pp
-     Class deviation: max 2.73pp | mean 0.49pp
-     Verdict        : 🔴 POOR (deviations ≥ 2.0pp)
-     Worst size dev : valid/large = -3.72pp
-     Worst class dev: valid/pistol = -2.73pp
+     Size [ 24/72]: max 1.76pp | mean 0.45pp (worst: test/large = +1.76pp)
+     Size [ 32/96] *: max 1.09pp | mean 0.28pp (worst: test/large = +1.09pp)
+     Size [48/144]: max 1.42pp | mean 0.66pp (worst: valid/medium = +1.42pp)
+     Class deviation: max 0.94pp | mean 0.38pp (worst: valid/long_gun = -0.94pp)
+     Verdict        : 🟡 ACCEPTABLE (deviations < 2.0pp)
 
 
 ======================================================================
