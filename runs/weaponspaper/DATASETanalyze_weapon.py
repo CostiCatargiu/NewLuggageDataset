@@ -44,6 +44,7 @@ SIZE_THRESHOLDS = [
     ("24/72",  24,  72),   # tighter small definition
     ("32/96",  32,  96),   # COCO standard (current default)
     ("48/144", 48, 144),   # looser small definition
+    ("64/192", 64, 192),   # large-object-friendly threshold
 ]
 DEFAULT_THRESHOLD_LABEL = "32/96"  # used for shift/fidelity reports
 
