@@ -1,23 +1,23 @@
 """
-Extended dataset analysis for the luggage detection project — v2.
+Extended dataset analysis for weapon detection project — v3 (multi-threshold).
 
-Supports THREE datasets in a single run:
-  - ORIGINAL (full)
-  - ABLATION 1 (old 30% subset)
-  - ABLATION 2 (new 30% subset)
+Supports multiple datasets in a single run (FULL + ablation subsets).
 
-In addition to the per-dataset analyses, produces:
-  6. CROSS-DATASET COMPARISON of:
-       - per-split size distributions
-       - per-split class distributions
-       - train↔test shift magnitudes
-       - per-image instance density
-  7. FIDELITY REPORT — quantifies how faithfully each ablation reproduces
-     the FULL dataset's distributions. Lower error = better proxy.
-  8. PER-IMAGE DENSITY comparison (crowded scenes proxy)
+Key features:
+  1. PER-DATASET SUMMARY: image/instance counts, density, class distribution
+  2. MULTI-THRESHOLD SIZE ANALYSIS:
+       - 24/72px  (tighter small definition)
+       - 32/96px  (COCO standard)
+       - 48/144px (looser small definition)
+     Shows absolute counts + percentages for small/medium/large at each threshold.
+  3. TRAIN ↔ TEST SHIFT DETECTION per threshold
+  4. CROSS-DATASET COMPARISON (side-by-side) per threshold
+  5. FIDELITY REPORT per threshold (ablation vs full dataset)
+  6. FILENAME / SOURCE OVERLAP detection
+  7. PERCEPTUAL HASH LEAKAGE check (optional)
 
 Usage:
-    python dataset_analysis_v2.py
+    python DATASETanalyze_weapon.py
 
 Requires: Pillow + imagehash (optional, for perceptual hash leakage check)
 """
@@ -33,11 +33,19 @@ from pathlib import Path
 # Configuration
 # ─────────────────────────────────────────────────────────────────
 IMAGE_SIZE = 640
-SMALL_AREA_NORM = (32 * 32) / (IMAGE_SIZE * IMAGE_SIZE)
-MEDIUM_AREA_NORM = (96 * 96) / (IMAGE_SIZE * IMAGE_SIZE)
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp")
 SPLITS = ["train", "valid", "test"]
 CLASS_NAMES = ['knife', 'long_gun', 'other', 'pistol']
+
+# Multiple size threshold configurations
+# Each entry: (label, small_px, medium_px)
+# "small" = area < small_px², "medium" = small_px² ≤ area < medium_px², "large" = area ≥ medium_px²
+SIZE_THRESHOLDS = [
+    ("24/72",  24,  72),   # tighter small definition
+    ("32/96",  32,  96),   # COCO standard (current default)
+    ("48/144", 48, 144),   # looser small definition
+]
+DEFAULT_THRESHOLD_LABEL = "32/96"  # used for shift/fidelity reports
 
 try:
     from PIL import Image
@@ -74,11 +82,14 @@ def parse_label_file(label_path):
     return annotations
 
 
-def classify_size(w_norm, h_norm):
+def classify_size(w_norm, h_norm, small_px=32, medium_px=96):
+    """Classify bounding box into small/medium/large based on pixel thresholds."""
     area = w_norm * h_norm
-    if area < SMALL_AREA_NORM:
+    small_area_norm = (small_px * small_px) / (IMAGE_SIZE * IMAGE_SIZE)
+    medium_area_norm = (medium_px * medium_px) / (IMAGE_SIZE * IMAGE_SIZE)
+    if area < small_area_norm:
         return "small"
-    elif area < MEDIUM_AREA_NORM:
+    elif area < medium_area_norm:
         return "medium"
     return "large"
 
@@ -103,6 +114,7 @@ def compute_dataset_stats(dataset_root):
     """
     Computes a full statistics dictionary for a dataset.
     Returns nested dict: stats[split] = { ... metrics ... }
+    Size distributions are computed for ALL threshold configurations.
     """
     stats = {}
     for split in SPLITS:
@@ -112,7 +124,8 @@ def compute_dataset_stats(dataset_root):
 
         label_files = get_label_files(labels_dir)
         counts = []
-        size_counts = Counter()
+        # Size counts per threshold config: {threshold_label: Counter}
+        size_counts_multi = {tl: Counter() for tl, _, _ in SIZE_THRESHOLDS}
         class_counts = Counter()
         per_image_small_ratio = []
         per_class_per_image = defaultdict(list)
@@ -125,11 +138,16 @@ def compute_dataset_stats(dataset_root):
             cls_in_img = Counter()
             small_in_img = 0
             for cid, x, y, w, h in ann:
-                sz = classify_size(w, h)
-                size_counts[sz] += 1
+                # Classify for each threshold
+                for t_label, small_px, medium_px in SIZE_THRESHOLDS:
+                    sz = classify_size(w, h, small_px, medium_px)
+                    size_counts_multi[t_label][sz] += 1
+
+                # Use default threshold for small_in_img ratio
+                default_sz = classify_size(w, h, 32, 96)
                 class_counts[cid] += 1
                 cls_in_img[cid] += 1
-                if sz == "small":
+                if default_sz == "small":
                     small_in_img += 1
                 box_areas.append(w * h)
                 if w > 0:
@@ -140,12 +158,14 @@ def compute_dataset_stats(dataset_root):
                 small_in_img / len(ann) if ann else 0.0
             )
 
-        total = sum(size_counts.values())
+        total = sum(class_counts.values())
+        # Keep backward-compatible "size_counts" as the default (32/96)
         stats[split] = {
             "n_images": len(counts),
             "n_instances": total,
             "counts": counts,
-            "size_counts": dict(size_counts),
+            "size_counts": dict(size_counts_multi[DEFAULT_THRESHOLD_LABEL]),
+            "size_counts_multi": {tl: dict(sc) for tl, sc in size_counts_multi.items()},
             "class_counts": dict(class_counts),
             "per_image_small_ratio": per_image_small_ratio,
             "per_class_per_image": dict(per_class_per_image),
@@ -193,11 +213,16 @@ def print_dataset_summary(stats, label):
               f"  |  ≥12 obj: {very_crowded} ({100*very_crowded/n:.1f}%)")
 
         total = s["n_instances"]
-        size_str = []
-        for sz in ["small", "medium", "large"]:
-            c = s["size_counts"].get(sz, 0)
-            size_str.append(f"{sz[0].upper()}={format_pct(c, total):.1f}%")
-        print(f"     Sizes       : {' | '.join(size_str)}")
+        # Show size distribution for ALL thresholds
+        for t_label, small_px, medium_px in SIZE_THRESHOLDS:
+            sc = s["size_counts_multi"][t_label]
+            size_str = []
+            for sz in ["small", "medium", "large"]:
+                c = sc.get(sz, 0)
+                size_str.append(f"{sz[0].upper()}={c:>5d} ({format_pct(c, total):>5.1f}%)")
+            marker = " *" if t_label == DEFAULT_THRESHOLD_LABEL else "  "
+            print(f"     Sizes [{t_label:>6s}]{marker}: {' | '.join(size_str)}")
+        print(f"     (* = COCO default threshold)")
 
         class_str = []
         for cid, name in enumerate(CLASS_NAMES):
@@ -227,20 +252,28 @@ def print_shift_report(stats, label):
     if not tr["n_instances"] or not te["n_instances"]:
         return
 
-    for sz in ["small", "medium", "large"]:
-        tr_pct = format_pct(tr["size_counts"].get(sz, 0), tr["n_instances"])
-        te_pct = format_pct(te["size_counts"].get(sz, 0), te["n_instances"])
-        rel = ((te_pct - tr_pct) / tr_pct * 100) if tr_pct else 0
-        tag = "⚠️" if abs(rel) > 15 else "✓"
-        print(f"     {tag} {sz:>6s}: train {tr_pct:5.1f}% → test {te_pct:5.1f}%  "
-              f"(rel {rel:+5.1f}%)")
+    # Size shift for each threshold
+    for t_label, _, _ in SIZE_THRESHOLDS:
+        marker = " *" if t_label == DEFAULT_THRESHOLD_LABEL else ""
+        print(f"     ── Threshold [{t_label}]{marker} ──")
+        tr_sc = tr["size_counts_multi"][t_label]
+        te_sc = te["size_counts_multi"][t_label]
+        for sz in ["small", "medium", "large"]:
+            tr_pct = format_pct(tr_sc.get(sz, 0), tr["n_instances"])
+            te_pct = format_pct(te_sc.get(sz, 0), te["n_instances"])
+            rel = ((te_pct - tr_pct) / tr_pct * 100) if tr_pct else 0
+            tag = "⚠️" if abs(rel) > 15 else "✓"
+            print(f"        {tag} {sz:>6s}: train {tr_pct:5.1f}% → test {te_pct:5.1f}%  "
+                  f"(rel {rel:+5.1f}%)")
 
+    # Class shift (unchanged)
+    print(f"     ── Class shift ──")
     for cid, name in enumerate(CLASS_NAMES):
         tr_pct = format_pct(tr["class_counts"].get(cid, 0), tr["n_instances"])
         te_pct = format_pct(te["class_counts"].get(cid, 0), te["n_instances"])
         rel = ((te_pct - tr_pct) / tr_pct * 100) if tr_pct else 0
         tag = "⚠️" if abs(rel) > 15 else "✓"
-        print(f"     {tag} {name:>9s}: train {tr_pct:5.1f}% → test {te_pct:5.1f}%  "
+        print(f"        {tag} {name:>9s}: train {tr_pct:5.1f}% → test {te_pct:5.1f}%  "
               f"(rel {rel:+5.1f}%)")
 
 
@@ -273,22 +306,27 @@ def cross_dataset_comparison(datasets):
                 row += "—".center(22) + " "
         print(row)
 
-    # ── Table 2: Size distribution per split, per dataset ──
+    # ── Table 2: Size distribution per split, per dataset, per threshold ──
     for split in SPLITS:
         print(f"\n  ── Size distribution: {split.upper()} ──")
-        header = f"  {'Size':<10} " + " ".join(f"{lbl:>22}" for lbl in labels)
-        print(header)
-        print("  " + "─" * (len(header) - 2))
-        for sz in ["small", "medium", "large"]:
-            row = f"  {sz:<10} "
-            for lbl in labels:
-                if split in datasets[lbl]:
-                    s = datasets[lbl][split]
-                    pct = format_pct(s["size_counts"].get(sz, 0), s["n_instances"])
-                    row += f"{pct:>20.1f}%  "
-                else:
-                    row += "—".rjust(22) + " "
-            print(row)
+        for t_label, small_px, medium_px in SIZE_THRESHOLDS:
+            marker = " *" if t_label == DEFAULT_THRESHOLD_LABEL else ""
+            print(f"     Threshold [{t_label}]{marker}  (small<{small_px}px, med<{medium_px}px)")
+            header = f"       {'Size':<8} " + " ".join(f"{lbl:>22}" for lbl in labels)
+            print(header)
+            print("       " + "─" * (len(header) - 7))
+            for sz in ["small", "medium", "large"]:
+                row = f"       {sz:<8} "
+                for lbl in labels:
+                    if split in datasets[lbl]:
+                        s = datasets[lbl][split]
+                        sc = s["size_counts_multi"][t_label]
+                        c = sc.get(sz, 0)
+                        pct = format_pct(c, s["n_instances"])
+                        row += f"{c:>6d} ({pct:>5.1f}%)       "
+                    else:
+                        row += "—".rjust(22) + " "
+                print(row)
 
     # ── Table 3: Class distribution per split, per dataset ──
     for split in SPLITS:
@@ -325,18 +363,39 @@ def cross_dataset_comparison(datasets):
 
     # ── Table 5: Train↔test shift summary across datasets ──
     print(f"\n  ── Train ↔ Test SHIFT (relative %) ──")
-    header = f"  {'Metric':<14} " + " ".join(f"{lbl:>22}" for lbl in labels)
-    print(header)
-    print("  " + "─" * (len(header) - 2))
 
-    metrics = [("small", "size", "small"),
-               ("medium", "size", "medium"),
-               ("large", "size", "large"),
-               ("bag", "class", 0),
-               ("backpack", "class", 1),
-               ("trolley", "class", 2)]
-    for display_name, kind, key in metrics:
-        row = f"  {display_name:<14} "
+    # Size shift per threshold
+    for t_label, small_px, medium_px in SIZE_THRESHOLDS:
+        marker = " *" if t_label == DEFAULT_THRESHOLD_LABEL else ""
+        print(f"\n     Threshold [{t_label}]{marker}")
+        header = f"     {'Size':<10} " + " ".join(f"{lbl:>22}" for lbl in labels)
+        print(header)
+        print("     " + "─" * (len(header) - 5))
+        for sz in ["small", "medium", "large"]:
+            row = f"     {sz:<10} "
+            for lbl in labels:
+                ds = datasets[lbl]
+                if "train" not in ds or "test" not in ds:
+                    row += "—".rjust(22) + " "
+                    continue
+                tr = ds["train"]
+                te = ds["test"]
+                if not tr["n_instances"] or not te["n_instances"]:
+                    row += "—".rjust(22) + " "
+                    continue
+                tr_pct = format_pct(tr["size_counts_multi"][t_label].get(sz, 0), tr["n_instances"])
+                te_pct = format_pct(te["size_counts_multi"][t_label].get(sz, 0), te["n_instances"])
+                rel = ((te_pct - tr_pct) / tr_pct * 100) if tr_pct else 0
+                row += f"{rel:>+20.1f}%  "
+            print(row)
+
+    # Class shift
+    print(f"\n     Class shift")
+    header = f"     {'Class':<10} " + " ".join(f"{lbl:>22}" for lbl in labels)
+    print(header)
+    print("     " + "─" * (len(header) - 5))
+    for cid, name in enumerate(CLASS_NAMES):
+        row = f"     {name:<10} "
         for lbl in labels:
             ds = datasets[lbl]
             if "train" not in ds or "test" not in ds:
@@ -347,9 +406,8 @@ def cross_dataset_comparison(datasets):
             if not tr["n_instances"] or not te["n_instances"]:
                 row += "—".rjust(22) + " "
                 continue
-            counts_key = "size_counts" if kind == "size" else "class_counts"
-            tr_pct = format_pct(tr[counts_key].get(key, 0), tr["n_instances"])
-            te_pct = format_pct(te[counts_key].get(key, 0), te["n_instances"])
+            tr_pct = format_pct(tr["class_counts"].get(cid, 0), tr["n_instances"])
+            te_pct = format_pct(te["class_counts"].get(cid, 0), te["n_instances"])
             rel = ((te_pct - tr_pct) / tr_pct * 100) if tr_pct else 0
             row += f"{rel:>+20.1f}%  "
         print(row)
@@ -387,9 +445,43 @@ def fidelity_report(datasets, reference_label):
 
     for lbl in other_labels:
         target = datasets[lbl]
-        size_deviations = []
         class_deviations = []
 
+        print(f"  ── {lbl} vs {reference_label} ──")
+
+        # Size deviations per threshold
+        for t_label, small_px, medium_px in SIZE_THRESHOLDS:
+            size_deviations = []
+            marker = " *" if t_label == DEFAULT_THRESHOLD_LABEL else ""
+
+            for split in SPLITS:
+                if split not in ref or split not in target:
+                    continue
+                r = ref[split]
+                t = target[split]
+                if not r["n_instances"] or not t["n_instances"]:
+                    continue
+
+                r_sc = r["size_counts_multi"][t_label]
+                t_sc = t["size_counts_multi"][t_label]
+                for sz in ["small", "medium", "large"]:
+                    r_pct = format_pct(r_sc.get(sz, 0), r["n_instances"])
+                    t_pct = format_pct(t_sc.get(sz, 0), t["n_instances"])
+                    size_deviations.append((split, sz, t_pct - r_pct))
+
+            size_abs = [abs(d) for _, _, d in size_deviations]
+            size_max = max(size_abs) if size_abs else 0
+            size_mean = statistics.mean(size_abs) if size_abs else 0
+
+            size_deviations.sort(key=lambda x: abs(x[2]), reverse=True)
+            worst_str = ""
+            if size_deviations:
+                split, sz, dev = size_deviations[0]
+                worst_str = f" (worst: {split}/{sz} = {dev:+.2f}pp)"
+
+            print(f"     Size [{t_label:>6s}]{marker}: max {size_max:.2f}pp | mean {size_mean:.2f}pp{worst_str}")
+
+        # Class deviations (threshold-independent)
         for split in SPLITS:
             if split not in ref or split not in target:
                 continue
@@ -398,30 +490,40 @@ def fidelity_report(datasets, reference_label):
             if not r["n_instances"] or not t["n_instances"]:
                 continue
 
-            for sz in ["small", "medium", "large"]:
-                r_pct = format_pct(r["size_counts"].get(sz, 0), r["n_instances"])
-                t_pct = format_pct(t["size_counts"].get(sz, 0), t["n_instances"])
-                size_deviations.append((split, sz, t_pct - r_pct))
-
             for cid, name in enumerate(CLASS_NAMES):
                 r_pct = format_pct(r["class_counts"].get(cid, 0), r["n_instances"])
                 t_pct = format_pct(t["class_counts"].get(cid, 0), t["n_instances"])
                 class_deviations.append((split, name, t_pct - r_pct))
 
-        # Summary stats
-        size_abs = [abs(d) for _, _, d in size_deviations]
         class_abs = [abs(d) for _, _, d in class_deviations]
-        size_max = max(size_abs) if size_abs else 0
-        size_mean = statistics.mean(size_abs) if size_abs else 0
         class_max = max(class_abs) if class_abs else 0
         class_mean = statistics.mean(class_abs) if class_abs else 0
 
-        print(f"  ── {lbl} vs {reference_label} ──")
-        print(f"     Size deviation : max {size_max:.2f}pp | mean {size_mean:.2f}pp")
-        print(f"     Class deviation: max {class_max:.2f}pp | mean {class_mean:.2f}pp")
+        class_deviations.sort(key=lambda x: abs(x[2]), reverse=True)
+        worst_cls_str = ""
+        if class_deviations:
+            split, name, dev = class_deviations[0]
+            worst_cls_str = f" (worst: {split}/{name} = {dev:+.2f}pp)"
 
-        # Quality grade
-        worst = max(size_max, class_max)
+        print(f"     Class deviation: max {class_max:.2f}pp | mean {class_mean:.2f}pp{worst_cls_str}")
+
+        # Quality grade (use default threshold size + class)
+        default_size_devs = []
+        for split in SPLITS:
+            if split not in ref or split not in target:
+                continue
+            r = ref[split]
+            t = target[split]
+            if not r["n_instances"] or not t["n_instances"]:
+                continue
+            r_sc = r["size_counts_multi"][DEFAULT_THRESHOLD_LABEL]
+            t_sc = t["size_counts_multi"][DEFAULT_THRESHOLD_LABEL]
+            for sz in ["small", "medium", "large"]:
+                r_pct = format_pct(r_sc.get(sz, 0), r["n_instances"])
+                t_pct = format_pct(t_sc.get(sz, 0), t["n_instances"])
+                default_size_devs.append(abs(t_pct - r_pct))
+
+        worst = max(max(default_size_devs) if default_size_devs else 0, class_max)
         if worst < 0.5:
             grade = "🟢 EXCELLENT (deviations < 0.5pp)"
         elif worst < 1.0:
@@ -431,17 +533,6 @@ def fidelity_report(datasets, reference_label):
         else:
             grade = "🔴 POOR (deviations ≥ 2.0pp)"
         print(f"     Verdict        : {grade}")
-
-        # Show worst deviations for transparency
-        size_deviations.sort(key=lambda x: abs(x[2]), reverse=True)
-        class_deviations.sort(key=lambda x: abs(x[2]), reverse=True)
-
-        if size_deviations:
-            split, sz, dev = size_deviations[0]
-            print(f"     Worst size dev : {split}/{sz} = {dev:+.2f}pp")
-        if class_deviations:
-            split, name, dev = class_deviations[0]
-            print(f"     Worst class dev: {split}/{name} = {dev:+.2f}pp")
         print()
 
 
