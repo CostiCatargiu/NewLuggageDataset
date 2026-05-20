@@ -1,0 +1,288 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/run_phase_a_ablation.py
+FlashAttention is not available on this device. Using scaled_dot_product_attention instead.
+
+Phase A: Size-Aware Weighting Grid Search (ISOLATED)
+Project: runs_phaseAweapon
+Previous results: runs_phaseAprev/results.json
+
+================================================================================
+FIXED HYPERPARAMETERS
+================================================================================
+  Phase B: DISABLED (center_loss=0.0)
+  Phase C: DISABLED (clip=100.0, no clipping)
+  Phase D: DEFAULT (tal_topk=10, tal_alpha=0.5, tal_beta=6.0)
+
+================================================================================
+PHASE A GRID CONFIGURATION (ACTIVE)
+================================================================================
+  A1: Alpha Schedule Grid (33 valid combinations)
+      alpha_start: [0.9, 0.6, 0.7, 0.8, 0.9, 1.0]
+      alpha_end:   [0.5, 0.4, 0.5, 0.6, 0.7, 0.8]
+      Fixed: boost=1.0, px=48
+
+  A2: Small Object Boost (5 experiments)
+      boost: [1.0, 1.5, 2.0, 2.5, 3.0]
+      Uses best alpha from A1
+
+  A3: Pixel Threshold (6 experiments)
+      px: [24, 32, 40, 48, 56, 64]
+      Uses best alpha from A1, best boost from A2
+
+  A4: Validation (7 experiments)
+      Baseline + best config + sensitivity analysis
+
+  Total: 51 experiments (~66 hours)
+
+################################################################################
+# PHASE A1: Alpha Schedule Grid Search (6×6)
+# Fixed: boost=1.0, px=48
+# Phase B/C: DISABLED, Phase D: DEFAULT
+################################################################################
+
+==========================================================================================
+PHASE A1 GRID STATUS (Alpha Start × End)
+Fixed: boost=1.0, px=48
+Phase B/C: DISABLED, Phase D: DEFAULT
+==========================================================================================
+start\end   0.5       0.4       0.5       0.6       0.7       0.8
+------------------------------------------------------------------------------------------
+0.9         .         .         .         .         .         .
+0.6         .         .         .         .         --        --
+0.7         .         .         .         .         .         --
+0.8         .         .         .         .         .         .
+0.9         .         .         .         .         .         .
+1.0         .         .         .         .         .         .
+
+Legend: 0.XXX = mAP_small | * = from previous | . = Pending | -- = Invalid (end > start)
+Progress: 0/33 valid | Remaining: 33 (~42.9 hours)
+
+33 new experiments to run (0 skipped)
+
+>> [1/33] Running A1_01_as0.9_ae0.5
+
+======================================================================
+EXPERIMENT: A1_01_as0.9_ae0.5
+======================================================================
+  alpha_start:     0.9
+  alpha_end:       0.5
+  small_obj_boost: 1.0
+  small_obj_px:    48
+  (Phase B/C: DISABLED, Phase D: DEFAULT)
+======================================================================
+
+  [OK] Epoch sync callback registered
+New https://pypi.org/project/ultralytics/8.4.52 available 😃 Update with 'pip install -U ultralytics'
+Ultralytics 8.3.63 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
+engine/trainer: task=detect, mode=train, model=yolov12s.pt, data=/home/constantin/Doctorat/GunDatasetHistogram17percentage2/data.yaml, epochs=80, time=None, patience=100, batch=58, imgsz=640, save=True, save_period=-1, cache=False, device=0, workers=8, project=runs_phaseAweapon, name=A1_01_as0.9_ae0.56, exist_ok=False, pretrained=True, optimizer=auto, verbose=True, seed=0, deterministic=True, single_cls=False, rect=False, cos_lr=False, close_mosaic=10, resume=False, amp=True, fraction=1.0, profile=False, freeze=None, multi_scale=False, overlap_mask=True, mask_ratio=4, dropout=0.0, val=True, split=val, save_json=False, save_hybrid=False, conf=None, iou=0.7, max_det=300, half=False, dnn=False, plots=True, source=None, vid_stride=1, stream_buffer=False, visualize=False, augment=False, agnostic_nms=False, classes=None, retina_masks=False, embed=None, show=False, save_frames=False, save_txt=False, save_conf=False, save_crop=False, show_labels=True, show_conf=True, show_boxes=True, line_width=None, format=torchscript, keras=False, optimize=False, int8=False, dynamic=False, simplify=True, opset=None, workspace=None, nms=False, lr0=0.01, lrf=0.01, momentum=0.937, weight_decay=0.0005, warmup_epochs=3.0, warmup_momentum=0.8, warmup_bias_lr=0.0, box=7.5, cls=0.5, dfl=1.5, pose=12.0, kobj=1.0, nbs=64, hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, degrees=0.0, translate=0.1, scale=0.5, shear=0.0, perspective=0.0, flipud=0.0, fliplr=0.5, bgr=0.0, mosaic=1.0, mixup=0.0, copy_paste=0.1, copy_paste_mode=flip, auto_augment=randaugment, erasing=0.4, crop_fraction=1.0, cfg=None, tracker=botsort.yaml, alpha_start=0.9, alpha_end=0.5, alpha_min=0.3, alpha_max=1.0, small_obj_px=48, small_obj_boost=1.0, area_weight_min=0.4, area_weight_mode=log_inverse, center_loss_weight_init=0.0, center_loss_weight_min=0.0, center_loss_decay_epochs=35, iou_clip_start=100.0, iou_clip_end=100.0, dfl_clip_start=100.0, dfl_clip_end=100.0, use_percentile_clip=False, clip_percentile=0.95, class_frequencies=[0.267, 0.219, 0.513], class_balance_strength=1.0, use_satal=True, satal_alpha_small=1.2, satal_beta_small=5.0, satal_alpha_large=1.0, satal_beta_large=6.0, satal_small_area=0.01, satal_large_area=0.06, satal_topk_factor=1.5, tal_topk=10, tal_alpha=0.5, tal_beta=6.0, use_size_weighting=False, save_dir=runs_phaseAweapon/A1_01_as0.9_ae0.56
+Overriding model.yaml nc=80 with nc=4
+
+                   from  n    params  module                                       arguments
+  0                  -1  1       928  ultralytics.nn.modules.conv.Conv             [3, 32, 3, 2]
+  1                  -1  1      9344  ultralytics.nn.modules.conv.Conv             [32, 64, 3, 2, 1, 2]
+  2                  -1  1     26080  ultralytics.nn.modules.block.C3k2            [64, 128, 1, False, 0.25]
+  3                  -1  1     37120  ultralytics.nn.modules.conv.Conv             [128, 128, 3, 2, 1, 4]
+  4                  -1  1    103360  ultralytics.nn.modules.block.C3k2            [128, 256, 1, False, 0.25]
+  5                  -1  1    590336  ultralytics.nn.modules.conv.Conv             [256, 256, 3, 2]
+  6                  -1  2    677120  ultralytics.nn.modules.block.A2C2f           [256, 256, 2, True, 4]
+  7                  -1  1   1180672  ultralytics.nn.modules.conv.Conv             [256, 512, 3, 2]
+  8                  -1  2   2664960  ultralytics.nn.modules.block.A2C2f           [512, 512, 2, True, 1]
+  9                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 10             [-1, 6]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 11                  -1  1    345856  ultralytics.nn.modules.block.A2C2f           [768, 256, 1, False, -1]
+ 12                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 13             [-1, 4]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 14                  -1  1     95104  ultralytics.nn.modules.block.A2C2f           [512, 128, 1, False, -1]
+ 15                  -1  1    147712  ultralytics.nn.modules.conv.Conv             [128, 128, 3, 2]
+ 16            [-1, 11]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 17                  -1  1    296704  ultralytics.nn.modules.block.A2C2f           [384, 256, 1, False, -1]
+ 18                  -1  1    590336  ultralytics.nn.modules.conv.Conv             [256, 256, 3, 2]
+ 19             [-1, 8]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 20                  -1  1   1511424  ultralytics.nn.modules.block.C3k2            [768, 512, 1, True]
+ 21        [14, 17, 20]  1    820956  ultralytics.nn.modules.head.Detect           [4, [128, 256, 512]]
+YOLOv12s summary: 497 layers, 9,098,012 parameters, 9,097,996 gradients, 19.6 GFLOPs
+
+Transferred 733/739 items from pretrained weights
+Freezing layer 'model.21.dfl.conv.weight'
+AMP: running Automatic Mixed Precision (AMP) checks...
+AMP: checks passed ✅
+train: Scanning /home/constantin/Doctorat/GunDatasetHistogram17percentage2/train/labels.cache... 8343 images, 9 backgrounds, 0 corrupt: 100%|██████████| 8343/8343 [00:00<?, ?it/s]
+val: Scanning /home/constantin/Doctorat/GunDatasetHistogram17percentage2/valid/labels.cache... 1284 images, 1 backgrounds, 0 corrupt: 100%|██████████| 1284/1284 [00:00<?, ?it/s]
+Plotting labels to runs_phaseAweapon/A1_01_as0.9_ae0.56/labels.jpg...
+optimizer: 'optimizer=auto' found, ignoring 'lr0=0.01' and 'momentum=0.937' and determining best 'optimizer', 'lr0' and 'momentum' automatically...
+optimizer: SGD(lr=0.01, momentum=0.9) with parameter groups 121 weight(decay=0.0), 128 weight(decay=0.000453125), 127 bias(decay=0.0)
+Image sizes 640 train, 640 val
+Using 8 dataloader workers
+Logging results to runs_phaseAweapon/A1_01_as0.9_ae0.56
+Starting training for 80 epochs...
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s]
+============================================================
+v8DetectionLoss Configuration
+============================================================
+  [A] alpha_start:     0.9
+  [A] alpha_end:       0.5
+  [A] small_obj_px:    48
+  [A] small_obj_boost: 1.0
+  [B] center_loss_init:     0.0
+  [B] center_loss_min:     0.0
+  [C] iou_clip:        100.0 → 100.0
+  [C] dfl_clip:        100.0 → 100.0
+  [D] tal_topk:        10
+  [D] tal_alpha:       0.5
+  [D] tal_beta:        6.0
+  [E] use_satal:       True
+      satal_alpha_small: 1.2
+      satal_beta_small:  5.0
+      satal_alpha_large: 1.0
+      satal_beta_large:  6.0
+      satal_small_area:  0.01 (~64px)
+      satal_large_area:  0.06 (~156px)
+      satal_topk_factor: 1.5
+  epochs:              80
+============================================================
+
+
+=======================================================
+  SA-TAL Active
+=======================================================
+  alpha:  1.2 (small) -> 1.0 (large)
+  beta:   5.0 (small) -> 6.0 (large)
+  topk:   15 (small) -> 10 (large)
+  thresh: small<0.01, large>0.06
+=======================================================
+
+[Alpha] Epoch 0/80: α=0.900
+       1/80      22.1G     0.6772      2.705     0.4883        116        640: 100%|██████████| 144/144 [00:57<00:00,  2.49it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95):   0%|          | 0/12 [00:00<?, ?it/s]
+============================================================
+v8DetectionLoss Configuration
+============================================================
+  [A] alpha_start:     0.9
+  [A] alpha_end:       0.5
+  [A] small_obj_px:    48
+  [A] small_obj_boost: 1.0
+  [B] center_loss_init:     0.0
+  [B] center_loss_min:     0.0
+  [C] iou_clip:        100.0 → 100.0
+  [C] dfl_clip:        100.0 → 100.0
+  [D] tal_topk:        10
+  [D] tal_alpha:       0.5
+  [D] tal_beta:        6.0
+  [E] use_satal:       True
+      satal_alpha_small: 1.2
+      satal_beta_small:  5.0
+      satal_alpha_large: 1.0
+      satal_beta_large:  6.0
+      satal_small_area:  0.01 (~64px)
+      satal_large_area:  0.06 (~156px)
+      satal_topk_factor: 1.5
+  epochs:              80
+============================================================
+
+
+=======================================================
+  SA-TAL Active
+=======================================================
+  alpha:  1.2 (small) -> 1.0 (large)
+  beta:   5.0 (small) -> 6.0 (large)
+  topk:   15 (small) -> 10 (large)
+  thresh: small<0.01, large>0.06
+=======================================================
+
+[Alpha] Epoch 0/80: α=0.900
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.40it/s]
+                   all       1284       1685      0.353      0.369      0.296      0.109
+  0%|          | 0/144 [00:00<?, ?it/s]
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+[Alpha] Epoch 1/80: α=0.895
+       2/80      22.2G     0.9552      2.309     0.6043         99        640: 100%|██████████| 144/144 [00:56<00:00,  2.55it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.74it/s]
+                   all       1284       1685      0.233      0.201      0.136     0.0463
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s][Alpha] Epoch 2/80: α=0.890
+       3/80      22.2G      1.122      2.624        0.7        108        640: 100%|██████████| 144/144 [00:56<00:00,  2.54it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.32it/s]
+                   all       1284       1685    0.00703     0.0455    0.00223    0.00057
+  0%|          | 0/144 [00:00<?, ?it/s]
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+[Alpha] Epoch 3/80: α=0.885
+       4/80      22.2G      1.297       2.84     0.7869        107        640: 100%|██████████| 144/144 [00:56<00:00,  2.56it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.63it/s]
+                   all       1284       1685     0.0264      0.133     0.0171    0.00459
+  0%|          | 0/144 [00:00<?, ?it/s]
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+[Alpha] Epoch 4/80: α=0.880
+       5/80      22.2G       1.29      2.674      0.788        106        640: 100%|██████████| 144/144 [00:57<00:00,  2.52it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.73it/s]
+                   all       1284       1685      0.146      0.126     0.0545     0.0151
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s][Alpha] Epoch 5/80: α=0.875
+       6/80      22.1G      1.329      2.535     0.8197         91        640: 100%|██████████| 144/144 [00:57<00:00,  2.51it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.80it/s]
+                   all       1284       1685      0.186      0.164     0.0838     0.0193
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s][Alpha] Epoch 6/80: α=0.870
+       7/80      22.2G      1.355      2.419      0.844        141        640: 100%|██████████| 144/144 [00:57<00:00,  2.51it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.75it/s]
+                   all       1284       1685      0.246       0.26      0.173      0.052
+  0%|          | 0/144 [00:00<?, ?it/s]
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+[Alpha] Epoch 7/80: α=0.865
+       8/80      22.2G      1.386      2.325     0.8653        113        640: 100%|██████████| 144/144 [00:57<00:00,  2.51it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.72it/s]
+                   all       1284       1685      0.299      0.278      0.192     0.0646
+  0%|          | 0/144 [00:00<?, ?it/s]
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+[Alpha] Epoch 8/80: α=0.860
+       9/80      22.1G       1.36      2.244      0.855        101        640: 100%|██████████| 144/144 [00:57<00:00,  2.51it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.73it/s]
+                   all       1284       1685       0.34      0.262      0.209     0.0657
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s][Alpha] Epoch 9/80: α=0.855
+      10/80      22.1G      1.349      2.199     0.8524        118        640: 100%|██████████| 144/144 [00:57<00:00,  2.50it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.77it/s]
+                   all       1284       1685      0.345      0.299      0.242     0.0767
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s][Alpha] Epoch 10/80: α=0.850
+      11/80      22.1G      1.323      2.171     0.8367         99        640: 100%|██████████| 144/144 [00:57<00:00,  2.49it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.65it/s]
+                   all       1284       1685       0.48      0.323      0.321      0.105
+  0%|          | 0/144 [00:00<?, ?it/s]
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+[Alpha] Epoch 11/80: α=0.845
+      12/80      22.2G      1.431      2.096     0.9135         99        640: 100%|██████████| 144/144 [00:57<00:00,  2.51it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.67it/s]
+                   all       1284       1685      0.459      0.309      0.283     0.0926
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s][Alpha] Epoch 12/80: α=0.840
+      13/80      22.1G      1.464      2.035     0.9411        103        640: 100%|██████████| 144/144 [00:57<00:00,  2.51it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.75it/s]
+                   all       1284       1685      0.415      0.348      0.312      0.103
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s][Alpha] Epoch 13/80: α=0.835
+      14/80      22.2G      1.367      2.041     0.8715        128        640: 100%|██████████| 144/144 [00:57<00:00,  2.51it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.70it/s]
+                   all       1284       1685      0.414      0.365      0.335      0.121
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s][Alpha] Epoch 14/80: α=0.830
+      15/80      22.2G      1.304      1.975     0.8432        100        640: 100%|██████████| 144/144 [00:57<00:00,  2.51it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.64it/s]
+                   all       1284       1685      0.478      0.404      0.379       0.14
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s][Alpha] Epoch 15/80: α=0.825
+      16/80      22.1G      1.305      1.945      0.845        107        640: 100%|██████████| 144/144 [00:57<00:00,  2.51it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 12/12 [00:03<00:00,  3.73it/s]
+                   all       1284       1685       0.49      0.385      0.375      0.132
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+  0%|          | 0/144 [00:00<?, ?it/s][Alpha] Epoch 16/80: α=0.820
