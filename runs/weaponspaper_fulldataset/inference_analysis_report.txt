@@ -1,6 +1,6 @@
 ================================================================================
   INFERENCE IMAGE STATISTICS — MULTI-SPLIT ANALYSIS
-  2026-05-20 12:07:54
+  2026-05-20 12:36:43
 ================================================================================
   Model:       /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/runs_new_weapon_dataset_full/swa_09_05_fulldataset/weights/best.pt
   Dataset:     /home/constantin/Doctorat/GunDatasetHistogram
@@ -215,37 +215,24 @@
 
 ######################################################################
   EVALUATING SPLIT: TEST
-  Images: 5348 from /home/constantin/Doctorat/GunDatasetHistogram/test/images
+  Images: 2674 from /home/constantin/Doctorat/GunDatasetHistogram/test/images
   Labels: /home/constantin/Doctorat/GunDatasetHistogram/test/labels
   CONF=0.1 IOU_NMS=0.6 IOU_MATCH=0.5 PREPROCESS=none
 ######################################################################
-  [test] 200/5348 images... preds=231
-  [test] 400/5348 images... preds=459
-  [test] 600/5348 images... preds=717
-  [test] 800/5348 images... preds=949
-  [test] 1000/5348 images... preds=1232
-  [test] 1200/5348 images... preds=1429
-  [test] 1400/5348 images... preds=1628
-  [test] 1600/5348 images... preds=1865
-  [test] 1800/5348 images... preds=2093
-  [test] 2000/5348 images... preds=2299
-  [test] 2200/5348 images... preds=2589
-  [test] 2400/5348 images... preds=2844
-  [test] 2600/5348 images... preds=3081
-  [test] 2800/5348 images... preds=3366
-  [test] 3000/5348 images... preds=3619
-  [test] 3200/5348 images... preds=3884
-  [test] 3400/5348 images... preds=4130
-  [test] 3600/5348 images... preds=4430
-  [test] 3800/5348 images... preds=4678
-  [test] 4000/5348 images... preds=4927
-  [test] 4200/5348 images... preds=5196
-  [test] 4400/5348 images... preds=5465
-  [test] 4600/5348 images... preds=5720
-  [test] 4800/5348 images... preds=6038
-  [test] 5000/5348 images... preds=6301
-  [test] 5200/5348 images... preds=6596
-  [test] 5348/5348 images... preds=6794
+  [test] 200/2674 images... preds=271
+  [test] 400/2674 images... preds=515
+  [test] 600/2674 images... preds=780
+  [test] 800/2674 images... preds=1030
+  [test] 1000/2674 images... preds=1335
+  [test] 1200/2674 images... preds=1578
+  [test] 1400/2674 images... preds=1834
+  [test] 1600/2674 images... preds=2111
+  [test] 1800/2674 images... preds=2375
+  [test] 2000/2674 images... preds=2635
+  [test] 2200/2674 images... preds=2967
+  [test] 2400/2674 images... preds=3248
+  [test] 2600/2674 images... preds=3488
+  [test] 2674/2674 images... preds=3606
 
 ================================================================================
   RESULTS: TEST
@@ -253,86 +240,86 @@
 
   OVERALL
   ──────────────────────────────────────────────────
-  Total images:       5348
-  Total GT:           7046
-  Total predictions:  6794
-  Avg confidence:     0.6706
-  TP=5362  FP=1432  FN=1684
-  Precision=0.7892  Recall=0.7610  F1=0.7749
+  Total images:       2674
+  Total GT:           3523
+  Total predictions:  3606
+  Avg confidence:     0.6860
+  TP=2895  FP=711  FN=628
+  Precision=0.8028  Recall=0.8217  F1=0.8122
   FP/image avg:       0.27
 
   PER-CLASS SUMMARY
   ────────────────────────────────────────────────────────────────────────────────────────
   cid name             GT   Pred    TP    FP    FN  TP/GT%   Prec    Rec     F1
   ────────────────────────────────────────────────────────────────────────────────────────
-    0 knife          1372   1370  1114   256   258   81.2%  0.813  0.812  0.813
-    1 long_gun       1882   1828  1515   313   367   80.5%  0.829  0.805  0.817
-    2 other          1312   1188   737   451   575   56.2%  0.620  0.562  0.590
-    3 pistol         2480   2408  1996   412   484   80.5%  0.829  0.805  0.817
+    0 knife           686    722   588   134    98   85.7%  0.814  0.857  0.835
+    1 long_gun        941    963   820   143   121   87.1%  0.852  0.871  0.861
+    2 other           656    632   406   226   250   61.9%  0.642  0.619  0.630
+    3 pistol         1240   1289  1081   208   159   87.2%  0.839  0.872  0.855
 
   IMAGE-LEVEL SPECIFICITY
   ───────────────────────────────────────────────────────
   cid name         TN_img FP_img Specificity
-    0 knife          4087     29      0.9930
-    1 long_gun       3793    113      0.9711
-    2 other          4204    128      0.9705
-    3 pistol         3083    139      0.9569
+    0 knife          2042     16      0.9922
+    1 long_gun       1897     56      0.9713
+    2 other          2101     65      0.9700
+    3 pistol         1541     70      0.9565
 
   CONFIDENCE DISTRIBUTION
   ──────────────────────────────
-  1.0-0.9 :     99 (  1.5%)
-  0.9-0.8 :   2519 ( 37.1%)
-  0.8-0.7 :   1672 ( 24.6%)
-  0.7-0.6 :    681 ( 10.0%)
-  0.6-0.5 :    414 (  6.1%)
-  0.5-0.4 :    313 (  4.6%)
-  0.4-0.3 :    297 (  4.4%)
-  0.3-0.2 :    306 (  4.5%)
-  0.2-0.1 :    493 (  7.3%)
+  1.0-0.9 :     24 (  0.7%)
+  0.9-0.8 :   1344 ( 37.3%)
+  0.8-0.7 :   1010 ( 28.0%)
+  0.7-0.6 :    406 ( 11.3%)
+  0.6-0.5 :    208 (  5.8%)
+  0.5-0.4 :    135 (  3.7%)
+  0.4-0.3 :    140 (  3.9%)
+  0.3-0.2 :    125 (  3.5%)
+  0.2-0.1 :    214 (  5.9%)
 
   SIZE-STRATIFIED TP/FP/FN
   ───────────────────────────────────────────────────────────────────────────
   Class        Size        TP    FP    FN    Prec     Rec      F1
-  knife        small        8    10     2   0.444   0.800   0.571
-  knife        medium     247   104    97   0.704   0.718   0.711
-  knife        large      859   142   159   0.858   0.844   0.851
-  long_gun     small        8     5    10   0.615   0.444   0.516
-  long_gun     medium     233    81   159   0.742   0.594   0.660
-  long_gun     large     1274   227   198   0.849   0.865   0.857
-  other        small        3     0     3   1.000   0.500   0.667
-  other        medium     145   188   247   0.435   0.370   0.400
-  other        large      589   263   325   0.691   0.644   0.667
-  pistol       small       58    37    42   0.611   0.580   0.595
-  pistol       medium     597   132   269   0.819   0.689   0.749
-  pistol       large     1341   243   173   0.847   0.886   0.866
+  knife        small        5     5     0   0.500   1.000   0.667
+  knife        medium     141    50    31   0.738   0.820   0.777
+  knife        large      442    79    67   0.848   0.868   0.858
+  long_gun     small        5     3     4   0.625   0.556   0.588
+  long_gun     medium     151    37    45   0.803   0.770   0.786
+  long_gun     large      664   103    72   0.866   0.902   0.884
+  other        small        2     0     1   1.000   0.667   0.800
+  other        medium      87    95   109   0.478   0.444   0.460
+  other        large      317   131   140   0.708   0.694   0.701
+  pistol       small       39    23    11   0.629   0.780   0.696
+  pistol       medium     360    68    73   0.841   0.831   0.836
+  pistol       large      682   117    75   0.854   0.901   0.877
   ───────────────────────────────────────────────────────────────────────────
-  ALL          small       77    52    57   0.597   0.575   0.586
-  ALL          medium    1222   505   772   0.708   0.613   0.657
-  ALL          large     4063   875   855   0.823   0.826   0.824
+  ALL          small       51    31    16   0.622   0.761   0.685
+  ALL          medium     739   250   258   0.747   0.741   0.744
+  ALL          large     2105   430   354   0.830   0.856   0.843
 
   TP vs FP CONFIDENCE
   ────────────────────────────────────────────────────────────
   Class         TP mean   TP med  FP mean   FP med      Gap
-  knife           0.744    0.799    0.449    0.400   +0.295
-  long_gun        0.738    0.795    0.446    0.400   +0.291
-  other           0.649    0.723    0.411    0.388   +0.238
-  pistol          0.757    0.805    0.440    0.420   +0.316
-  High-conf FPs (>0.5): 576 / 1432 (40.2%)
+  knife           0.755    0.798    0.452    0.390   +0.303
+  long_gun        0.753    0.795    0.488    0.465   +0.265
+  other           0.671    0.738    0.425    0.401   +0.246
+  pistol          0.761    0.797    0.439    0.421   +0.322
+  High-conf FPs (>0.5): 299 / 711 (42.1%)
 
   CROSS-CLASS CONFUSION (GT=row, Pred=col)
   ────────────────────────────────────────────────────
   GT\Pred          knife  long_gun     other    pistol
-  knife               --        14        28        23
-  long_gun             3        --         5        75
-  other               18         9        --        46
-  pistol              14        79        14        --
+  knife               --         5        14        12
+  long_gun             2        --         3        38
+  other               11         2        --        23
+  pistol               8        41         5        --
 
   FP SPATIAL DISTRIBUTION
   ───────────────────────────────────────────────────────────────────────────
-  knife       : 256 FPs | center=159(62%) edge=97(38%) | cx=0.51+-0.17 cy=0.56+-0.21
-  long_gun    : 313 FPs | center=193(62%) edge=120(38%) | cx=0.49+-0.22 cy=0.53+-0.18
-  other       : 451 FPs | center=289(64%) edge=162(36%) | cx=0.51+-0.21 cy=0.52+-0.18
-  pistol      : 412 FPs | center=256(62%) edge=156(38%) | cx=0.49+-0.20 cy=0.50+-0.18
+  knife       : 134 FPs | center=83(62%) edge=51(38%) | cx=0.51+-0.17 cy=0.57+-0.21
+  long_gun    : 143 FPs | center=87(61%) edge=56(39%) | cx=0.50+-0.22 cy=0.53+-0.18
+  other       : 226 FPs | center=142(63%) edge=84(37%) | cx=0.51+-0.21 cy=0.53+-0.18
+  pistol      : 208 FPs | center=129(62%) edge=79(38%) | cx=0.48+-0.20 cy=0.50+-0.18
 
   TOP 20 WORST IMAGES
   ─────────────────────────────────────────────────────────────────
@@ -341,72 +328,64 @@
         knife: tp=1 fp=0 fn=3
         long_gun: tp=2 fp=2 fn=0
         other: tp=1 fp=5 fn=1
-    2    1    9    10 dataset2_a5e5ede4-590f-11e2-9823-8f801ccd4c57_png_jpg.rf.c20a8882b346af3234820609f289a0c6.jpg
-        pistol: tp=1 fp=1 fn=9
-    3    4    6    10 dataset2_be1b6a957c1ff8a37b4912c5578f14ef_jpg.rf.d98033877d8f8bc3716682c0c6f1aded.jpg
-        knife: tp=1 fp=0 fn=3
-        long_gun: tp=2 fp=3 fn=0
-        other: tp=1 fp=1 fn=1
-        pistol: tp=2 fp=0 fn=2
-    4    0    9     9 dataset2_9913861094_s-l1600209_jpg.rf.440827c9dc1120b11fae383b041c22d1.jpg
-        long_gun: tp=1 fp=0 fn=2
-        other: tp=0 fp=0 fn=4
-        pistol: tp=0 fp=0 fn=3
-    5    1    8     9 dataset2_a5e5ede4-590f-11e2-9823-8f801ccd4c57_png_jpg.rf.c20a8882b346af3234820609f289a0c6.jpg
+    2    1    8     9 dataset2_a5e5ede4-590f-11e2-9823-8f801ccd4c57_png_jpg.rf.c20a8882b346af3234820609f289a0c6.jpg
         long_gun: tp=1 fp=1 fn=0
         pistol: tp=2 fp=0 fn=8
-    6    2    6     8 dataset2_61172dadc6483180fbda5d2b396c7997_jpg.rf.30d198a05c44129680d61cb028f7ba68.jpg
-        other: tp=0 fp=1 fn=0
-        pistol: tp=4 fp=1 fn=6
-    7    2    6     8 dataset2_EuglwuWWQAIiGNq_jpg.rf.3ffbc52672855369794b880acec73ce1.jpg
-        other: tp=1 fp=0 fn=6
-        pistol: tp=2 fp=2 fn=0
-    8    5    3     8 dataset2_ee83d57557b36ae351fba1874f70411c_jpg.rf.61e366ea42fbf8e295ad6b56cfeebb6e.jpg
-        long_gun: tp=3 fp=4 fn=1
-        pistol: tp=1 fp=1 fn=2
-    9    1    7     8 dataset2_9913861094_s-l1600209_jpg.rf.440827c9dc1120b11fae383b041c22d1.jpg
+    3    1    7     8 dataset2_9913861094_s-l1600209_jpg.rf.440827c9dc1120b11fae383b041c22d1.jpg
         long_gun: tp=2 fp=1 fn=1
         other: tp=0 fp=0 fn=4
         pistol: tp=1 fp=0 fn=2
-   10    1    7     8 dataset2_EuglwuWWQAIiGNq_jpg.rf.3ffbc52672855369794b880acec73ce1.jpg
+    4    1    7     8 dataset2_EuglwuWWQAIiGNq_jpg.rf.3ffbc52672855369794b880acec73ce1.jpg
         other: tp=0 fp=0 fn=7
         pistol: tp=2 fp=1 fn=0
-   11    2    5     7 dataset2_2f197fa7d6149e6d_jpg.rf.5f2745b38cedfb5b7d6e2a224be560f3.jpg
-        long_gun: tp=0 fp=1 fn=4
-        other: tp=0 fp=1 fn=0
-        pistol: tp=0 fp=0 fn=1
-   12    1    6     7 dataset2_PUBGGunsInRealLife-11941_jpg.rf.25dbed37e23bbb371af297daf9599b87.jpg
-        long_gun: tp=2 fp=1 fn=6
-   13    3    4     7 dataset2_Screenshot-from-2022-08-01-13-03-55_png_jpg.rf.65dd7359f02156431b5201da4edeb590.jpg
-        long_gun: tp=1 fp=1 fn=4
-        other: tp=0 fp=1 fn=0
-        pistol: tp=0 fp=1 fn=0
-   14    6    1     7 dataset2_a0da1ebf753b23ef9622cd4527e0fe6d_jpg.rf.56ab665ea32e95b7102357f0c6c9b5f2.jpg
-        knife: tp=0 fp=1 fn=0
-        long_gun: tp=8 fp=0 fn=1
-        other: tp=0 fp=2 fn=0
-        pistol: tp=0 fp=3 fn=0
-   15    0    7     7 dataset2_gettyimages-71282058-612x612_jpg.rf.f57be117e709dc798bf843ac438151ce.jpg
-        knife: tp=0 fp=0 fn=2
-        other: tp=0 fp=0 fn=4
-        pistol: tp=0 fp=0 fn=1
-   16    5    2     7 dataset2_istockphoto-1155183795-1024x1024_jpg.rf.6e3f32e942e1a6b2df7857302cadd100.jpg
-        knife: tp=0 fp=1 fn=1
-        long_gun: tp=2 fp=3 fn=0
-        other: tp=0 fp=1 fn=1
-   17    5    2     7 dataset1_cleaning_tasks_000915_jpg.rf.b91a9cbb0c45ed7ad56c87d33fceee14.jpg
+    5    5    2     7 dataset1_cleaning_tasks_000915_jpg.rf.b91a9cbb0c45ed7ad56c87d33fceee14.jpg
         other: tp=0 fp=5 fn=2
-   18    2    5     7 dataset2_2f197fa7d6149e6d_jpg.rf.5f2745b38cedfb5b7d6e2a224be560f3.jpg
+    6    2    5     7 dataset2_2f197fa7d6149e6d_jpg.rf.5f2745b38cedfb5b7d6e2a224be560f3.jpg
         long_gun: tp=0 fp=1 fn=4
         other: tp=0 fp=1 fn=0
         pistol: tp=0 fp=0 fn=1
-   19    4    3     7 dataset2_FILE288_JPG_jpg.rf.d41b2bc4812d01b4195684793e26efaf.jpg
+    7    4    3     7 dataset2_FILE288_JPG_jpg.rf.d41b2bc4812d01b4195684793e26efaf.jpg
         knife: tp=0 fp=0 fn=3
         long_gun: tp=0 fp=3 fn=0
         other: tp=0 fp=1 fn=0
-   20    2    5     7 dataset2_Screenshot-from-2022-08-01-13-03-55_png_jpg.rf.65dd7359f02156431b5201da4edeb590.jpg
+    8    2    5     7 dataset2_Screenshot-from-2022-08-01-13-03-55_png_jpg.rf.65dd7359f02156431b5201da4edeb590.jpg
         long_gun: tp=0 fp=1 fn=5
         pistol: tp=0 fp=1 fn=0
+    9    0    7     7 dataset2_gettyimages-71282058-612x612_jpg.rf.f57be117e709dc798bf843ac438151ce.jpg
+        knife: tp=0 fp=0 fn=2
+        other: tp=0 fp=0 fn=4
+        pistol: tp=0 fp=0 fn=1
+   10    2    4     6 dataset1_cleaning_tasks_000889_jpg.rf.50cdfab307e20c019f608f854a8d6eca.jpg
+        other: tp=2 fp=2 fn=4
+   11    5    1     6 dataset2_a0da1ebf753b23ef9622cd4527e0fe6d_jpg.rf.56ab665ea32e95b7102357f0c6c9b5f2.jpg
+        knife: tp=0 fp=1 fn=0
+        long_gun: tp=8 fp=1 fn=1
+        other: tp=0 fp=2 fn=0
+        pistol: tp=0 fp=1 fn=0
+   12    3    3     6 dataset2_w4_jpg.rf.f841004677280b6932628c915026c46c.jpg
+        long_gun: tp=2 fp=1 fn=0
+        pistol: tp=1 fp=2 fn=3
+   13    3    2     5 dataset1_cleaning_tasks_001895_jpg.rf.23e4ee27a89de8aaca60c6e6a567dbd3.jpg
+        other: tp=0 fp=3 fn=2
+   14    3    2     5 dataset1_tools_in_hand_002406_jpg.rf.3ae9e4abc495792616debce6aca261cf.jpg
+        long_gun: tp=0 fp=1 fn=0
+        other: tp=0 fp=0 fn=2
+        pistol: tp=0 fp=2 fn=0
+   15    2    3     5 dataset2_6c996a60758d9f7f43697c5a335fe2c5_jpg.rf.2c23e8414bee4dff08322fc3c1190b8d.jpg
+        knife: tp=0 fp=0 fn=1
+        other: tp=0 fp=2 fn=2
+   16    0    5     5 dataset2_DSC_0030_jpg.rf.f5a7b53d1ddfe94855ec6e6be65fd4af.jpg
+        knife: tp=0 fp=0 fn=1
+        other: tp=0 fp=0 fn=3
+        pistol: tp=0 fp=0 fn=1
+   17    2    2     4 dataset1_cleaning_tasks_000188_jpg.rf.a15372a9f4d43cbfaf172e74f2410e15.jpg
+        other: tp=0 fp=2 fn=2
+   18    4    0     4 dataset1_cleaning_tasks_000727_jpg.rf.783514ec665b476d35498d59ffb394d2.jpg
+        other: tp=0 fp=4 fn=0
+   19    2    2     4 dataset1_cleaning_tasks_000964_jpg.rf.82cbcd3af50128d304e627c6958b798f.jpg
+        other: tp=0 fp=2 fn=2
+   20    2    2     4 dataset1_cleaning_tasks_001121_jpg.rf.46f71bf88d962145df78e26a61826e07.jpg
+        other: tp=0 fp=2 fn=2
 
   Saving worst images to /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/inference_debug_output/test...
   Saved 20 images.
@@ -420,38 +399,37 @@
   ─────────────────────────────────────────────────────────────────
   Metric                             VALID           TEST       Delta    %Change
   ─────────────────────────────────────────────────────────────────
-  Total images                        7552           5348       -2204     -29.2%
-  Total GT                            9730           7046       -2684     -27.6%
-  Total predictions                   9993           6794       -3199     -32.0%
-  TP                                  8151           5362       -2789     -34.2%
-  FP                                  1842           1432        -410     -22.3%
-  FN                                  1579           1684        +105      +6.6%
-  Precision                         0.8157         0.7892     -0.0264      -3.2%
-  Recall                            0.8377         0.7610     -0.0767      -9.2%
-  F1                                0.8265         0.7749     -0.0517      -6.3%
-  Avg confidence                    0.6944         0.6706     -0.0238      -3.4%
-  FP/image                          0.2439         0.2678     +0.0239      +9.8%
-  High-conf FPs (>0.5)                 832            576        -256     -30.8%
+  Total images                        7552           2674       -4878     -64.6%
+  Total GT                            9730           3523       -6207     -63.8%
+  Total predictions                   9993           3606       -6387     -63.9%
+  TP                                  8151           2895       -5256     -64.5%
+  FP                                  1842            711       -1131     -61.4%
+  FN                                  1579            628        -951     -60.2%
+  Precision                         0.8157         0.8028     -0.0128      -1.6%
+  Recall                            0.8377         0.8217     -0.0160      -1.9%
+  F1                                0.8265         0.8122     -0.0144      -1.7%
+  Avg confidence                    0.6944         0.6860     -0.0083      -1.2%
+  FP/image                          0.2439         0.2659     +0.0220      +9.0%
+  High-conf FPs (>0.5)                 832            299        -533     -64.1%
 
   PER-CLASS PRECISION COMPARISON
   ───────────────────────────────────────────────────────
   Class          P_valid    R_valid    P_test     R_test
-  knife            0.823      0.859     0.813      0.812
-  long_gun         0.839      0.872     0.829      0.805
-  other            0.595      0.569     0.620      0.562
-  pistol           0.866      0.895     0.829      0.805
+  knife            0.823      0.859     0.814      0.857
+  long_gun         0.839      0.872     0.852      0.871
+  other            0.595      0.569     0.642      0.619
+  pistol           0.866      0.895     0.839      0.872
 
   SIZE-STRATIFIED PRECISION COMPARISON
   ───────────────────────────────────────────────────────
   Size         P_valid    R_valid    P_test     R_test
-  small          0.686      0.683     0.597      0.575
-  medium         0.771      0.792     0.708      0.613
-  large          0.839      0.862     0.823      0.826
+  small          0.686      0.683     0.622      0.761
+  medium         0.771      0.792     0.747      0.741
+  large          0.839      0.862     0.830      0.856
 
   KEY FINDINGS
   ───────────────────────────────────────────────────────
-  !! RECALL drops 0.077 (9.2%) from valid to test
-  !! Worst precision drop: pistol (-0.037)
+  !! Worst precision drop: pistol (-0.027)
 
 
 ================================================================================

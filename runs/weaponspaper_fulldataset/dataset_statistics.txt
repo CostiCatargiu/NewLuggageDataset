@@ -1,11 +1,11 @@
-/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/DATASETanalyze2.py
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/weaponspaper_fulldataset/dataset_debug_analysis.py
 [WARN] imagehash not installed — skipping perceptual duplicate detection
 
 ======================================================================
   DATASET DEBUG ANALYSIS
 ======================================================================
   Dataset: /home/constantin/Doctorat/GunDatasetHistogram
-  Output:  /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/debug_output
+  Output:  /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/weaponspaper_fulldataset/debug_output
 
 ======================================================================
   1. COLLECTING BOX STATISTICS
@@ -200,9 +200,9 @@
 ======================================================================
   10. SAMPLE GRID VISUALIZATIONS
 ======================================================================
-    Saved grid: /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/debug_output/grid_train.png
-    Saved grid: /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/debug_output/grid_valid.png
-    Saved grid: /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/debug_output/grid_test.png
+    Saved grid: /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/weaponspaper_fulldataset/debug_output/grid_train.png
+    Saved grid: /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/weaponspaper_fulldataset/debug_output/grid_valid.png
+    Saved grid: /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/weaponspaper_fulldataset/debug_output/grid_test.png
 
 ======================================================================
   SUMMARY: KEY DIFFERENCES TO INVESTIGATE
@@ -217,7 +217,7 @@
 
   ⚠️  Edge-touching difference: train=21.9% vs test=17.2%
 
-  Output saved to: /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/debug_output
+  Output saved to: /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/weaponspaper_fulldataset/debug_output
   Check heatmaps and grids for visual inspection!
 
 ======================================================================
