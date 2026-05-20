@@ -316,6 +316,16 @@ class v8DetectionLoss:
             - tal_topk
             - tal_alpha
             - tal_beta
+
+        Section E (SA-TAL — Scale-Adaptive Task Aligned Assigner):
+            - use_satal: Enable SA-TAL (default False)
+            - satal_alpha_small: TAL alpha for small objects (default 1.2)
+            - satal_beta_small: TAL beta for small objects (default 4.5)
+            - satal_alpha_large: TAL alpha for large objects (default 1.0)
+            - satal_beta_large: TAL beta for large objects (default 6.0)
+            - satal_small_area: Normalized area threshold for "small" (default 0.01)
+            - satal_large_area: Normalized area threshold for "large" (default 0.06)
+            - satal_topk_factor: Extra topk multiplier for small objects (default 1.3)
     """
 
     def __init__(self, model, tal_topk=10):
@@ -367,6 +377,16 @@ class v8DetectionLoss:
         self.tal_alpha = getattr(h, 'tal_alpha', 0.5)
         self.tal_beta = getattr(h, 'tal_beta', 6.0)
 
+        # Section E: SA-TAL (Scale-Adaptive Task Aligned Assigner)
+        self.use_satal = getattr(h, 'use_satal', False)
+        self.satal_alpha_small = getattr(h, 'satal_alpha_small', 1.2)
+        self.satal_beta_small = getattr(h, 'satal_beta_small', 4.5)
+        self.satal_alpha_large = getattr(h, 'satal_alpha_large', 1.0)
+        self.satal_beta_large = getattr(h, 'satal_beta_large', 6.0)
+        self.satal_small_area = getattr(h, 'satal_small_area', 0.01)   # ~64px at 640
+        self.satal_large_area = getattr(h, 'satal_large_area', 0.06)   # ~157px at 640
+        self.satal_topk_factor = getattr(h, 'satal_topk_factor', 1.3)
+
         # =====================================================================
         # LOSS FUNCTIONS
         # =====================================================================
@@ -377,13 +397,29 @@ class v8DetectionLoss:
         # Pass parameters to BboxLoss
         self.bbox_loss.set_params(h)
 
-        # Task Aligned Assigner with configurable parameters
-        self.assigner = TaskAlignedAssigner(
-            topk=self.tal_topk,
-            num_classes=self.nc,
-            alpha=self.tal_alpha,
-            beta=self.tal_beta
-        )
+        # Task Aligned Assigner — standard or scale-adaptive
+        if self.use_satal:
+            from ultralytics.utils.satal import ScaleAdaptiveTaskAlignedAssigner
+            self.assigner = ScaleAdaptiveTaskAlignedAssigner(
+                topk=self.tal_topk,
+                num_classes=self.nc,
+                alpha=self.tal_alpha,
+                beta=self.tal_beta,
+                alpha_small=self.satal_alpha_small,
+                beta_small=self.satal_beta_small,
+                alpha_large=self.satal_alpha_large,
+                beta_large=self.satal_beta_large,
+                small_area_thresh=self.satal_small_area,
+                large_area_thresh=self.satal_large_area,
+                topk_small_factor=self.satal_topk_factor
+            )
+        else:
+            self.assigner = TaskAlignedAssigner(
+                topk=self.tal_topk,
+                num_classes=self.nc,
+                alpha=self.tal_alpha,
+                beta=self.tal_beta
+            )
 
         # Projection for DFL
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
@@ -408,6 +444,15 @@ class v8DetectionLoss:
             print(f"  [D] tal_topk:        {self.tal_topk}")
             print(f"  [D] tal_alpha:       {self.tal_alpha}")
             print(f"  [D] tal_beta:        {self.tal_beta}")
+            print(f"  [E] use_satal:       {self.use_satal}")
+            if self.use_satal:
+                print(f"      satal_alpha_small: {self.satal_alpha_small}")
+                print(f"      satal_beta_small:  {self.satal_beta_small}")
+                print(f"      satal_alpha_large: {self.satal_alpha_large}")
+                print(f"      satal_beta_large:  {self.satal_beta_large}")
+                print(f"      satal_small_area:  {self.satal_small_area} (~{int(self.satal_small_area**0.5 * 640)}px)")
+                print(f"      satal_large_area:  {self.satal_large_area} (~{int(self.satal_large_area**0.5 * 640)}px)")
+                print(f"      satal_topk_factor: {self.satal_topk_factor}")
             print(f"  epochs:              {self.total_epochs}")
             print("=" * 60 + "\n")
             self._config_printed = True
@@ -530,6 +575,10 @@ class v8DetectionLoss:
 
         # Decode predicted boxes
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)
+
+        # Set image size for SA-TAL (needed for area normalization)
+        if hasattr(self.assigner, 'set_imgsz'):
+            self.assigner.set_imgsz(imgsz)
 
         # Task Aligned Assignment
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
