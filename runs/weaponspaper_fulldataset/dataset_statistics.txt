@@ -1,0 +1,227 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/DATASETanalyze2.py
+[WARN] imagehash not installed — skipping perceptual duplicate detection
+
+======================================================================
+  DATASET DEBUG ANALYSIS
+======================================================================
+  Dataset: /home/constantin/Doctorat/GunDatasetHistogram
+  Output:  /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/debug_output
+
+======================================================================
+  1. COLLECTING BOX STATISTICS
+======================================================================
+  train: 49079 images, 63447 boxes, 51 empty
+  valid: 7552 images, 9730 boxes, 7 empty
+  test: 2674 images, 3523 boxes, 6 empty
+
+======================================================================
+  2. POSITION HEATMAPS
+======================================================================
+  Saved heatmaps for train
+  Saved heatmaps for valid
+  Saved heatmaps for test
+
+======================================================================
+  3. BOX DISTRIBUTION COMPARISON
+======================================================================
+
+  ── TRAIN ──
+    Area (norm):  mean=0.14452  med=0.06160  p10=0.00828  p90=0.40555
+    Width (norm): mean=0.3008  med=0.2173  p10=0.0688  p90=0.6867
+    Height(norm): mean=0.3483  med=0.2821  p10=0.1047  p90=0.7133
+    Asp. ratio:   mean=1.539  med=1.235  p10=0.637  p90=2.658
+    Center X:     mean=0.497  med=0.498  std=0.178
+    Center Y:     mean=0.516  med=0.509  std=0.167
+    [   knife] area med=0.09240  AR med=1.185  cx=0.495±0.157  cy=0.547±0.165  n=10510
+    [long_gun] area med=0.09181  AR med=1.118  cx=0.497±0.177  cy=0.526±0.164  n=19269
+    [   other] area med=0.05558  AR med=1.367  cx=0.499±0.185  cy=0.511±0.176  n=10161
+    [  pistol] area med=0.03846  AR med=1.267  cx=0.496±0.184  cy=0.495±0.164  n=23507
+
+  ── VALID ──
+    Area (norm):  mean=0.11780  med=0.04729  p10=0.00648  p90=0.33551
+    Width (norm): mean=0.2735  med=0.1883  p10=0.0570  p90=0.6469
+    Height(norm): mean=0.3190  med=0.2523  p10=0.0938  p90=0.6609
+    Asp. ratio:   mean=1.752  med=1.263  p10=0.547  p90=3.444
+    Center X:     mean=0.488  med=0.491  std=0.178
+    Center Y:     mean=0.514  med=0.506  std=0.165
+    [   knife] area med=0.06836  AR med=1.255  cx=0.483±0.152  cy=0.541±0.162  n=1813
+    [long_gun] area med=0.07344  AR med=1.083  cx=0.483±0.171  cy=0.519±0.155  n=2750
+    [   other] area med=0.04201  AR med=1.439  cx=0.502±0.194  cy=0.523±0.182  n=1324
+    [  pistol] area med=0.03117  AR med=1.315  cx=0.489±0.188  cy=0.496±0.164  n=3843
+
+  ── TEST ──
+    Area (norm):  mean=0.12313  med=0.05297  p10=0.00695  p90=0.35067
+    Width (norm): mean=0.2797  med=0.1953  p10=0.0602  p90=0.6562
+    Height(norm): mean=0.3311  med=0.2625  p10=0.0938  p90=0.6913
+    Asp. ratio:   mean=1.749  med=1.266  p10=0.545  p90=3.403
+    Center X:     mean=0.489  med=0.490  std=0.177
+    Center Y:     mean=0.516  med=0.505  std=0.168
+    [   knife] area med=0.07073  AR med=1.217  cx=0.483±0.157  cy=0.553±0.167  n=686
+    [long_gun] area med=0.07371  AR med=1.148  cx=0.483±0.174  cy=0.516±0.165  n=941
+    [   other] area med=0.04379  AR med=1.351  cx=0.497±0.178  cy=0.505±0.174  n=656
+    [  pistol] area med=0.03628  AR med=1.294  cx=0.493±0.187  cy=0.503±0.165  n=1240
+
+======================================================================
+  4. CROSS-SPLIT DISTRIBUTION COMPARISON
+======================================================================
+
+  Metric                           TRAIN       VALID        TEST
+  ────────────────────────────────────────────────────────────
+  Area mean                      0.14452     0.11780     0.12313
+                            ⚠️  train→test shift: 14.8%
+  Area median                    0.06160     0.04729     0.05297
+                            ⚠️  train→test shift: 14.0%
+  Area P10                       0.00828     0.00648     0.00695
+                            ⚠️  train→test shift: 16.0%
+  Area P90                       0.40555     0.33551     0.35067
+                            ⚠️  train→test shift: 13.5%
+  Width mean                     0.30083     0.27348     0.27968
+  Height mean                    0.34828     0.31903     0.33105
+  AR mean                        1.53933     1.75205     1.74916
+                            ⚠️  train→test shift: 13.6%
+  AR std                         1.72695     1.61046     1.59069
+  Center X mean                  0.49676     0.48813     0.48908
+  Center X std                   0.17768     0.17802     0.17655
+  Center Y mean                  0.51560     0.51442     0.51622
+  Center Y std                   0.16697     0.16469     0.16801
+
+  Per-class median area (normalized):
+  Class              TRAIN       VALID        TEST   Δ train→test
+  ───────────────────────────────────────────────────────
+  knife            0.09240     0.06836     0.07073        -23.5% ⚠️
+  long_gun         0.09181     0.07344     0.07371        -19.7% ⚠️
+  other            0.05558     0.04201     0.04379        -21.2% ⚠️
+  pistol           0.03846     0.03117     0.03628         -5.7%
+
+======================================================================
+  5. SPATIAL QUADRANT ANALYSIS
+======================================================================
+  (3x3 grid: T=top, M=mid, B=bottom, L=left, C=center, R=right)
+
+  ── TRAIN (63447 boxes) ──
+    Edge-touching: 13914 (21.9%)
+      TL:  2.9%  TC:  8.2%  TR:  2.8%
+      ML: 11.5%  MC: 45.2%  MR: 10.8%
+      BL:  3.6%  BC: 11.2%  BR:  3.7%
+
+  ── VALID (9730 boxes) ──
+    Edge-touching: 1601 (16.5%)
+      TL:  3.2%  TC:  7.7%  TR:  2.6%
+      ML: 12.6%  MC: 45.6%  MR: 10.0%
+      BL:  3.6%  BC: 11.2%  BR:  3.5%
+
+  ── TEST (3523 boxes) ──
+    Edge-touching: 606 (17.2%)
+      TL:  2.8%  TC:  8.4%  TR:  2.5%
+      ML: 12.6%  MC: 44.9%  MR:  9.7%
+      BL:  3.7%  BC: 11.4%  BR:  4.1%
+
+======================================================================
+  6. PER-IMAGE OBJECT COUNT DISTRIBUTION
+======================================================================
+
+  ── TRAIN ──
+    Images: 49079  Empty: 51 (0.1%)
+    Mean: 1.29  Med: 1  Max: 15  Std: 0.81
+    Distribution: 0obj=51(0.1%) 1obj=39678(80.8%) 2obj=6684(13.6%) 3obj=1592(3.2%) 4obj=601(1.2%) 5obj=155(0.3%) 6obj=120(0.2%) 7obj=70(0.1%) 8obj=57(0.1%) 9obj=14(0.0%)
+
+  ── VALID ──
+    Images: 7552  Empty: 7 (0.1%)
+    Mean: 1.29  Med: 1  Max: 18  Std: 0.82
+    Distribution: 0obj=7(0.1%) 1obj=6151(81.4%) 2obj=971(12.9%) 3obj=257(3.4%) 4obj=95(1.3%) 5obj=23(0.3%) 6obj=17(0.2%) 7obj=13(0.2%) 8obj=6(0.1%) 9obj=3(0.0%)
+
+  ── TEST ──
+    Images: 2674  Empty: 6 (0.2%)
+    Mean: 1.32  Med: 1  Max: 16  Std: 0.92
+    Distribution: 0obj=6(0.2%) 1obj=2150(80.4%) 2obj=366(13.7%) 3obj=79(3.0%) 4obj=32(1.2%) 5obj=17(0.6%) 6obj=7(0.3%) 7obj=7(0.3%) 8obj=3(0.1%) 9obj=3(0.1%)
+
+======================================================================
+  7. CLASS CO-OCCURRENCE
+======================================================================
+
+  ── TRAIN ──
+    Multi-class images: 3816
+      long_gun + pistol: 1227 images
+      other + pistol: 936 images
+      knife + other: 543 images
+      long_gun + other: 384 images
+      knife + pistol: 186 images
+      long_gun + other + pistol: 168 images
+      knife + long_gun: 105 images
+      knife + long_gun + pistol: 99 images
+      knife + other + pistol: 84 images
+      knife + long_gun + other + pistol: 51 images
+
+  ── VALID ──
+    Multi-class images: 638
+      long_gun + pistol: 187 images
+      other + pistol: 147 images
+      knife + other: 86 images
+      long_gun + other: 77 images
+      knife + pistol: 37 images
+      long_gun + other + pistol: 36 images
+      knife + long_gun + pistol: 20 images
+      knife + other + pistol: 15 images
+      knife + long_gun: 14 images
+      knife + long_gun + other + pistol: 13 images
+
+  ── TEST ──
+    Multi-class images: 193
+      long_gun + pistol: 56 images
+      other + pistol: 35 images
+      knife + other: 22 images
+      long_gun + other: 16 images
+      long_gun + other + pistol: 13 images
+      knife + pistol: 13 images
+      knife + long_gun + pistol: 11 images
+      knife + long_gun: 8 images
+      knife + other + pistol: 8 images
+      knife + long_gun + other: 7 images
+
+======================================================================
+  8. IMAGE BRIGHTNESS & CONTRAST
+======================================================================
+
+  ── TRAIN ──
+    Sampled: 2000 images
+    Brightness: mean=127.6  med=125.9  p10=115.7  p90=138.6  std=13.1
+    Contrast:   mean=74.5  med=73.9  p10=65.9  p90=80.6  std=9.1
+
+  ── VALID ──
+    Sampled: 2000 images
+    Brightness: mean=134.1  med=130.9  p10=126.1  p90=141.7  std=12.4
+    Contrast:   mean=70.0  med=70.8  p10=62.4  p90=74.7  std=9.0
+
+  ── TEST ──
+    Sampled: 2000 images
+    Brightness: mean=134.7  med=130.9  p10=126.2  p90=143.4  std=13.7
+    Contrast:   mean=70.6  med=70.9  p10=62.1  p90=75.2  std=9.5
+
+======================================================================
+  10. SAMPLE GRID VISUALIZATIONS
+======================================================================
+    Saved grid: /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/debug_output/grid_train.png
+    Saved grid: /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/debug_output/grid_valid.png
+    Saved grid: /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/debug_output/grid_test.png
+
+======================================================================
+  SUMMARY: KEY DIFFERENCES TO INVESTIGATE
+======================================================================
+
+  Area shift (train→test):       -14.0%
+  Center X spread (train/test):  0.178 / 0.177
+  Center Y spread (train/test):  0.167 / 0.168
+  Brightness shift:              +7.4 (mean pixel value)
+
+  ⚠️  SIGNIFICANT area shift detected — test objects are smaller than training
+
+  ⚠️  Edge-touching difference: train=21.9% vs test=17.2%
+
+  Output saved to: /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/debug_output
+  Check heatmaps and grids for visual inspection!
+
+======================================================================
+  Analysis complete.
+======================================================================
+
+Process finished with exit code 0
