@@ -326,6 +326,13 @@ class v8DetectionLoss:
             - satal_small_area: Normalized area threshold for "small" (default 0.01)
             - satal_large_area: Normalized area threshold for "large" (default 0.06)
             - satal_topk_factor: Extra topk multiplier for small objects (default 1.3)
+
+        Section F (Class-weighted BCE):
+            - cls_weights: Per-class weight multipliers for BCE classification loss.
+                           List of floats, one per class (in alphabetical order).
+                           Default: all 1.0 (no weighting).
+                           Example for weapon dataset: [1.0, 1.0, 2.5, 1.0]
+                           means "other" (class 2) gets 2.5x classification loss weight.
     """
 
     def __init__(self, model, tal_topk=10):
@@ -386,6 +393,15 @@ class v8DetectionLoss:
         self.satal_small_area = getattr(h, 'satal_small_area', 0.01)   # ~64px at 640
         self.satal_large_area = getattr(h, 'satal_large_area', 0.06)   # ~157px at 640
         self.satal_topk_factor = getattr(h, 'satal_topk_factor', 1.3)
+
+        # Section F: Class-weighted BCE
+        cls_weights = getattr(h, 'cls_weights', None)
+        if cls_weights is not None:
+            self.cls_weights = torch.tensor(cls_weights, dtype=torch.float32, device=device)
+            assert len(self.cls_weights) == self.nc, \
+                f"cls_weights length ({len(self.cls_weights)}) must match nc ({self.nc})"
+        else:
+            self.cls_weights = None  # No weighting (default behavior)
 
         # =====================================================================
         # LOSS FUNCTIONS
@@ -453,6 +469,7 @@ class v8DetectionLoss:
                 print(f"      satal_small_area:  {self.satal_small_area} (~{int(self.satal_small_area**0.5 * 640)}px)")
                 print(f"      satal_large_area:  {self.satal_large_area} (~{int(self.satal_large_area**0.5 * 640)}px)")
                 print(f"      satal_topk_factor: {self.satal_topk_factor}")
+            print(f"  [F] cls_weights:     {self.cls_weights.tolist() if self.cls_weights is not None else 'None (uniform)'}")
             print(f"  epochs:              {self.total_epochs}")
             print("=" * 60 + "\n")
             self._config_printed = True
@@ -592,8 +609,11 @@ class v8DetectionLoss:
 
         target_scores_sum = max(target_scores.sum(), 1)
 
-        # Classification loss (BCE)
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum
+        # Classification loss (BCE) with optional per-class weighting
+        cls_loss = self.bce(pred_scores, target_scores.to(dtype))  # [batch, anchors, nc]
+        if self.cls_weights is not None:
+            cls_loss = cls_loss * self.cls_weights.view(1, 1, -1)  # broadcast [1, 1, nc]
+        loss[1] = cls_loss.sum() / target_scores_sum
 
         # Bounding box losses
         if fg_mask.sum():
