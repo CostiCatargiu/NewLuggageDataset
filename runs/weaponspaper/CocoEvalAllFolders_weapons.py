@@ -7,7 +7,6 @@ and once against the test split — and writes a separate JSON for each.
 
 
 
-
 Per phase folder, two JSON files are written:
     <phase_folder>/<phase_folder>__valid.json
     <phase_folder>/<phase_folder>__test.json
@@ -51,17 +50,37 @@ import yaml
 RUNS_ROOT = "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/"
 PHASE_FOLDER_PATTERN = r"runs_new_weapon_dataset"
 
-DATA_YAML = "/home/constantin/Doctorat/GunDatasetHistogram17percentage/data.yaml"
+DATA_YAMLDS1 = "/home/constantin/Doctorat/GunDatasetHistogram17percentage1/data.yaml"
+DATA_YAMLDS2 = "/home/constantin/Doctorat/GunDatasetHistogram17percentage2/data.yaml"
+DATA_YAMLfull = "/home/constantin/Doctorat/GunDatasetHistogram/data.yaml"
 
 # Two annotation files — one per split.
 EVAL_SPLITS = {
-    "valid": {
+    "validDS1": {
         "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram17percentage/annotations_coco_valid.json",
         # What the YAML's `val:` field should point at for this pass.
         "yaml_val_path": "../valid/images",
     },
-    "test": {
+    "testDS1": {
         "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram17percentage/annotations_coco_test.json",
+        "yaml_val_path": "../test/images",
+    },
+    "validDS2": {
+        "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram17percentage2/annotations_coco_valid.json",
+        # What the YAML's `val:` field should point at for this pass.
+        "yaml_val_path": "../valid/images",
+    },
+    "testDS2": {
+        "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram17percentage2/annotations_coco_test.json",
+        "yaml_val_path": "../test/images",
+    },
+    "validfull": {
+        "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram/annotations_coco_valid.json",
+        # What the YAML's `val:` field should point at for this pass.
+        "yaml_val_path": "../valid/images",
+    },
+    "testfull": {
+        "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram/annotations_coco_test.json",
         "yaml_val_path": "../test/images",
     },
 }
