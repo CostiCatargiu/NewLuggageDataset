@@ -40,7 +40,6 @@ from contextlib import contextmanager
 from pathlib import Path
 import numpy as np
 
-import numpy as npb
 import yaml
 
 # =============================================================================
@@ -54,34 +53,46 @@ DATA_YAMLDS1 = "/home/constantin/Doctorat/GunDatasetHistogram17percentage1/data.
 DATA_YAMLDS2 = "/home/constantin/Doctorat/GunDatasetHistogram17percentage2/data.yaml"
 DATA_YAMLfull = "/home/constantin/Doctorat/GunDatasetHistogram/data.yaml"
 
-# Two annotation files — one per split.
+# Two annotation files per dataset — one per split.
+# Each split has its own data_yaml so the correct dataset is loaded.
+# "output_suffix" controls the output JSON filename:
+#   <phase_folder>__<output_suffix>.json
 EVAL_SPLITS = {
-    "validDS1": {
+    "valid_ds1": {
         "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram17percentage/annotations_coco_valid.json",
-        # What the YAML's `val:` field should point at for this pass.
         "yaml_val_path": "../valid/images",
+        "data_yaml": DATA_YAMLDS1,
+        "output_suffix": "valid_ds1",
     },
-    "testDS1": {
+    "test_ds1": {
         "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram17percentage/annotations_coco_test.json",
         "yaml_val_path": "../test/images",
+        "data_yaml": DATA_YAMLDS1,
+        "output_suffix": "test_ds1",
     },
-    "validDS2": {
+    "valid_ds2": {
         "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram17percentage2/annotations_coco_valid.json",
-        # What the YAML's `val:` field should point at for this pass.
         "yaml_val_path": "../valid/images",
+        "data_yaml": DATA_YAMLDS2,
+        "output_suffix": "valid_ds2",
     },
-    "testDS2": {
+    "test_ds2": {
         "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram17percentage2/annotations_coco_test.json",
         "yaml_val_path": "../test/images",
+        "data_yaml": DATA_YAMLDS2,
+        "output_suffix": "test_ds2",
     },
-    "validfull": {
+    "valid_full_dataset": {
         "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram/annotations_coco_valid.json",
-        # What the YAML's `val:` field should point at for this pass.
         "yaml_val_path": "../valid/images",
+        "data_yaml": DATA_YAMLfull,
+        "output_suffix": "valid_full_dataset",
     },
-    "testfull": {
+    "test_full_dataset": {
         "coco_ann": "/home/constantin/Doctorat/GunDatasetHistogram/annotations_coco_test.json",
         "yaml_val_path": "../test/images",
+        "data_yaml": DATA_YAMLfull,
+        "output_suffix": "test_full_dataset",
     },
 }
 
@@ -632,16 +643,18 @@ def process_phase_folder_on_split(
     data_yaml: str,
     img_size: int,
     skip_done: bool,
+    output_suffix: str = None,
 ) -> tuple[int, int, list, list]:
     """
     Run all models in `phase_folder` against the chosen split.
-    Writes <phase_folder>/<phase_folder>__<split>.json.
+    Writes <phase_folder>/<phase_folder>__<output_suffix>.json.
     Returns (num_new, num_failed, results, failed_list).
 
     Caller is responsible for patching the YAML's `val:` field beforehand.
     """
     phase_name = phase_folder.name
-    output_json = phase_folder / f"{phase_name}__{split_name}.json"
+    suffix = output_suffix or split_name
+    output_json = phase_folder / f"{phase_name}__{suffix}.json"
 
     print(f"\n{'#' * 80}")
     print(f"# PHASE FOLDER : {phase_name}")
@@ -745,9 +758,14 @@ def write_combined_json(combined_path: Path, runs_root: Path,
         "metadata": {
             "runs_root": str(runs_root),
             "phase_folder_pattern": PHASE_FOLDER_PATTERN,
-            "data_yaml": DATA_YAML,
+            "data_yamls": {
+                "ds1": DATA_YAMLDS1,
+                "ds2": DATA_YAMLDS2,
+                "full": DATA_YAMLfull,
+            },
             "splits": {
-                k: {"coco_ann": v["coco_ann"], "yaml_val_path": v["yaml_val_path"]}
+                k: {"coco_ann": v["coco_ann"], "yaml_val_path": v["yaml_val_path"],
+                     "data_yaml": v["data_yaml"]}
                 for k, v in EVAL_SPLITS.items()
             },
             "img_size": IMG_SIZE,
@@ -782,23 +800,30 @@ def main():
         print(f"[ERROR] No phase folders matching '{PHASE_FOLDER_PATTERN}' in {runs_root}")
         return
 
-    if not Path(DATA_YAML).exists():
-        print(f"[ERROR] DATA_YAML not found: {DATA_YAML}")
-        return
+    # Validate all data YAMLs exist
+    all_yamls = {DATA_YAMLDS1, DATA_YAMLDS2, DATA_YAMLfull}
+    for yaml_path in all_yamls:
+        if not Path(yaml_path).exists():
+            print(f"[ERROR] DATA_YAML not found: {yaml_path}")
+            return
 
     for split_name, info in EVAL_SPLITS.items():
         if not Path(info["coco_ann"]).exists():
             print(f"[WARN] COCO annotations missing for split '{split_name}': {info['coco_ann']}")
 
     print(f"{'=' * 80}")
-    print(f"BATCH COCO EVALUATION  —  TWO SPLITS  (valid + test)")
+    print(f"BATCH COCO EVALUATION  —  3 DATASETS × 2 SPLITS  (DS1/DS2/Full × valid/test)")
     print(f"{'=' * 80}")
     print(f"Root folder      : {runs_root}")
     print(f"Phase pattern    : {PHASE_FOLDER_PATTERN}")
-    print(f"Data YAML        : {DATA_YAML}")
+    print(f"Data YAML DS1    : {DATA_YAMLDS1}")
+    print(f"Data YAML DS2    : {DATA_YAMLDS2}")
+    print(f"Data YAML Full   : {DATA_YAMLfull}")
     for split_name, info in EVAL_SPLITS.items():
-        print(f"Split '{split_name}'      : ann={info['coco_ann']}")
-        print(f"                   yaml val: -> {info['yaml_val_path']}")
+        print(f"Split '{split_name}':")
+        print(f"  ann      : {info['coco_ann']}")
+        print(f"  data_yaml: {info['data_yaml']}")
+        print(f"  yaml val : -> {info['yaml_val_path']}")
     print(f"Image size       : {IMG_SIZE}")
     print(f"Skip done        : {SKIP_DONE}")
     print(f"Size thresholds  : small < {SMALL_THRESH}px, large > {LARGE_THRESH}px")
@@ -817,31 +842,33 @@ def main():
     total_evaluated = 0
     total_failed = 0
 
-    # Outer loop: split. Inner loop: phase folder.
-    # We patch the YAML once per split and process all phase folders within it,
-    # so we minimise YAML rewrites and keep behaviour deterministic.
+    # Outer loop: split (each with its own data_yaml). Inner loop: phase folder.
+    # We patch the correct YAML once per split and process all phase folders.
     for split_name, info in EVAL_SPLITS.items():
         coco_ann = info["coco_ann"]
         yaml_val_path = info["yaml_val_path"]
+        data_yaml = info["data_yaml"]
+        output_suffix = info["output_suffix"]
 
         print(f"\n\n{'=' * 80}")
-        print(f"=== SPLIT: {split_name.upper()} ===")
+        print(f"=== SPLIT: {split_name.upper()} (yaml: {data_yaml}) ===")
         print(f"{'=' * 80}")
 
         if not Path(coco_ann).exists():
             print(f"[SKIP] Annotations not found, skipping split: {coco_ann}")
             continue
 
-        with patch_yaml_val(DATA_YAML, yaml_val_path):
+        with patch_yaml_val(data_yaml, yaml_val_path):
             for phase_folder in phase_folders:
                 try:
                     num_new, num_failed, results, failed_list = process_phase_folder_on_split(
                         phase_folder=phase_folder,
                         split_name=split_name,
                         coco_ann=coco_ann,
-                        data_yaml=DATA_YAML,
+                        data_yaml=data_yaml,
                         img_size=IMG_SIZE,
                         skip_done=SKIP_DONE,
+                        output_suffix=output_suffix,
                     )
                     by_phase_split[phase_folder.name][split_name] = {
                         "results": results,
@@ -880,8 +907,9 @@ def main():
     print(f"Total failed: {total_failed}")
     print(f"\nOutput files:")
     for pf in phase_folders:
-        for split_name in EVAL_SPLITS.keys():
-            output_json = pf / f"{pf.name}__{split_name}.json"
+        for split_name, info in EVAL_SPLITS.items():
+            suffix = info["output_suffix"]
+            output_json = pf / f"{pf.name}__{suffix}.json"
             if output_json.exists():
                 with open(output_json) as f:
                     data = json.load(f)
