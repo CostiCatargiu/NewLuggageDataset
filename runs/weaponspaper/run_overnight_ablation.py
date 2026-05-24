@@ -3,16 +3,19 @@
 Overnight Ablation Runs — 5 experiments on DS1
 ===============================================
 
-1. swa_10_05       — SWA 1.0→0.5 (extreme start, upper bound)
-2. swa_09_06       — SWA 0.9→0.6 (not enough shift, lower bound of end)
-3. swa_08_05_topk6  — SWA 0.8→0.5 with topk=6 (extreme low topk)
-4. swa_08_05_topk8  — SWA 0.8→0.5 with topk=8 (clean topk comparison)
-5. swa_08_05_topk12 — SWA 0.8→0.5 with topk=12 (clean topk comparison on DS1)
+1. swa_10_05          — SWA 1.0→0.5 (extreme start, upper bound)
+2. swa_09_06          — SWA 0.9→0.6 (not enough shift, lower bound of end)
+3. swa_08_05_topk6    — SWA 0.8→0.5 with topk=6 (extreme low topk)
+4. swa_08_05_topk8    — SWA 0.8→0.5 with topk=8 (clean topk comparison)
+5. swa_08_05_topk12   — SWA 0.8→0.5 with topk=12 (clean topk comparison on DS1)
+6. swa_08_06          — SWA 0.8→0.6 (not enough shift for start=0.8)
+7. swa_08_05_phasec2  — SWA 0.8→0.5 + clipping (iou 50→20, dfl 25→10)
+8. swa_09_04_phasec2  — SWA 0.9→0.4 + clipping (iou 50→20, dfl 25→10)
 
 All trained on DS1 with TAL 0.5/6.0 (default).
 No COCO evaluation — just training. Use CocoEvalAllFolders_weapons.py after.
 
-Estimated time: ~6-7 hours (5 × ~1.3h per run)
+Estimated time: ~12 hours (8 × ~1.5h per run). Skips already-completed runs.
 """
 
 import time
@@ -113,6 +116,32 @@ EXPERIMENTS = [
         "tal_alpha": 0.5,
         "tal_beta": 6.0,
     },
+    {
+        "name": "swa_08_05_phasec2",
+        "desc": "SWA 0.8→0.5 + clipping (iou 50→20, dfl 25→10)",
+        "alpha_start": 0.8,
+        "alpha_end": 0.5,
+        "tal_topk": 10,
+        "tal_alpha": 0.5,
+        "tal_beta": 6.0,
+        "iou_clip_start": 50.0,
+        "iou_clip_end": 20.0,
+        "dfl_clip_start": 25.0,
+        "dfl_clip_end": 10.0,
+    },
+    {
+        "name": "swa_09_04_phasec2",
+        "desc": "SWA 0.9→0.4 + clipping (iou 50→20, dfl 25→10)",
+        "alpha_start": 0.9,
+        "alpha_end": 0.4,
+        "tal_topk": 10,
+        "tal_alpha": 0.5,
+        "tal_beta": 6.0,
+        "iou_clip_start": 50.0,
+        "iou_clip_end": 20.0,
+        "dfl_clip_start": 25.0,
+        "dfl_clip_end": 10.0,
+    },
 ]
 
 
@@ -157,11 +186,21 @@ def train_experiment(exp: dict) -> float:
     print(f"EXPERIMENT: {name}")
     print(f"  {exp['desc']}")
     print(f"{'=' * 70}")
-    print(f"  alpha_start: {exp['alpha_start']}")
-    print(f"  alpha_end:   {exp['alpha_end']}")
-    print(f"  tal_topk:    {exp['tal_topk']}")
-    print(f"  tal_alpha:   {exp['tal_alpha']}")
-    print(f"  tal_beta:    {exp['tal_beta']}")
+    # Get clipping values (per-experiment override or default disabled)
+    iou_clip_start = exp.get("iou_clip_start", FIXED_PARAMS["iou_clip_start"])
+    iou_clip_end = exp.get("iou_clip_end", FIXED_PARAMS["iou_clip_end"])
+    dfl_clip_start = exp.get("dfl_clip_start", FIXED_PARAMS["dfl_clip_start"])
+    dfl_clip_end = exp.get("dfl_clip_end", FIXED_PARAMS["dfl_clip_end"])
+    has_clipping = iou_clip_start < 100.0
+
+    print(f"  alpha_start:    {exp['alpha_start']}")
+    print(f"  alpha_end:      {exp['alpha_end']}")
+    print(f"  tal_topk:       {exp['tal_topk']}")
+    print(f"  tal_alpha:      {exp['tal_alpha']}")
+    print(f"  tal_beta:       {exp['tal_beta']}")
+    if has_clipping:
+        print(f"  iou_clip:       {iou_clip_start}→{iou_clip_end}")
+        print(f"  dfl_clip:       {dfl_clip_start}→{dfl_clip_end}")
     print(f"{'=' * 70}\n")
 
     start_time = time.time()
@@ -189,11 +228,11 @@ def train_experiment(exp: dict) -> float:
         center_loss_weight_init=FIXED_PARAMS["center_loss_weight_init"],
         center_loss_weight_min=FIXED_PARAMS["center_loss_weight_min"],
         center_loss_decay_epochs=FIXED_PARAMS["center_loss_decay_epochs"],
-        # Phase C: disabled
-        iou_clip_start=FIXED_PARAMS["iou_clip_start"],
-        iou_clip_end=FIXED_PARAMS["iou_clip_end"],
-        dfl_clip_start=FIXED_PARAMS["dfl_clip_start"],
-        dfl_clip_end=FIXED_PARAMS["dfl_clip_end"],
+        # Phase C: clipping (per-experiment or disabled)
+        iou_clip_start=iou_clip_start,
+        iou_clip_end=iou_clip_end,
+        dfl_clip_start=dfl_clip_start,
+        dfl_clip_end=dfl_clip_end,
         # TAL parameters
         tal_topk=exp["tal_topk"],
         tal_alpha=exp["tal_alpha"],
