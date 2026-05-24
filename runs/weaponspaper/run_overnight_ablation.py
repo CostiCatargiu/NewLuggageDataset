@@ -142,6 +142,19 @@ EXPERIMENTS = [
         "dfl_clip_start": 25.0,
         "dfl_clip_end": 10.0,
     },
+    {
+        "name": "original_loss_phasec2",
+        "desc": "No SWA (alpha=1.0→1.0) + clipping (iou 50→20, dfl 25→10)",
+        "alpha_start": 1.0,
+        "alpha_end": 1.0,
+        "tal_topk": 10,
+        "tal_alpha": 0.5,
+        "tal_beta": 6.0,
+        "iou_clip_start": 50.0,
+        "iou_clip_end": 20.0,
+        "dfl_clip_start": 25.0,
+        "dfl_clip_end": 10.0,
+    },
 ]
 
 
