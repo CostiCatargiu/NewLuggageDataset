@@ -32,7 +32,7 @@ DATA_YAML = "/home/constantin/Doctorat/GunDatasetHistogram17percentage/data.yaml
 MODEL_WEIGHTS = "yolov12s.pt"
 PROJECT_DIR = "runs_new_weapon_dataset"
 
-EPOCHS = 80
+EPOCHS = 1
 IMG_SIZE = 640
 BATCH = 58
 WORKERS = 8
@@ -63,7 +63,7 @@ FIXED_PARAMS = {
 # =============================================================================
 EXPERIMENTS = [
     {
-        "name": "swa_08_5_tal_07_4",
+        "name": "swa_08_5_tal_07_42",
         "desc": "SWA 1.0→0.5 — extreme start (upper bound)",
         "alpha_start": 0.8,
         "alpha_end": 0.5,
