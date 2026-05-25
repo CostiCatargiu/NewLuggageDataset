@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """
-Overnight Ablation Runs — 5 experiments on DS1
+Overnight Ablation Runs — 6 experiments on DS2
 ===============================================
 
-1. swa_10_05          — SWA 1.0→0.5 (extreme start, upper bound)
-2. swa_09_06          — SWA 0.9→0.6 (not enough shift, lower bound of end)
-3. swa_08_05_topk6    — SWA 0.8→0.5 with topk=6 (extreme low topk)
-4. swa_08_05_topk8    — SWA 0.8→0.5 with topk=8 (clean topk comparison)
-5. swa_08_05_topk12   — SWA 0.8→0.5 with topk=12 (clean topk comparison on DS1)
-6. swa_08_06          — SWA 0.8→0.6 (not enough shift for start=0.8)
-7. swa_08_05_phasec2  — SWA 0.8→0.5 + clipping (iou 50→20, dfl 25→10)
-8. swa_09_04_phasec2  — SWA 0.9→0.4 + clipping (iou 50→20, dfl 25→10)
+1. swa_09_06_ds2        — SWA 0.9→0.6 on DS2 (3rd best, try DS2 boost)
+2. swa_07_04_ds2        — SWA 0.7→0.4 on DS2 (DS2 might rescue weak 07_04)
+3. swa_08_06_ds2        — SWA 0.8→0.6 on DS2 (milder schedule)
+4. swa_08_04_a06_b5_ds2 — SWA 0.8→0.4 + TAL 0.6/5.0 on DS2 (TAL works with 08_xx)
+5. tal_07_4_ds2         — No SWA, TAL 0.7/4.0 on DS2 (excellent for small objects)
+6. tal_08_3_ds2         — No SWA, TAL 0.8/3.0 on DS2 (aggressive TAL experiment)
 
-All trained on DS1 with TAL 0.5/6.0 (default).
+All trained on DS2 (17percentage2).
 No COCO evaluation — just training. Use CocoEvalAllFolders_weapons.py after.
 
-Estimated time: ~12 hours (8 × ~1.5h per run). Skips already-completed runs.
+Estimated time: ~12-14 hours (6 × ~2h per run). Skips already-completed runs.
 """
 
 import time
@@ -28,11 +26,11 @@ from ultralytics import YOLO
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-DATA_YAML = "/home/constantin/Doctorat/GunDatasetHistogram17percentage/data.yaml"
+DATA_YAML = "/home/constantin/Doctorat/GunDatasetHistogram17percentage2/data.yaml"  # DS2
 MODEL_WEIGHTS = "yolov12s.pt"
 PROJECT_DIR = "runs_new_weapon_dataset"
 
-EPOCHS = 1
+EPOCHS = 80
 IMG_SIZE = 640
 BATCH = 58
 WORKERS = 8
@@ -59,102 +57,63 @@ FIXED_PARAMS = {
 }
 
 # =============================================================================
-# EXPERIMENTS TO RUN
+# EXPERIMENTS TO RUN (6 runs on DS2)
 # =============================================================================
 EXPERIMENTS = [
     {
-        "name": "swa_08_5_tal_07_42",
-        "desc": "SWA 1.0→0.5 — extreme start (upper bound)",
+        "name": "swa_09_06_ds2",
+        "desc": "SWA 0.9→0.6 on DS2 — 3rd best model, try DS2 boost",
+        "alpha_start": 0.9,
+        "alpha_end": 0.6,
+        "tal_topk": 10,
+        "tal_alpha": 0.5,
+        "tal_beta": 6.0,
+    },
+    {
+        "name": "swa_07_04_ds2",
+        "desc": "SWA 0.7→0.4 on DS2 — DS2 training might rescue weak 07_04",
+        "alpha_start": 0.7,
+        "alpha_end": 0.4,
+        "tal_topk": 10,
+        "tal_alpha": 0.5,
+        "tal_beta": 6.0,
+    },
+    {
+        "name": "swa_08_06_ds2",
+        "desc": "SWA 0.8→0.6 on DS2 — milder schedule with DS2 boost",
         "alpha_start": 0.8,
-        "alpha_end": 0.5,
+        "alpha_end": 0.6,
+        "tal_topk": 10,
+        "tal_alpha": 0.5,
+        "tal_beta": 6.0,
+    },
+    {
+        "name": "swa_08_04_a06_b5_ds2",
+        "desc": "SWA 0.8→0.4 + TAL 0.6/5.0 on DS2 — TAL works with 08_xx",
+        "alpha_start": 0.8,
+        "alpha_end": 0.4,
+        "tal_topk": 10,
+        "tal_alpha": 0.6,
+        "tal_beta": 5.0,
+    },
+    {
+        "name": "tal_07_4_ds2",
+        "desc": "No SWA + TAL 0.7/4.0 on DS2 — excellent for small objects",
+        "alpha_start": 1.0,
+        "alpha_end": 1.0,
         "tal_topk": 10,
         "tal_alpha": 0.7,
         "tal_beta": 4.0,
     },
-    # {
-    #     "name": "swa_09_06",
-    #     "desc": "SWA 0.9→0.6 — not enough shift (end point boundary)",
-    #     "alpha_start": 0.9,
-    #     "alpha_end": 0.6,
-    #     "tal_topk": 10,
-    #     "tal_alpha": 0.5,
-    #     "tal_beta": 6.0,
-    # },
-    # {
-    #     "name": "swa_08_05_topk6",
-    #     "desc": "SWA 0.8→0.5, topk=6 — extreme low topk",
-    #     "alpha_start": 0.8,
-    #     "alpha_end": 0.5,
-    #     "tal_topk": 6,
-    #     "tal_alpha": 0.5,
-    #     "tal_beta": 6.0,
-    # },
-    # {
-    #     "name": "swa_08_05_topk8",
-    #     "desc": "SWA 0.8→0.5, topk=8 — low topk",
-    #     "alpha_start": 0.8,
-    #     "alpha_end": 0.5,
-    #     "tal_topk": 8,
-    #     "tal_alpha": 0.5,
-    #     "tal_beta": 6.0,
-    # },
-    # {
-    #     "name": "swa_08_05_topk12",
-    #     "desc": "SWA 0.8→0.5, topk=12 — high topk (DS1 version)",
-    #     "alpha_start": 0.8,
-    #     "alpha_end": 0.5,
-    #     "tal_topk": 12,
-    #     "tal_alpha": 0.5,
-    #     "tal_beta": 6.0,
-    # },
-    # {
-    #     "name": "swa_08_06",
-    #     "desc": "SWA 0.8→0.6 — not enough shift (end point boundary for start=0.8)",
-    #     "alpha_start": 0.8,
-    #     "alpha_end": 0.6,
-    #     "tal_topk": 10,
-    #     "tal_alpha": 0.5,
-    #     "tal_beta": 6.0,
-    # },
-    # {
-    #     "name": "swa_08_05_phasec2",
-    #     "desc": "SWA 0.8→0.5 + clipping (iou 50→20, dfl 25→10)",
-    #     "alpha_start": 0.8,
-    #     "alpha_end": 0.5,
-    #     "tal_topk": 10,
-    #     "tal_alpha": 0.5,
-    #     "tal_beta": 6.0,
-    #     "iou_clip_start": 50.0,
-    #     "iou_clip_end": 20.0,
-    #     "dfl_clip_start": 25.0,
-    #     "dfl_clip_end": 10.0,
-    # },
-    # {
-    #     "name": "swa_09_04_phasec2",
-    #     "desc": "SWA 0.9→0.4 + clipping (iou 50→20, dfl 25→10)",
-    #     "alpha_start": 0.9,
-    #     "alpha_end": 0.4,
-    #     "tal_topk": 10,
-    #     "tal_alpha": 0.5,
-    #     "tal_beta": 6.0,
-    #     "iou_clip_start": 50.0,
-    #     "iou_clip_end": 20.0,
-    #     "dfl_clip_start": 25.0,
-    #     "dfl_clip_end": 10.0,
-    # },
-    # {
-    #     "name": "original_loss_phasec2",
-    #     "desc": "No SWA (alpha=1.0→1.0) + clipping (iou 50→20, dfl 25→10)",
-    #     "alpha_start": 1.0,
-    #     "alpha_end": 1.0,
-    #     "tal_topk": 10,
-    #     "tal_alpha": 0.5,
-    #     "tal_beta": 6.0,
-    #     "iou_clip_start": 50.0,
-    #     "iou_clip_end": 20.0,
-    #     "dfl_clip_start": 25.0,
-    #     "dfl_clip_end": 10.0,
-    # },
+    {
+        "name": "tal_08_3_ds2",
+        "desc": "No SWA + TAL 0.8/3.0 on DS2 — aggressive TAL experiment",
+        "alpha_start": 1.0,
+        "alpha_end": 1.0,
+        "tal_topk": 10,
+        "tal_alpha": 0.8,
+        "tal_beta": 3.0,
+    },
 ]
 
 
@@ -271,7 +230,7 @@ def train_experiment(exp: dict) -> float:
 
 def main():
     print(f"\n{'#' * 70}")
-    print(f"# OVERNIGHT ABLATION — 5 experiments on DS1")
+    print(f"# OVERNIGHT ABLATION — 6 experiments on DS2")
     print(f"# Dataset: {DATA_YAML}")
     print(f"# Output:  {PROJECT_DIR}")
     print(f"# Epochs:  {EPOCHS}, Batch: {BATCH}, ImgSize: {IMG_SIZE}")
@@ -293,7 +252,7 @@ def main():
         print("\nAll experiments already completed!")
         return
 
-    print(f"\n{len(to_run)} experiments to run (~{len(to_run) * 1.3:.1f} hours)")
+    print(f"\n{len(to_run)} experiments to run (~{len(to_run) * 2:.1f} hours)")
     print(f"Starting at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
     total_time = 0
