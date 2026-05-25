@@ -62,15 +62,15 @@ FIXED_PARAMS = {
 # EXPERIMENTS TO RUN
 # =============================================================================
 EXPERIMENTS = [
-    # {
-    #     "name": "swa_10_05",
-    #     "desc": "SWA 1.0→0.5 — extreme start (upper bound)",
-    #     "alpha_start": 1.0,
-    #     "alpha_end": 0.5,
-    #     "tal_topk": 10,
-    #     "tal_alpha": 0.5,
-    #     "tal_beta": 6.0,
-    # },
+    {
+        "name": "swa_08_5_tal_07_4",
+        "desc": "SWA 1.0→0.5 — extreme start (upper bound)",
+        "alpha_start": 0.8,
+        "alpha_end": 0.5,
+        "tal_topk": 10,
+        "tal_alpha": 0.7,
+        "tal_beta": 4.0,
+    },
     # {
     #     "name": "swa_09_06",
     #     "desc": "SWA 0.9→0.6 — not enough shift (end point boundary)",
@@ -142,19 +142,19 @@ EXPERIMENTS = [
     #     "dfl_clip_start": 25.0,
     #     "dfl_clip_end": 10.0,
     # },
-    {
-        "name": "original_loss_phasec2",
-        "desc": "No SWA (alpha=1.0→1.0) + clipping (iou 50→20, dfl 25→10)",
-        "alpha_start": 1.0,
-        "alpha_end": 1.0,
-        "tal_topk": 10,
-        "tal_alpha": 0.5,
-        "tal_beta": 6.0,
-        "iou_clip_start": 50.0,
-        "iou_clip_end": 20.0,
-        "dfl_clip_start": 25.0,
-        "dfl_clip_end": 10.0,
-    },
+    # {
+    #     "name": "original_loss_phasec2",
+    #     "desc": "No SWA (alpha=1.0→1.0) + clipping (iou 50→20, dfl 25→10)",
+    #     "alpha_start": 1.0,
+    #     "alpha_end": 1.0,
+    #     "tal_topk": 10,
+    #     "tal_alpha": 0.5,
+    #     "tal_beta": 6.0,
+    #     "iou_clip_start": 50.0,
+    #     "iou_clip_end": 20.0,
+    #     "dfl_clip_start": 25.0,
+    #     "dfl_clip_end": 10.0,
+    # },
 ]
 
 
