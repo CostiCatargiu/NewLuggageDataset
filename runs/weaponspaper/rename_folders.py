@@ -26,7 +26,7 @@ RENAMES = {
 }
 
 # === OPTIONAL: Set target directory (leave None to use current directory) ===
-TARGET_DIR = None  # e.g., r"C:\DISK\luggagedataset\NewLuggageDataset-main\runs\weaponspaper"
+TARGET_DIR = r"/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/runs_new_weapon_dataset"
 
 
 def rename_folders(target_dir=None, dry_run=True):
