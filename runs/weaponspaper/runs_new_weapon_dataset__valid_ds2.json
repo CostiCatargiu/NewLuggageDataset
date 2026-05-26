@@ -547,7 +547,7 @@
       }
     },
     {
-      "name": "swa_08_05_ds1",
+      "name": "swa_08_05_a05_b6",
       "split": "valid",
       "config": {
         "use_satal": false,
@@ -3490,7 +3490,7 @@
       }
     },
     {
-      "name": "swa_08_5_tal_07_4",
+      "name": "tal_07_4_ds1_run2",
       "split": "valid_ds2",
       "config": {
         "use_satal": false,
@@ -3599,7 +3599,7 @@
       }
     },
     {
-      "name": "swa_09_4_tal_06_5",
+      "name": "tal_06_5_ds1_run3",
       "split": "valid_ds2",
       "config": {
         "use_satal": false,
@@ -3708,7 +3708,7 @@
       }
     },
     {
-      "name": "swa_09_5_tal_06_5",
+      "name": "tal_06_5_ds1_run2",
       "split": "valid_ds2",
       "config": {
         "use_satal": false,
@@ -3817,7 +3817,7 @@
       }
     },
     {
-      "name": "swa_08_5_tal_06_5ds2",
+      "name": "tal_06_5_ds2_run2",
       "split": "valid_ds2",
       "config": {
         "use_satal": false,
@@ -3926,7 +3926,7 @@
       }
     },
     {
-      "name": "swa_09_04_ds1",
+      "name": "swa_09_04_a06_b5_ds2",
       "split": "valid_ds2",
       "config": {
         "use_satal": false,
@@ -4035,7 +4035,7 @@
       }
     },
     {
-      "name": "swa_09_04_ds12",
+      "name": "swa_09_04_a07_b4_ds2",
       "split": "valid_ds2",
       "config": {
         "use_satal": false,
@@ -4144,7 +4144,7 @@
       }
     },
     {
-      "name": "swa_09_05_ds1",
+      "name": "swa_09_05_a07_b4_ds2",
       "split": "valid_ds2",
       "config": {
         "use_satal": false,
@@ -4253,7 +4253,7 @@
       }
     },
     {
-      "name": "tal_07_5_ds1",
+      "name": "tal_07_5_ds2",
       "split": "valid_ds2",
       "config": {
         "use_satal": false,
@@ -4362,7 +4362,7 @@
       }
     },
     {
-      "name": "tal_08_3_ds1",
+      "name": "tal_08_3_ds2",
       "split": "valid_ds2",
       "config": {
         "use_satal": false,
