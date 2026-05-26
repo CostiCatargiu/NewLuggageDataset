@@ -10,14 +10,19 @@ from pathlib import Path
 # === CONFIGURE THIS ===
 # Add your folder renames here: "old_name": "new_name"
 RENAMES = {
+    # Session 1 renames (SWA+TAL naming was wrong)
+    "swa_08_5_tal_07_4": "tal_07_4_ds1_run2",
+    "swa_09_5_tal_06_5": "tal_06_5_ds1_run2",
+    "swa_09_4_tal_06_5": "tal_06_5_ds1_run3",
+    "swa_08_5_tal_06_5ds2": "tal_06_5_ds2_run2",
+    
+    # Session 2 renames (DS1 -> DS2 corrections)
     "swa_09_04_ds12": "swa_09_04_a07_b4_ds2",
     "swa_09_04_ds1": "swa_09_04_a06_b5_ds2",
     "swa_08_05_ds1": "swa_08_05_a05_b6",
     "swa_09_05_ds1": "swa_09_05_a07_b4_ds2",
     "tal_07_5_ds1": "tal_07_5_ds2",
     "tal_08_3_ds1": "tal_08_3_ds2",
-    # Add more renames as needed:
-    # "old_folder_name": "new_folder_name",
 }
 
 # === OPTIONAL: Set target directory (leave None to use current directory) ===
