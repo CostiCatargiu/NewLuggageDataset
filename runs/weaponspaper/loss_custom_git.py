@@ -175,37 +175,26 @@ class BboxLoss(nn.Module):
         return areas.clamp(min=1e-6)
 
     def _compute_weights(self, target_bboxes, target_scores, fg_mask, stride=None):
-        """Compute combined area and score weights for loss calculation.
-        
-        Uses absolute area normalization: weights are consistent across batches
-        by normalizing against a fixed reference area (small_obj_px) instead of
-        the batch maximum. This ensures a 5000px² object always gets the same
-        weight regardless of what other objects are in the batch.
-        """
+        """Compute combined area and score weights for loss calculation."""
         target_areas = self._compute_target_areas(target_bboxes, fg_mask)
-        fg_areas = target_areas[fg_mask]
 
         score_weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
+        area_weight = (1.0 / target_areas[fg_mask]).unsqueeze(-1)
 
-        # Absolute area normalization: use fixed reference instead of batch max
-        if stride is not None and fg_areas.numel() > 0:
+        # Normalize area weights
+        if area_weight.numel() > 0:
+            area_weight = area_weight / (area_weight.max() + 1e-8)
+
+        # Apply small object boost
+        if stride is not None and area_weight.numel() > 0:
             min_stride = stride.min().clamp_min(1.0)
-            reference_area = (self.small_obj_px / min_stride) ** 2
-            # Objects at small_obj_px size → weight=1.0, larger → proportionally less
-            area_weight = (reference_area / (fg_areas + 1e-6)).unsqueeze(-1)
-            area_weight = area_weight.clamp(max=1.0)
-
-            # Apply small object boost
-            small_threshold = reference_area
+            small_threshold = (self.small_obj_px / min_stride) ** 2
+            fg_areas = target_areas[fg_mask]
             small_mask = fg_areas < small_threshold
+
             if small_mask.any():
                 area_weight = area_weight.clone()
                 area_weight[small_mask] *= self.small_obj_boost
-        else:
-            # Fallback: original relative normalization
-            area_weight = (1.0 / fg_areas).unsqueeze(-1)
-            if area_weight.numel() > 0:
-                area_weight = area_weight / (area_weight.max() + 1e-8)
 
         return score_weight, area_weight
 
