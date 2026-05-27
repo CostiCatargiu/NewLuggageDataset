@@ -175,26 +175,37 @@ class BboxLoss(nn.Module):
         return areas.clamp(min=1e-6)
 
     def _compute_weights(self, target_bboxes, target_scores, fg_mask, stride=None):
-        """Compute combined area and score weights for loss calculation."""
+        """Compute combined area and score weights for loss calculation.
+        
+        Uses absolute area normalization: weights are consistent across batches
+        by normalizing against a fixed reference area (small_obj_px) instead of
+        the batch maximum. This ensures a 5000px² object always gets the same
+        weight regardless of what other objects are in the batch.
+        """
         target_areas = self._compute_target_areas(target_bboxes, fg_mask)
+        fg_areas = target_areas[fg_mask]
 
         score_weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        area_weight = (1.0 / target_areas[fg_mask]).unsqueeze(-1)
 
-        # Normalize area weights
-        if area_weight.numel() > 0:
-            area_weight = area_weight / (area_weight.max() + 1e-8)
-
-        # Apply small object boost
-        if stride is not None and area_weight.numel() > 0:
+        # Absolute area normalization: use fixed reference instead of batch max
+        if stride is not None and fg_areas.numel() > 0:
             min_stride = stride.min().clamp_min(1.0)
-            small_threshold = (self.small_obj_px / min_stride) ** 2
-            fg_areas = target_areas[fg_mask]
-            small_mask = fg_areas < small_threshold
+            reference_area = (self.small_obj_px / min_stride) ** 2
+            # Objects at small_obj_px size → weight=1.0, larger → proportionally less
+            area_weight = (reference_area / (fg_areas + 1e-6)).unsqueeze(-1)
+            area_weight = area_weight.clamp(max=1.0)
 
+            # Apply small object boost
+            small_threshold = reference_area
+            small_mask = fg_areas < small_threshold
             if small_mask.any():
                 area_weight = area_weight.clone()
                 area_weight[small_mask] *= self.small_obj_boost
+        else:
+            # Fallback: original relative normalization
+            area_weight = (1.0 / fg_areas).unsqueeze(-1)
+            if area_weight.numel() > 0:
+                area_weight = area_weight / (area_weight.max() + 1e-8)
 
         return score_weight, area_weight
 
@@ -205,58 +216,17 @@ class BboxLoss(nn.Module):
         max_dfl = self.dfl_clip_end + (self.dfl_clip_start - self.dfl_clip_end) * (1 - progress)
         return max_iou, max_dfl
 
-    def _compute_per_scale_alpha(self, target_bboxes, fg_mask, stride, base_alpha):
-        """Compute per-sample alpha based on object size.
-        
-        Small objects always get high alpha (area-focused) regardless of schedule.
-        Large objects always get low alpha (score-focused).
-        Medium objects follow the normal schedule.
-        
-        This ensures small objects never lose area-focus even late in training,
-        while large objects can benefit from score-based weighting earlier.
-        """
-        # Thresholds in feature-space area (using stride normalization)
-        if stride is not None:
-            min_stride = stride.min().clamp_min(1.0)
-            # small_obj_px is already defined (default 48 or 70)
-            small_thresh = (self.small_obj_px / min_stride) ** 2
-            # Large threshold: ~3x small threshold area
-            large_thresh = small_thresh * 9.0
-        else:
-            small_thresh = 36.0   # ~6x6 in feature space
-            large_thresh = 324.0  # ~18x18 in feature space
-        
-        fg_areas = self._compute_target_areas(target_bboxes, fg_mask)[fg_mask]
-        
-        # Per-sample alpha
-        per_alpha = torch.full_like(fg_areas, base_alpha)
-        
-        # Small objects: alpha clamped high (min 0.85) — always area-focused
-        small_mask = fg_areas < small_thresh
-        per_alpha[small_mask] = max(base_alpha, 0.85)
-        
-        # Large objects: alpha clamped low (max 0.5) — always score-focused
-        large_mask = fg_areas > large_thresh
-        per_alpha[large_mask] = min(base_alpha, 0.5)
-        
-        # Medium objects: use base_alpha as-is (follows the schedule)
-        
-        return per_alpha.unsqueeze(-1)
-
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes,
                 target_scores, target_scores_sum, fg_mask, stride=None):
-        """Compute IoU and DFL losses with per-scale alpha and per-sample clipping."""
+        """Compute IoU and DFL losses with per-sample clipping."""
 
-        base_alpha = self._get_dynamic_alpha()
+        alpha = self._get_dynamic_alpha()
         score_weight, area_weight = self._compute_weights(
             target_bboxes, target_scores, fg_mask, stride
         )
 
-        # Per-scale alpha: small objects stay area-focused, large stay score-focused
-        per_alpha = self._compute_per_scale_alpha(target_bboxes, fg_mask, stride, base_alpha)
-        
-        # Combined weight (per-sample alpha instead of global alpha)
-        weight = per_alpha * area_weight + (1 - per_alpha) * score_weight
+        # Combined weight
+        weight = alpha * area_weight + (1 - alpha) * score_weight
 
         # IoU loss per sample
         iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
