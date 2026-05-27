@@ -152,15 +152,9 @@ class BboxLoss(nn.Module):
         self.dfl_clip_end = getattr(hyp, 'dfl_clip_end', self.dfl_clip_end)
 
     def _get_dynamic_alpha(self):
-        """Calculate dynamic alpha based on training progress using cosine decay.
-        
-        Cosine decay stays at high alpha (area-focused) longer in early training,
-        then drops faster toward the end. This gives small objects more attention
-        during the critical learning phase compared to linear decay.
-        """
+        """Calculate dynamic alpha based on training progress."""
         progress = self.epoch / max(self.total_epochs, 1)
-        # Cosine decay: stays high longer, drops faster at end
-        alpha = self.alpha_end + (self.alpha_start - self.alpha_end) * 0.5 * (1 + math.cos(math.pi * progress))
+        alpha = self.alpha_start * (1 - progress) + self.alpha_end * progress
         alpha = max(self.alpha_min, min(self.alpha_max, alpha))
 
         # Print every 10 epochs
@@ -169,7 +163,7 @@ class BboxLoss(nn.Module):
 
         if self.epoch != self._last_logged_epoch:
             if self.epoch % 1 == 0:
-                print(f"[Alpha-Cosine] Epoch {self.epoch}/{self.total_epochs}: α={alpha:.3f}")
+                print(f"[Alpha] Epoch {self.epoch}/{self.total_epochs}: α={alpha:.3f}")
             self._last_logged_epoch = self.epoch
 
         return alpha
@@ -211,17 +205,58 @@ class BboxLoss(nn.Module):
         max_dfl = self.dfl_clip_end + (self.dfl_clip_start - self.dfl_clip_end) * (1 - progress)
         return max_iou, max_dfl
 
+    def _compute_per_scale_alpha(self, target_bboxes, fg_mask, stride, base_alpha):
+        """Compute per-sample alpha based on object size.
+        
+        Small objects always get high alpha (area-focused) regardless of schedule.
+        Large objects always get low alpha (score-focused).
+        Medium objects follow the normal schedule.
+        
+        This ensures small objects never lose area-focus even late in training,
+        while large objects can benefit from score-based weighting earlier.
+        """
+        # Thresholds in feature-space area (using stride normalization)
+        if stride is not None:
+            min_stride = stride.min().clamp_min(1.0)
+            # small_obj_px is already defined (default 48 or 70)
+            small_thresh = (self.small_obj_px / min_stride) ** 2
+            # Large threshold: ~3x small threshold area
+            large_thresh = small_thresh * 9.0
+        else:
+            small_thresh = 36.0   # ~6x6 in feature space
+            large_thresh = 324.0  # ~18x18 in feature space
+        
+        fg_areas = self._compute_target_areas(target_bboxes, fg_mask)[fg_mask]
+        
+        # Per-sample alpha
+        per_alpha = torch.full_like(fg_areas, base_alpha)
+        
+        # Small objects: alpha clamped high (min 0.85) — always area-focused
+        small_mask = fg_areas < small_thresh
+        per_alpha[small_mask] = max(base_alpha, 0.85)
+        
+        # Large objects: alpha clamped low (max 0.5) — always score-focused
+        large_mask = fg_areas > large_thresh
+        per_alpha[large_mask] = min(base_alpha, 0.5)
+        
+        # Medium objects: use base_alpha as-is (follows the schedule)
+        
+        return per_alpha.unsqueeze(-1)
+
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes,
                 target_scores, target_scores_sum, fg_mask, stride=None):
-        """Compute IoU and DFL losses with per-sample clipping."""
+        """Compute IoU and DFL losses with per-scale alpha and per-sample clipping."""
 
-        alpha = self._get_dynamic_alpha()
+        base_alpha = self._get_dynamic_alpha()
         score_weight, area_weight = self._compute_weights(
             target_bboxes, target_scores, fg_mask, stride
         )
 
-        # Combined weight
-        weight = alpha * area_weight + (1 - alpha) * score_weight
+        # Per-scale alpha: small objects stay area-focused, large stay score-focused
+        per_alpha = self._compute_per_scale_alpha(target_bboxes, fg_mask, stride, base_alpha)
+        
+        # Combined weight (per-sample alpha instead of global alpha)
+        weight = per_alpha * area_weight + (1 - per_alpha) * score_weight
 
         # IoU loss per sample
         iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
