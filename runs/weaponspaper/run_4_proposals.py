@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """
-4 Incremental Proposals — based on what actually worked in previous results.
+4 Proposals — based on wt_boost15 (73.42% mAP50, current best)
 
-Current best ablation models (73.0-73.6% mAP50) all share:
-  - topk=13, beta=4.0, cls=1.0, alpha 0.9->0.5, CIoU, BCE
+wt_boost15 config (the actual winner):
+  alpha: 0.7->0.3, alpha_min=0.2, alpha_max=0.8
+  small_obj_px=40, boost=1.5
+  TAL: topk=13, alpha=0.5, beta=4.0
+  DIoU, cls=1.0
+  clipping: iou 50->20, dfl 25->10
+  center loss: OFF
+  VFL: OFF (BCE)
 
-What these 4 test:
-  1. wt_beta3_topk15       — push TAL further (beta 4->3, topk 13->15)
-  2. wt_cls15_boost30      — break "other" class ceiling (cls=1.5, boost=3.0)
-  3. wt_alpha10_06_topk13  — max area-weight early (alpha 1.0->0.6)
-  4. wt_beta4_phaseb       — center loss ON with proven TAL config
-
-Target to beat: 73.6% mAP50 (v5_cls12_tight_clip)
+Each model changes 1-2 params from wt_boost15:
+  1. wt_beta3_topk15       — beta 4->3, topk 13->15
+  2. wt_cls15_boost30      — cls 1.0->1.5, boost 1.5->3.0
+  3. wt_box5_dfl1          — box 7.5->5.0, dfl 1.5->1.0 (shift gradient to cls)
+  4. wt_tal_alpha08        — tal_alpha 0.5->0.8 (assigner trusts cls more)
 
 Usage:
   python run_4_proposals.py
@@ -19,6 +23,7 @@ Usage:
 
 import time
 import gc
+import copy
 import torch
 from ultralytics import YOLO
 
@@ -35,111 +40,69 @@ BATCH = 58
 WORKERS = 8
 DEVICE = 0 if torch.cuda.is_available() else "cpu"
 
+# =============================================================================
+# BASE = wt_boost15 (the actual winner, 73.42% mAP50)
+# =============================================================================
+BASE = {
+    "cls": 1.0,
+    "alpha_start": 0.7,
+    "alpha_end": 0.3,
+    "alpha_min": 0.2,
+    "alpha_max": 0.8,
+    "small_obj_px": 40,
+    "small_obj_boost": 1.5,
+    "center_loss_weight_init": 0.0,
+    "center_loss_weight_min": 0.0,
+    "center_loss_decay_epochs": 35,
+    "iou_clip_start": 50.0,
+    "iou_clip_end": 20.0,
+    "dfl_clip_start": 25.0,
+    "dfl_clip_end": 10.0,
+    "tal_topk": 13,
+    "tal_alpha": 0.5,
+    "tal_beta": 4.0,
+    "iou_type": "DIoU",
+    "use_vfl": False,
+}
 
-# =============================================================================
-# EXPERIMENTS
-# =============================================================================
+
+def make_exp(name, desc, **overrides):
+    params = copy.deepcopy(BASE)
+    params.update(overrides)
+    return {"name": name, "description": desc, "params": params}
+
+
 EXPERIMENTS = [
-    {
-        "name": "wt_beta3_topk15",
-        "description": "Push TAL further: beta 4->3, topk 13->15",
-        "params": {
-            "cls": 1.0,
-            "alpha_start": 0.9,
-            "alpha_end": 0.5,
-            "alpha_min": 0.3,
-            "alpha_max": 0.9,
-            "small_obj_px": 40,
-            "small_obj_boost": 2.5,
-            "center_loss_weight_init": 0.0,
-            "center_loss_weight_min": 0.0,
-            "center_loss_decay_epochs": 35,
-            "iou_clip_start": 20.0,
-            "iou_clip_end": 10.0,
-            "dfl_clip_start": 10.0,
-            "dfl_clip_end": 5.0,
-            "tal_topk": 15,
-            "tal_alpha": 0.5,
-            "tal_beta": 3.0,
-            "iou_type": "CIoU",
-            "use_vfl": False,
-        },
-    },
-    {
-        "name": "wt_cls15_boost30",
-        "description": "Break 'other' class ceiling: cls=1.5, boost=3.0",
-        "params": {
-            "cls": 1.5,
-            "alpha_start": 0.9,
-            "alpha_end": 0.5,
-            "alpha_min": 0.3,
-            "alpha_max": 0.9,
-            "small_obj_px": 40,
-            "small_obj_boost": 3.0,
-            "center_loss_weight_init": 0.0,
-            "center_loss_weight_min": 0.0,
-            "center_loss_decay_epochs": 35,
-            "iou_clip_start": 20.0,
-            "iou_clip_end": 10.0,
-            "dfl_clip_start": 10.0,
-            "dfl_clip_end": 5.0,
-            "tal_topk": 13,
-            "tal_alpha": 0.5,
-            "tal_beta": 4.0,
-            "iou_type": "CIoU",
-            "use_vfl": False,
-        },
-    },
-    {
-        "name": "wt_alpha10_06_topk13",
-        "description": "Max area-weight early: alpha 1.0->0.6",
-        "params": {
-            "cls": 1.0,
-            "alpha_start": 1.0,
-            "alpha_end": 0.6,
-            "alpha_min": 0.4,
-            "alpha_max": 1.0,
-            "small_obj_px": 40,
-            "small_obj_boost": 2.5,
-            "center_loss_weight_init": 0.0,
-            "center_loss_weight_min": 0.0,
-            "center_loss_decay_epochs": 35,
-            "iou_clip_start": 20.0,
-            "iou_clip_end": 10.0,
-            "dfl_clip_start": 10.0,
-            "dfl_clip_end": 5.0,
-            "tal_topk": 13,
-            "tal_alpha": 0.5,
-            "tal_beta": 4.0,
-            "iou_type": "CIoU",
-            "use_vfl": False,
-        },
-    },
-    {
-        "name": "wt_beta4_phaseb",
-        "description": "Phase B center loss ON with proven TAL config",
-        "params": {
-            "cls": 1.0,
-            "alpha_start": 0.9,
-            "alpha_end": 0.5,
-            "alpha_min": 0.3,
-            "alpha_max": 0.9,
-            "small_obj_px": 40,
-            "small_obj_boost": 2.5,
-            "center_loss_weight_init": 0.5,
-            "center_loss_weight_min": 0.05,
-            "center_loss_decay_epochs": 40,
-            "iou_clip_start": 20.0,
-            "iou_clip_end": 10.0,
-            "dfl_clip_start": 10.0,
-            "dfl_clip_end": 5.0,
-            "tal_topk": 13,
-            "tal_alpha": 0.5,
-            "tal_beta": 4.0,
-            "iou_type": "CIoU",
-            "use_vfl": False,
-        },
-    },
+    # Model 1: push TAL further
+    make_exp(
+        "wt_beta3_topk15",
+        "Push TAL: beta 4->3, topk 13->15",
+        tal_beta=3.0,
+        tal_topk=15,
+    ),
+
+    # Model 2: more cls pressure + stronger boost for "other" class
+    make_exp(
+        "wt_cls15_boost30",
+        "Break 'other' ceiling: cls 1.0->1.5, boost 1.5->3.0",
+        cls=1.5,
+        small_obj_boost=3.0,
+    ),
+
+    # Model 3: shift gradient balance toward cls via loss gains (never tested)
+    make_exp(
+        "wt_box5_dfl1",
+        "Shift gradient to cls: box 7.5->5.0, dfl 1.5->1.0",
+        box=5.0,
+        dfl=1.0,
+    ),
+
+    # Model 4: assigner trusts classification more (tal_alpha never tested at 0.8)
+    make_exp(
+        "wt_tal_alpha08",
+        "Assigner trusts cls more: tal_alpha 0.5->0.8",
+        tal_alpha=0.8,
+    ),
 ]
 
 
@@ -163,19 +126,24 @@ def on_train_epoch_start(trainer):
 
 
 # =============================================================================
-# TRAINING LOOP
+# TRAINING
 # =============================================================================
 def run_experiment(exp):
     name = exp["name"]
     params = exp["params"]
 
+    # Show what changed from BASE
+    diffs = []
+    for k, v in params.items():
+        if BASE.get(k) != v:
+            diffs.append(f"{k}: {BASE.get(k)} -> {v}")
+
     print(f"\n{'#' * 70}")
     print(f"# {name}")
     print(f"# {exp['description']}")
-    print(f"# Key: topk={params['tal_topk']}, beta={params['tal_beta']}, "
-          f"cls={params['cls']}, alpha={params['alpha_start']}->{params['alpha_end']}, "
-          f"boost={params['small_obj_boost']}, "
-          f"center={'ON' if params['center_loss_weight_init'] > 0 else 'OFF'}")
+    print(f"# Changes from wt_boost15:")
+    for d in diffs:
+        print(f"#   {d}")
     print(f"{'#' * 70}\n")
 
     start_time = time.time()
@@ -206,7 +174,7 @@ def run_experiment(exp):
         return {"name": name, "status": "OK", "time": elapsed}
     except Exception as e:
         elapsed = (time.time() - start_time) / 3600
-        print(f"\n  FAILED: {name} ({elapsed:.2f}h) — {e}")
+        print(f"\n  FAILED: {name} ({elapsed:.2f}h) -- {e}")
         return {"name": name, "status": f"FAILED: {e}", "time": elapsed}
     finally:
         gc.collect()
@@ -218,22 +186,19 @@ def main():
     total_start = time.time()
 
     print(f"\n{'=' * 70}")
-    print(f"  4 PROPOSALS — INCREMENTAL EXPERIMENTS")
-    print(f"  Target to beat: 73.6% mAP50 (v5_cls12_tight_clip)")
+    print(f"  4 PROPOSALS from wt_boost15 baseline (73.42%)")
     print(f"{'=' * 70}")
     print(f"  Model:    {MODEL_WEIGHTS}")
     print(f"  Dataset:  {DATA_YAML}")
-    print(f"  Epochs:   {EPOCHS}")
-    print(f"  Batch:    {BATCH}")
+    print(f"  Epochs:   {EPOCHS}    Batch: {BATCH}")
+    print(f"{'=' * 70}")
+    print(f"  wt_boost15 base: topk=13, b=4.0, cls=1.0, a=0.7->0.3,")
+    print(f"                   boost=1.5, DIoU, clip=50->20, center=OFF")
     print(f"{'=' * 70}")
 
     for i, exp in enumerate(EXPERIMENTS):
-        p = exp["params"]
-        print(f"  [{i+1}] {exp['name']:<30} "
-              f"topk={p['tal_topk']:<3} b={p['tal_beta']:<4} "
-              f"cls={p['cls']:<4} a={p['alpha_start']}->{p['alpha_end']} "
-              f"boost={p['small_obj_boost']:<4} "
-              f"center={'ON' if p['center_loss_weight_init'] > 0 else 'OFF'}")
+        diffs = [f"{k}={exp['params'][k]}" for k in exp['params'] if BASE.get(k) != exp['params'][k]]
+        print(f"  [{i+1}] {exp['name']:<25} diff: {', '.join(diffs)}")
 
     print(f"{'=' * 70}\n")
 
@@ -249,7 +214,7 @@ def main():
     print(f"{'=' * 70}")
     for r in results:
         tag = "OK" if r["status"] == "OK" else "FAIL"
-        print(f"  [{tag}] {r['name']:<30} {r['time']:.2f}h")
+        print(f"  [{tag}] {r['name']:<25} {r['time']:.2f}h")
     print(f"{'=' * 70}\n")
 
 
