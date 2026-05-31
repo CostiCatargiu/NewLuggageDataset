@@ -1,0 +1,124 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/CreateSubsetV2.py
+
+======================================================================
+  PHASE 1: Building source groups and computing FULL stats
+======================================================================
+  train: 49079 images, 63447 instances, 15183 source groups (avg 3.2 img/source)
+  valid: 7552 images, 9730 instances, 7213 source groups (avg 1.0 img/source)
+  test: 2674 images, 3523 instances, 2614 source groups (avg 1.0 img/source)
+
+  Source-group size distribution:
+    train: min=2, median=3, max=441, mean=3.2, groups with >10 imgs: 23
+    valid: min=1, median=1, max=53, mean=1.0, groups with >10 imgs: 1
+    test: min=1, median=1, max=15, mean=1.0, groups with >10 imgs: 1
+
+======================================================================
+  PHASE 2: Testing 200 candidate samplings
+======================================================================
+    Tested 50/200 candidates | best so far: seed=1, score=27.035
+    Tested 100/200 candidates | best so far: seed=1, score=27.035
+    Tested 150/200 candidates | best so far: seed=1, score=27.035
+    Tested 200/200 candidates | best so far: seed=1, score=27.035
+
+  Score distribution across 200 candidates:
+    Best:   27.035 (seed 1)
+    Median: 52.402
+    Worst:  106.571
+    Spread: 79.536
+
+  Top 5 candidates:
+    seed=   1  score=27.035
+    seed=  42  score=28.412
+    seed=  19  score=30.414
+    seed=  60  score=32.424
+    seed= 121  score=33.607
+
+======================================================================
+  PHASE 3: Verification Report
+  Best seed: 1 | Score: 27.035
+======================================================================
+
+  ── TRAIN ──
+  FULL:      49079 images,  63447 instances
+  ABLATION:   8363 images,  10888 instances (17.0%)
+
+  Class distribution:
+  Class            FULL %   ABLATION %   delta pp
+  knife             16.6%        16.3%     -0.24pp
+  long_gun          30.4%        30.6%     +0.20pp
+  other             16.0%        16.4%     +0.41pp
+  pistol            37.0%        36.7%     -0.38pp
+
+  Size distribution [32/96] (COCO default):
+  Size             FULL %   ABLATION %   delta pp
+  small              1.4%         1.3%     -0.09pp
+  medium            25.4%        25.7%     +0.21pp
+  large             73.1%        73.0%     -0.12pp
+
+  ── VALID ──
+  FULL:       7552 images,   9730 instances
+  ABLATION:   1291 images,   1682 instances (17.1%)
+
+  Class distribution:
+  Class            FULL %   ABLATION %   delta pp
+  knife             18.6%        18.4%     -0.26pp
+  long_gun          28.3%        28.8%     +0.57pp
+  other             13.6%        14.1%     +0.54pp
+  pistol            39.5%        38.6%     -0.85pp
+
+  Size distribution [32/96] (COCO default):
+  Size             FULL %   ABLATION %   delta pp
+  small              2.1%         2.1%     -0.06pp
+  medium            29.5%        28.6%     -0.87pp
+  large             68.4%        69.3%     +0.93pp
+
+  ── TEST ──
+  FULL:       2674 images,   3523 instances
+  ABLATION:    730 images,    984 instances (27.3%)
+
+  Class distribution:
+  Class            FULL %   ABLATION %   delta pp
+  knife             19.5%        19.3%     -0.16pp
+  long_gun          26.7%        26.0%     -0.69pp
+  other             18.6%        19.2%     +0.59pp
+  pistol            35.2%        35.5%     +0.27pp
+
+  Size distribution [32/96] (COCO default):
+  Size             FULL %   ABLATION %   delta pp
+  small              1.9%         1.9%     +0.03pp
+  medium            28.3%        28.3%     -0.05pp
+  large             69.8%        69.8%     +0.02pp
+
+  ── Train ↔ Test SHIFT comparison ──
+  Metric               FULL shift   ABLATION shift      delta
+  ────────────────────────────────────────────────────────────
+  cls:knife               +2.91pp           +2.98pp     +0.07pp
+  cls:long_gun            -3.66pp           -4.56pp     -0.90pp
+  cls:other               +2.61pp           +2.79pp     +0.18pp
+  cls:pistol              -1.85pp           -1.21pp     +0.65pp
+  sz:small                +0.47pp           +0.59pp     +0.12pp
+  sz:medium               +2.85pp           +2.59pp     -0.26pp
+  sz:large                -3.32pp           -3.18pp     +0.14pp
+
+  ── Source-prefix overlap check ──
+  train intersect valid: 20 shared sources [LEAK]
+  test intersect train: 7 shared sources [LEAK]
+  test intersect valid: 7 shared sources [LEAK]
+
+======================================================================
+  PHASE 4: Copying files to /home/constantin/Doctorat/GunDatasetHistogram17percentage3
+======================================================================
+  train: copied 8363 image-label pairs
+  valid: copied 1291 image-label pairs
+  test: copied 730 image-label pairs
+
+  Done! Ablation dataset saved at: /home/constantin/Doctorat/GunDatasetHistogram17percentage3
+
+======================================================================
+  ALL DONE
+  Best seed: 1
+  Score: 27.035
+  Output: /home/constantin/Doctorat/GunDatasetHistogram17percentage3
+======================================================================
+
+Process finished with exit code 0

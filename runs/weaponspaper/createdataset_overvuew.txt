@@ -1,0 +1,215 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/DATASETanalyze.py
+
+██████████████████████████████████████████████████████████████████████
+  🔶 DATASET: FULL
+     Path: /home/constantin/Doctorat/GunDatasetHistogram
+██████████████████████████████████████████████████████████████████████
+
+======================================================================
+  DATASET SUMMARY: FULL
+======================================================================
+
+  📂 TRAIN  (49079 images, 63447 instances)
+     Inst/img    : mean 1.29 | median 1 | max 15 | std 0.81
+     Percentiles : P50=1 | P90=2 | P95=3 | P99=4
+     Density     : ≥8 obj: 128 (0.3%)  |  ≥12 obj: 24 (0.0%)
+     Sizes       : S=1.4% | M=25.4% | L=73.1%
+     Classes     : knife=16.6% | long_gun=30.4% | other=16.0% | pistol=37.0%
+     Box stats   : median area 25232px² | median H/W ratio 1.23
+
+  📂 VALID  (7552 images, 9730 instances)
+     Inst/img    : mean 1.29 | median 1 | max 18 | std 0.82
+     Percentiles : P50=1 | P90=2 | P95=3 | P99=4
+     Density     : ≥8 obj: 18 (0.2%)  |  ≥12 obj: 3 (0.0%)
+     Sizes       : S=2.1% | M=29.5% | L=68.4%
+     Classes     : knife=18.6% | long_gun=28.3% | other=13.6% | pistol=39.5%
+     Box stats   : median area 19372px² | median H/W ratio 1.26
+
+  📂 TEST  (2674 images, 3523 instances)
+     Inst/img    : mean 1.32 | median 1 | max 16 | std 0.92
+     Percentiles : P50=1 | P90=2 | P95=3 | P99=5
+     Density     : ≥8 obj: 10 (0.4%)  |  ≥12 obj: 2 (0.1%)
+     Sizes       : S=1.9% | M=28.3% | L=69.8%
+     Classes     : knife=19.5% | long_gun=26.7% | other=18.6% | pistol=35.2%
+     Box stats   : median area 21698px² | median H/W ratio 1.27
+
+  🔍 TRAIN ↔ TEST SHIFT  [FULL]
+  ──────────────────────────────────────────────────────────────────
+     ⚠️  small: train   1.4% → test   1.9%  (rel +32.9%)
+     ✓ medium: train  25.4% → test  28.3%  (rel +11.2%)
+     ✓  large: train  73.1% → test  69.8%  (rel  -4.5%)
+     ⚠️     knife: train  16.6% → test  19.5%  (rel +17.5%)
+     ✓  long_gun: train  30.4% → test  26.7%  (rel -12.1%)
+     ⚠️     other: train  16.0% → test  18.6%  (rel +16.3%)
+     ✓    pistol: train  37.0% → test  35.2%  (rel  -5.0%)
+
+──────────────────────────────────────────────────────────────────────
+  🎬 FILENAME / SOURCE OVERLAP  [FULL]
+──────────────────────────────────────────────────────────────────────
+  Exact filename overlap:
+     ✓ train ∩ valid: 0 shared
+     ✓ test ∩ train: 0 shared
+     ✓ test ∩ valid: 0 shared
+     (no exact overlaps — good)
+
+  Source-prefix overlap:
+     ⚠️ train ∩ valid: 697 shared sources
+     ⚠️ test ∩ train: 286 shared sources
+     ⚠️ test ∩ valid: 164 shared sources
+
+██████████████████████████████████████████████████████████████████████
+  🔶 DATASET: ABLATION2
+     Path: /home/constantin/Doctorat/GunDatasetHistogram17percentag2
+██████████████████████████████████████████████████████████████████████
+  ⚠️ Directory not found: /home/constantin/Doctorat/GunDatasetHistogram17percentag2
+
+██████████████████████████████████████████████████████████████████████
+  🔶 DATASET: ABLATION3
+     Path: /home/constantin/Doctorat/GunDatasetHistogram17percentage3
+██████████████████████████████████████████████████████████████████████
+
+======================================================================
+  DATASET SUMMARY: ABLATION3
+======================================================================
+
+  📂 TRAIN  (8363 images, 10888 instances)
+     Inst/img    : mean 1.30 | median 1 | max 13 | std 0.85
+     Percentiles : P50=1 | P90=2 | P95=3 | P99=5
+     Density     : ≥8 obj: 27 (0.3%)  |  ≥12 obj: 3 (0.0%)
+     Sizes       : S=1.3% | M=25.7% | L=73.0%
+     Classes     : knife=16.3% | long_gun=30.6% | other=16.4% | pistol=36.7%
+     Box stats   : median area 25579px² | median H/W ratio 1.24
+
+  📂 VALID  (1291 images, 1682 instances)
+     Inst/img    : mean 1.30 | median 1 | max 10 | std 0.80
+     Percentiles : P50=1 | P90=2 | P95=3 | P99=4
+     Density     : ≥8 obj: 4 (0.3%)  |  ≥12 obj: 0 (0.0%)
+     Sizes       : S=2.1% | M=28.6% | L=69.3%
+     Classes     : knife=18.4% | long_gun=28.8% | other=14.1% | pistol=38.6%
+     Box stats   : median area 20204px² | median H/W ratio 1.26
+
+  📂 TEST  (730 images, 984 instances)
+     Inst/img    : mean 1.35 | median 1 | max 16 | std 1.00
+     Percentiles : P50=1 | P90=2 | P95=3 | P99=5
+     Density     : ≥8 obj: 3 (0.4%)  |  ≥12 obj: 1 (0.1%)
+     Sizes       : S=1.9% | M=28.3% | L=69.8%
+     Classes     : knife=19.3% | long_gun=26.0% | other=19.2% | pistol=35.5%
+     Box stats   : median area 21744px² | median H/W ratio 1.30
+
+  🔍 TRAIN ↔ TEST SHIFT  [ABLATION3]
+  ──────────────────────────────────────────────────────────────────
+     ⚠️  small: train   1.3% → test   1.9%  (rel +44.0%)
+     ✓ medium: train  25.7% → test  28.3%  (rel +10.1%)
+     ✓  large: train  73.0% → test  69.8%  (rel  -4.4%)
+     ⚠️     knife: train  16.3% → test  19.3%  (rel +18.2%)
+     ✓  long_gun: train  30.6% → test  26.0%  (rel -14.9%)
+     ⚠️     other: train  16.4% → test  19.2%  (rel +17.0%)
+     ✓    pistol: train  36.7% → test  35.5%  (rel  -3.3%)
+
+──────────────────────────────────────────────────────────────────────
+  🎬 FILENAME / SOURCE OVERLAP  [ABLATION3]
+──────────────────────────────────────────────────────────────────────
+  Exact filename overlap:
+     ✓ train ∩ valid: 0 shared
+     ✓ test ∩ train: 0 shared
+     ✓ test ∩ valid: 0 shared
+     (no exact overlaps — good)
+
+  Source-prefix overlap:
+     ⚠️ train ∩ valid: 20 shared sources
+     ⚠️ test ∩ train: 7 shared sources
+     ⚠️ test ∩ valid: 7 shared sources
+
+======================================================================
+  📊 CROSS-DATASET COMPARISON (SIDE-BY-SIDE)
+======================================================================
+
+  ── Image / instance counts per split ──
+  Split    FULL                   ABLATION3
+  ──────────────────────────────────────────────────────
+  train    49079 img /  63447 inst   8363 img /  10888 inst
+  valid     7552 img /   9730 inst   1291 img /   1682 inst
+  test      2674 img /   3523 inst    730 img /    984 inst
+
+  ── Size distribution: TRAIN ──
+  Size                         FULL              ABLATION3
+  ────────────────────────────────────────────────────────
+  small                       1.4%                   1.3%
+  medium                     25.4%                  25.7%
+  large                      73.1%                  73.0%
+
+  ── Size distribution: VALID ──
+  Size                         FULL              ABLATION3
+  ────────────────────────────────────────────────────────
+  small                       2.1%                   2.1%
+  medium                     29.5%                  28.6%
+  large                      68.4%                  69.3%
+
+  ── Size distribution: TEST ──
+  Size                         FULL              ABLATION3
+  ────────────────────────────────────────────────────────
+  small                       1.9%                   1.9%
+  medium                     28.3%                  28.3%
+  large                      69.8%                  69.8%
+
+  ── Class distribution: TRAIN ──
+  Class                        FULL              ABLATION3
+  ────────────────────────────────────────────────────────
+  knife                      16.6%                  16.3%
+  long_gun                   30.4%                  30.6%
+  other                      16.0%                  16.4%
+  pistol                     37.0%                  36.7%
+
+  ── Class distribution: VALID ──
+  Class                        FULL              ABLATION3
+  ────────────────────────────────────────────────────────
+  knife                      18.6%                  18.4%
+  long_gun                   28.3%                  28.8%
+  other                      13.6%                  14.1%
+  pistol                     39.5%                  38.6%
+
+  ── Class distribution: TEST ──
+  Class                        FULL              ABLATION3
+  ────────────────────────────────────────────────────────
+  knife                      19.5%                  19.3%
+  long_gun                   26.7%                  26.0%
+  other                      18.6%                  19.2%
+  pistol                     35.2%                  35.5%
+
+  ── Mean instances per image per split ──
+  Split                      FULL              ABLATION3
+  ──────────────────────────────────────────────────────
+  train                     1.29                   1.30
+  valid                     1.29                   1.30
+  test                      1.32                   1.35
+
+  ── Train ↔ Test SHIFT (relative %) ──
+  Metric                           FULL              ABLATION3
+  ────────────────────────────────────────────────────────────
+  small                         +32.9%                 +44.0%
+  medium                        +11.2%                 +10.1%
+  large                          -4.5%                  -4.4%
+  bag                           +17.5%                 +18.2%
+  backpack                      -12.1%                 -14.9%
+  trolley                       +16.3%                 +17.0%
+
+======================================================================
+  🎯 ABLATION FIDELITY REPORT
+  (How well does each ablation reproduce the FULL dataset?)
+======================================================================
+
+  Reference: FULL
+
+  ── ABLATION3 vs FULL ──
+     Size deviation : max 0.93pp | mean 0.26pp
+     Class deviation: max 0.85pp | mean 0.43pp
+     Verdict        : 🟢 GOOD (deviations < 1.0pp)
+     Worst size dev : valid/large = +0.93pp
+     Worst class dev: valid/pistol = -0.85pp
+
+
+======================================================================
+  ✅ Analysis complete.
+======================================================================
+
+Process finished with exit code 0
