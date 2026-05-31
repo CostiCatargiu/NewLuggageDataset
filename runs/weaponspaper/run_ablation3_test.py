@@ -43,11 +43,11 @@ EXPERIMENTS = [
         "description": "Original loss, no modifications — baseline for ABLATION3",
         "params": {
             "cls": 0.5,
-            "alpha_start": 0.5,
-            "alpha_end": 0.5,
-            "alpha_min": 0.3,
-            "alpha_max": 0.9,
-            "small_obj_px": 0,
+            "alpha_start": 0.0,          # 0 = pure score weight, no area (original)
+            "alpha_end": 0.0,
+            "alpha_min": 0.0,
+            "alpha_max": 0.0,
+            "small_obj_px": 0,           # no small-obj boost
             "small_obj_boost": 1.0,
             "center_loss_weight_init": 0.0,
             "center_loss_weight_min": 0.0,
