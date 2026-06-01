@@ -8,6 +8,14 @@ import torch.nn.functional as F
 
 from ultralytics.utils.ops import xywh2xyxy, xyxy2xywh, crop_mask
 from ultralytics.utils.tal import RotatedTaskAlignedAssigner, TaskAlignedAssigner, dist2bbox, dist2rbox, make_anchors
+
+try:
+    from .shape_tal import ShapeAwareTaskAlignedAssigner
+except ImportError:
+    try:
+        from shape_tal import ShapeAwareTaskAlignedAssigner
+    except ImportError:
+        ShapeAwareTaskAlignedAssigner = None
 from ultralytics.utils.torch_utils import autocast
 from ultralytics.utils.metrics import OKS_SIGMA
 
@@ -368,6 +376,11 @@ class v8DetectionLoss:
         self.tal_alpha = getattr(h, 'tal_alpha', 0.5)
         self.tal_beta = getattr(h, 'tal_beta', 6.0)
 
+        # Section E: Shape-aware TAL
+        self.use_shape_tal = getattr(h, 'use_shape_tal', False)
+        self.shape_gamma = getattr(h, 'shape_gamma', 1.0)
+        self.shape_min = getattr(h, 'shape_min', 0.3)
+
         # =====================================================================
         # LOSS FUNCTIONS
         # =====================================================================
@@ -378,13 +391,23 @@ class v8DetectionLoss:
         # Pass parameters to BboxLoss
         self.bbox_loss.set_params(h)
 
-        # Task Aligned Assigner with configurable parameters
-        self.assigner = TaskAlignedAssigner(
-            topk=self.tal_topk,
-            num_classes=self.nc,
-            alpha=self.tal_alpha,
-            beta=self.tal_beta
-        )
+        # Task Aligned Assigner — standard or shape-aware
+        if self.use_shape_tal and ShapeAwareTaskAlignedAssigner is not None:
+            self.assigner = ShapeAwareTaskAlignedAssigner(
+                topk=self.tal_topk,
+                num_classes=self.nc,
+                alpha=self.tal_alpha,
+                beta=self.tal_beta,
+                gamma=self.shape_gamma,
+                shape_min=self.shape_min,
+            )
+        else:
+            self.assigner = TaskAlignedAssigner(
+                topk=self.tal_topk,
+                num_classes=self.nc,
+                alpha=self.tal_alpha,
+                beta=self.tal_beta
+            )
 
         # Projection for DFL
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
@@ -409,6 +432,10 @@ class v8DetectionLoss:
             print(f"  [D] tal_topk:        {self.tal_topk}")
             print(f"  [D] tal_alpha:       {self.tal_alpha}")
             print(f"  [D] tal_beta:        {self.tal_beta}")
+            print(f"  [E] use_shape_tal:   {self.use_shape_tal}")
+            if self.use_shape_tal:
+                print(f"  [E] shape_gamma:     {self.shape_gamma}")
+                print(f"  [E] shape_min:       {self.shape_min}")
             print(f"  epochs:              {self.total_epochs}")
             print("=" * 60 + "\n")
             self._config_printed = True
