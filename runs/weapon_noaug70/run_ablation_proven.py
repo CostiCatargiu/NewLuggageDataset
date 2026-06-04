@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-Ablation (42%) — 4 configs proven on 70%.
+70% Ablation — 4 diagnostic configs to map topk/beta landscape.
 
-Target to beat: 74.20% (v5_tal_alpha08)
+Target to beat: 80.45% (v5_topk15_beta3_70)
 
-Configs based on 70% winners:
-  1. v5_topk15_beta3_ds3         — won 70% at 80.45% (50%)
-  2. v5_tal07_ds3                — #2 at 70%, best val metrics (45%)
-  3. v5_topk15_beta3_boost15_ds3 — 70% winner + boost=1.5 for small (35%)
-  4. v5_topk15_beta3_tal07_ds3   — combine two 70% winners (25%)
+Key question: is topk=15 the real driver?
+  topk=13, beta=4.0 → 79.33%
+  topk=13, beta=3.0 → 79.62% (+0.29pp from beta alone)
+  topk=15, beta=3.0 → 80.45% (+0.83pp from topk)
+
+Configs:
+  1. v5_topk15_70            — topk=15 + beta=4.0: isolate topk effect (50%)
+  2. v5_topk15_tal07_70      — topk=15 + tal_alpha=0.7: best two settings (30%)
+  3. v5_topk17_beta3_70      — topk=17: push further? (20%)
+  4. v5_topk15_beta35_70     — topk=15 + beta=3.5: midpoint (20%)
 
 Usage:
   python run_ablation_proven.py
@@ -23,9 +28,9 @@ from ultralytics import YOLO
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-DATA_YAML = "/home/constantin/Doctorat/GunDatasetNoAugSplitAblation/data.yaml"
+DATA_YAML = "/home/constantin/Doctorat/GunDatasetNoAugSplitAblation70/data.yaml"
 MODEL_WEIGHTS = "yolov12s.pt"
-PROJECT_DIR = "runs_noaug_weapon"
+PROJECT_DIR = "runs_noaug_weapon70"
 
 EPOCHS = 80
 IMG_SIZE = 640
@@ -65,32 +70,37 @@ def make_exp(name, desc, **overrides):
     return {"name": name, "description": desc, "params": params}
 
 
-# Ordered by confidence
+# Ordered by chance of beating 80.45%
 EXPERIMENTS = [
+    # 50% — isolate topk=15 effect. If this scores ~80.4%, topk=15 is the key.
     make_exp(
-        "v5_topk15_beta3_ds3",
-        "Won 70% at 80.45% — topk=15, beta=3.0 (50%)",
+        "v5_topk15_70",
+        "topk=15, keep beta=4.0 — isolate topk effect (50%)",
         tal_topk=15,
-        tal_beta=3.0,
     ),
+
+    # 30% — combine best topk (15) with best tal_alpha (0.7)
     make_exp(
-        "v5_tal07_ds3",
-        "#2 at 70%, best val metrics — tal_alpha=0.7 (45%)",
+        "v5_topk15_tal07_70",
+        "topk=15 + tal_alpha=0.7 — two best settings (30%)",
+        tal_topk=15,
         tal_alpha=0.7,
     ),
+
+    # 20% — push topk further, does the trend continue?
     make_exp(
-        "v5_topk15_beta3_boost15_ds3",
-        "70% winner + boost=1.5 for small objects (35%)",
-        tal_topk=15,
+        "v5_topk17_beta3_70",
+        "topk=17 + beta=3.0 — push further (20%)",
+        tal_topk=17,
         tal_beta=3.0,
-        small_obj_boost=1.5,
     ),
+
+    # 20% — midpoint beta between 3.0 (80.45%) and 4.0 (79.33%)
     make_exp(
-        "v5_topk15_beta3_tal07_ds3",
-        "Combine two 70% winners (25%)",
+        "v5_topk15_beta35_70",
+        "topk=15 + beta=3.5 — midpoint (20%)",
         tal_topk=15,
-        tal_beta=3.0,
-        tal_alpha=0.7,
+        tal_beta=3.5,
     ),
 ]
 
@@ -171,8 +181,8 @@ def main():
     total_start = time.time()
 
     print(f"\n{'=' * 70}")
-    print(f"  4 PROVEN CONFIGS ON 42% ABLATION")
-    print(f"  Target to beat: 74.20% (v5_tal_alpha08)")
+    print(f"  4 NEW CONFIGS ON 70% ABLATION")
+    print(f"  Target to beat: 80.45% (v5_topk15_beta3_70)")
     print(f"{'=' * 70}")
     print(f"  Model:    {MODEL_WEIGHTS}")
     print(f"  Dataset:  {DATA_YAML}")
