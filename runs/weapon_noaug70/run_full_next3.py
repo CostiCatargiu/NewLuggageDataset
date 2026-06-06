@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """
-Full Dataset — 3 configs based on complete analysis of 14 ablation + 8 full runs.
+Full Dataset — 3 configs promoted from ablation analysis.
 
-KEY FINDINGS FROM DATA:
-  - Full dataset rewards higher beta (stricter localization) vs ablation
-  - topk=15 consistently beats topk=13 on mAP50/recall at both scales
-  - alpha=0.7 was #4 at 70% (0.8002) but NEVER tested on full
-  - topk=15 + beta=4.0 never tested on full (only beta=3.0 and 3.5)
-  - The full best (topk=13, beta=4.0) = 83.03%, topk=15 best = 82.93%
+ABLATION FINDINGS (20 runs):
+  - topk=15 consistently best
+  - alpha=0.5 best mAP50, alpha=0.6-0.7 best mAP50-95
+  - beta=3.0-3.5 best at ablation, but full rewards higher beta (4.0)
+  - TAL tuning ceiling ~80.45% at ablation
 
-STRATEGY:
-  1. topk=15 + beta=4.0 — fill the obvious gap: topk=15 with the full-proven beta
-  2. topk=15 + alpha=0.7 + beta=4.0 — alpha=0.7 was strong at 70%, combine with topk=15
-  3. topk=15 + alpha=0.7 + beta=3.5 — same but with beta35 (best all-rounder beta)
+PROMOTING:
+  1. topk=15, a=0.7, b=3.5 — ablation best balanced (80.28%, 50.05% mAP50-95)
+  2. topk=15, a=0.6, b=3.5 — ablation best mAP50-95 ever (50.15%)
+  3. topk=15, a=0.5, b=4.0 — topk=15 with full-proven beta=4.0 (gap fill)
 
 Current full best mAP50:     v5_cls12_tight_clip_full = 83.03% (topk=13, a=0.5, b=4.0)
 Current full best all-round: v5_topk15_beta35_full    = 82.93% (topk=15, a=0.5, b=3.5)
@@ -73,45 +72,34 @@ def make_exp(name, desc, **overrides):
 
 
 EXPERIMENTS = [
-    # Run 1: topk=15 + beta=4.0
-    # RATIONALE: topk=15 is proven (best mAP50 at 70%, best recall on full).
-    # beta=4.0 is the full-dataset winner's beta. This exact combo was NEVER
-    # tested on full. At 70% it scored 79.57% — modest, but full dataset
-    # consistently boosts topk=15 configs more than ablation predicts.
-    # This is the most obvious gap in our search space.
-    make_exp(
-        "v5_topk15_beta4_full",
-        "topk=15 + beta=4.0 — obvious untested combo, fill the gap",
-        tal_topk=15,
-        tal_beta=4.0,
-    ),
-
-    # Run 2: topk=15 + alpha=0.7 + beta=4.0
-    # RATIONALE: alpha=0.7 was #4 at 70% (80.02%) with topk=13 — strong.
-    # It was NEVER tested on full dataset. Combining it with topk=15 and
-    # the full-proven beta=4.0 merges two independently strong signals.
-    # At 70%, topk=15+alpha=0.7+beta=4.0 scored 79.62%, but alpha=0.7
-    # with topk=13 scored 80.02%, suggesting alpha=0.7 works better with
-    # moderate topk — worth testing if full dataset changes this dynamic.
-    make_exp(
-        "v5_topk15_tal07_beta4_full",
-        "topk=15 + alpha=0.7 + beta=4.0 — alpha=0.7 never tested on full",
-        tal_topk=15,
-        tal_alpha=0.7,
-        tal_beta=4.0,
-    ),
-
-    # Run 3: topk=15 + alpha=0.7 + beta=3.5
-    # RATIONALE: Same alpha=0.7 exploration, but with beta=3.5 which produced
-    # the best all-rounder on full (82.93%). If alpha=0.7 helps mAP50 at
-    # topk=15, pairing it with beta=3.5 should maximize recall + small objects.
-    # This tests alpha=0.7 at two beta values to isolate its effect.
+    # Run 1: topk=15 + alpha=0.7 + beta=3.5
+    # Ablation: 80.28% mAP50, 50.05% mAP50-95 — best balanced
     make_exp(
         "v5_topk15_tal07_beta35_full",
-        "topk=15 + alpha=0.7 + beta=3.5 — alpha=0.7 + best all-rounder beta",
+        "ablation best balanced — topk=15, alpha=0.7, beta=3.5",
         tal_topk=15,
         tal_alpha=0.7,
         tal_beta=3.5,
+    ),
+
+    # Run 2: topk=15 + alpha=0.6 + beta=3.5
+    # Ablation: 79.90% mAP50, 50.15% mAP50-95 — best mAP50-95 ever
+    make_exp(
+        "v5_topk15_tal06_beta35_full",
+        "ablation best mAP50-95 — topk=15, alpha=0.6, beta=3.5",
+        tal_topk=15,
+        tal_alpha=0.6,
+        tal_beta=3.5,
+    ),
+
+    # Run 3: topk=15 + alpha=0.5 + beta=4.0
+    # Ablation: 79.57% mAP50 — modest, but full dataset rewarded
+    # topk=13+beta=4.0 as #1 (83.03%). topk=15 upgrade never tested on full.
+    make_exp(
+        "v5_topk15_beta4_full",
+        "gap fill — topk=15 with full-proven beta=4.0",
+        tal_topk=15,
+        tal_beta=4.0,
     ),
 ]
 
@@ -192,7 +180,7 @@ def main():
     total_start = time.time()
 
     print(f"\n{'=' * 70}")
-    print(f"  FULL DATASET — 3 DATA-DRIVEN CONFIGS")
+    print(f"  FULL DATASET — 3 PROMOTED FROM ABLATION")
     print(f"  Target to beat: 83.03% mAP50 (v5_cls12_tight_clip_full)")
     print(f"{'=' * 70}")
     print(f"  Model:    {MODEL_WEIGHTS}")
