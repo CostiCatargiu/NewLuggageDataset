@@ -368,6 +368,26 @@ def run_arch_experiment(run):
             close_mosaic=10,
             seed=0,
             deterministic=True,
+            # --- DEFAULT TAL params ---
+            tal_topk=10,
+            tal_alpha=0.5,
+            tal_beta=6.0,
+            # --- DISABLE SWA ---
+            alpha_start=0.0,
+            alpha_end=0.0,
+            alpha_min=0.0,
+            alpha_max=0.0,
+            # --- DISABLE clipping ---
+            iou_clip_start=999.0,
+            iou_clip_end=999.0,
+            dfl_clip_start=999.0,
+            dfl_clip_end=999.0,
+            # --- DISABLE custom features ---
+            small_obj_boost=1.0,
+            small_obj_px=0,
+            center_loss_weight_init=0.0,
+            center_loss_weight_min=0.0,
+            use_vfl=False,
         )
 
         elapsed = (time.time() - start_time) / 3600
