@@ -1,0 +1,163 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/run_ablation_overnight_all.py
+FlashAttention is not available on this device. Using scaled_dot_product_attention instead.
+
+======================================================================
+  70% ABLATION — 6 RUNS OVERNIGHT
+  PART 1: 2 SWA runs (custom loss)
+  PART 2: 4 Architecture runs (default params)
+======================================================================
+  Dataset: /home/constantin/Doctorat/GunDatasetNoAugSplit70percentage/data.yaml
+  Epochs:  80    ImgSize: 640
+======================================================================
+
+  --- SWA RUNS ---
+  [1] v5_tal07_swa09_04_70                     best TAL + SWA 0.9/0.4
+  [2] v5_tal07_swa09_05_70                     best TAL + SWA 0.9/0.5
+
+  --- ARCHITECTURE RUNS ---
+  [3] arch_p3_attn_70                          P3 attention enabled (simplest change)
+
+======================================================================
+
+
+======================================================================
+  PART 1: SWA EXPLORATION (custom loss)
+======================================================================
+
+>>> SWA Run 1/2: v5_tal07_swa09_04_70
+
+######################################################################
+# v5_tal07_swa09_04_70
+# best TAL + SWA 0.9/0.4
+# Type: SWA (with custom loss)
+######################################################################
+
+
+>>> SWA Run 2/2: v5_tal07_swa09_05_70
+
+######################################################################
+# v5_tal07_swa09_05_70
+# best TAL + SWA 0.9/0.5
+# Type: SWA (with custom loss)
+######################################################################
+
+
+======================================================================
+  PART 2: ARCHITECTURE EXPLORATION (default params)
+======================================================================
+
+>>> Arch Run 1/1: arch_p3_attn_70
+
+######################################################################
+# arch_p3_attn_70
+# P3 attention enabled (simplest change)
+# Type: ARCHITECTURE (default params — no custom loss)
+######################################################################
+
+WARNING ⚠️ no model scale passed. Assuming scale='s'.
+Transferred 691/769 items from pretrained weights
+New https://pypi.org/project/ultralytics/8.4.62 available 😃 Update with 'pip install -U ultralytics'
+Ultralytics 8.3.63 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24081MiB)
+engine/trainer: task=detect, mode=train, model=arch_yamls/arch_p3_attn_70.yaml, data=/home/constantin/Doctorat/GunDatasetNoAugSplit70percentage/data.yaml, epochs=80, time=None, patience=100, batch=22, imgsz=640, save=True, save_period=-1, cache=False, device=0, workers=8, project=runs_noaug_weapon70, name=arch_p3_attn_709, exist_ok=False, pretrained=yolov12s.pt, optimizer=auto, verbose=True, seed=0, deterministic=True, single_cls=False, rect=False, cos_lr=False, close_mosaic=10, resume=False, amp=True, fraction=1.0, profile=False, freeze=None, multi_scale=False, overlap_mask=True, mask_ratio=4, dropout=0.0, val=True, split=val, save_json=False, save_hybrid=False, conf=None, iou=0.7, max_det=300, half=False, dnn=False, plots=True, source=None, vid_stride=1, stream_buffer=False, visualize=False, augment=False, agnostic_nms=False, classes=None, retina_masks=False, embed=None, show=False, save_frames=False, save_txt=False, save_conf=False, save_crop=False, show_labels=True, show_conf=True, show_boxes=True, line_width=None, format=torchscript, keras=False, optimize=False, int8=False, dynamic=False, simplify=True, opset=None, workspace=None, nms=False, lr0=0.01, lrf=0.01, momentum=0.937, weight_decay=0.0005, warmup_epochs=3.0, warmup_momentum=0.8, warmup_bias_lr=0.0, box=7.5, cls=0.5, dfl=1.5, pose=12.0, kobj=1.0, nbs=64, hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, degrees=0.0, translate=0.1, scale=0.5, shear=0.0, perspective=0.0, flipud=0.0, fliplr=0.5, bgr=0.0, mosaic=1.0, mixup=0.0, copy_paste=0.1, copy_paste_mode=flip, auto_augment=randaugment, erasing=0.4, crop_fraction=1.0, cfg=None, tracker=botsort.yaml, alpha_start=0.0, alpha_end=0.0, alpha_min=0.0, alpha_max=0.0, small_obj_px=0, small_obj_boost=1.0, area_weight_min=0.4, area_weight_mode=log_inverse, center_loss_weight_init=0.0, center_loss_weight_min=0.0, center_loss_decay_epochs=35, iou_clip_start=999.0, iou_clip_end=999.0, dfl_clip_start=999.0, dfl_clip_end=999.0, use_percentile_clip=False, clip_percentile=0.95, class_frequencies=[0.267, 0.219, 0.513], class_balance_strength=1.0, use_satal=False, satal_alpha_small=1.2, satal_beta_small=4.5, satal_alpha_large=1.0, satal_beta_large=6.0, satal_small_area=0.0025, satal_large_area=0.0225, satal_topk_factor=1.3, tal_topk=10, tal_alpha=0.5, tal_beta=6.0, use_vfl=False, vfl_alpha=0.75,, vfl_gamma=2.0,, iou_type=DIoU, use_shape_tal=False, shape_gamma=0.1, shape_min=0.1, save_dir=runs_noaug_weapon70/arch_p3_attn_709
+WARNING ⚠️ no model scale passed. Assuming scale='s'.
+
+                   from  n    params  module                                       arguments
+  0                  -1  1       928  ultralytics.nn.modules.conv.Conv             [3, 32, 3, 2]
+  1                  -1  1      9344  ultralytics.nn.modules.conv.Conv             [32, 64, 3, 2, 1, 2]
+  2                  -1  1     26080  ultralytics.nn.modules.block.C3k2            [64, 128, 1, False, 0.25]
+  3                  -1  1     37120  ultralytics.nn.modules.conv.Conv             [128, 128, 3, 2, 1, 4]
+  4                  -1  1    103360  ultralytics.nn.modules.block.C3k2            [128, 256, 1, False, 0.25]
+  5                  -1  1    590336  ultralytics.nn.modules.conv.Conv             [256, 256, 3, 2]
+  6                  -1  2    677120  ultralytics.nn.modules.block.A2C2f           [256, 256, 2, True, 4]
+  7                  -1  1   1180672  ultralytics.nn.modules.conv.Conv             [256, 512, 3, 2]
+  8                  -1  2   2664960  ultralytics.nn.modules.block.A2C2f           [512, 512, 2, True, 1]
+  9                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 10             [-1, 6]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 11                  -1  1    345856  ultralytics.nn.modules.block.A2C2f           [768, 256, 1, False, -1]
+ 12                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 13             [-1, 4]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 14                  -1  1    120320  ultralytics.nn.modules.block.A2C2f           [512, 128, 1, True, 4]
+ 15                  -1  1    147712  ultralytics.nn.modules.conv.Conv             [128, 128, 3, 2]
+ 16            [-1, 11]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 17                  -1  1    296704  ultralytics.nn.modules.block.A2C2f           [384, 256, 1, False, -1]
+ 18                  -1  1    590336  ultralytics.nn.modules.conv.Conv             [256, 256, 3, 2]
+ 19             [-1, 8]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 20                  -1  1   1511424  ultralytics.nn.modules.block.C3k2            [768, 512, 1, True]
+ 21        [14, 17, 20]  1    820956  ultralytics.nn.modules.head.Detect           [4, [128, 256, 512]]
+arch_p3_attn_70 summary: 525 layers, 9,123,228 parameters, 9,123,212 gradients, 19.9 GFLOPs
+
+Transferred 769/769 items from pretrained weights
+Freezing layer 'model.21.dfl.conv.weight'
+AMP: running Automatic Mixed Precision (AMP) checks...
+AMP: checks passed ✅
+train: Scanning /home/constantin/Doctorat/GunDatasetNoAugSplit70percentage/train/labels.cache... 13020 images, 0 backgrounds, 0 corrupt: 100%|██████████| 13020/13020 [00:00<?, ?it/s]
+val: Scanning /home/constantin/Doctorat/GunDatasetNoAugSplit70percentage/valid/labels.cache... 2809 images, 0 backgrounds, 0 corrupt: 100%|██████████| 2809/2809 [00:00<?, ?it/s]
+Plotting labels to runs_noaug_weapon70/arch_p3_attn_709/labels.jpg...
+optimizer: 'optimizer=auto' found, ignoring 'lr0=0.01' and 'momentum=0.937' and determining best 'optimizer', 'lr0' and 'momentum' automatically...
+optimizer: SGD(lr=0.01, momentum=0.9) with parameter groups 126 weight(decay=0.0), 133 weight(decay=0.000515625), 132 bias(decay=0.0)
+Image sizes 640 train, 640 val
+Using 8 dataloader workers
+Logging results to runs_noaug_weapon70/arch_p3_attn_709
+Starting training for 80 epochs...
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+
+============================================================
+v8DetectionLoss Configuration
+============================================================
+  [A] alpha_start:     0.0
+  [A] alpha_end:       0.0
+  [A] small_obj_px:    0
+  [A] small_obj_boost: 1.0
+  [B] center_loss_init:     0.0
+  [B] center_loss_min:     0.0
+  [C] iou_clip:        999.0 → 999.0
+  [C] dfl_clip:        999.0 → 999.0
+  [D] tal_topk:        10
+  [D] tal_alpha:       0.5
+  [D] tal_beta:        6.0
+  [E] use_shape_tal:   False
+  epochs:              80
+============================================================
+
+  0%|          | 0/592 [00:00<?, ?it/s][Alpha] Epoch 0/80: α=0.000
+       1/80        23G      1.719      2.573      1.721         28        640: 100%|██████████| 592/592 [03:42<00:00,  2.66it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95):   0%|          | 0/64 [00:00<?, ?it/s]
+============================================================
+v8DetectionLoss Configuration
+============================================================
+  [A] alpha_start:     0.0
+  [A] alpha_end:       0.0
+  [A] small_obj_px:    0
+  [A] small_obj_boost: 1.0
+  [B] center_loss_init:     0.0
+  [B] center_loss_min:     0.0
+  [C] iou_clip:        999.0 → 999.0
+  [C] dfl_clip:        999.0 → 999.0
+  [D] tal_topk:        10
+  [D] tal_alpha:       0.5
+  [D] tal_beta:        6.0
+  [E] use_shape_tal:   False
+  epochs:              80
+============================================================
+
+[Alpha] Epoch 0/80: α=0.000
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 64/64 [00:13<00:00,  4.59it/s]
+                   all       2809       3612      0.502      0.455       0.46       0.23
+  0%|          | 0/592 [00:00<?, ?it/s]
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+       2/80        23G      1.691      2.137      1.705         36        640: 100%|██████████| 592/592 [03:38<00:00,  2.72it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 64/64 [00:14<00:00,  4.57it/s]
+                   all       2809       3612      0.344      0.272       0.22     0.0981
+  0%|          | 0/592 [00:00<?, ?it/s]
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+       3/80        23G      1.885      2.641      1.922         35        640: 100%|██████████| 592/592 [03:36<00:00,  2.74it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 64/64 [00:14<00:00,  4.50it/s]
+                   all       2809       3612      0.189      0.167      0.104     0.0406
+  0%|          | 0/592 [00:00<?, ?it/s]
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+       4/80      23.1G      1.935      2.824      2.001         36        640: 100%|██████████| 592/592 [03:34<00:00,  2.76it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 64/64 [00:14<00:00,  4.48it/s]
+                   all       2809       3612      0.291      0.242      0.199     0.0844
+  0%|          | 0/592 [00:00<?, ?it/s]
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
