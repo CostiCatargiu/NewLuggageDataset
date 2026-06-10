@@ -149,7 +149,7 @@ head:
 
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 4], 1, Concat, [1]]
-  - [-1, 2, C2fLSKA, [256, False, 1, 1, 0.5, 5]]  # 14 — LSKA k=5 (smaller kernel)
+  - [-1, 2, C2fLSKA, [256, False]]          # 14 — LSKA at P3 (default k=7, TODO: need C2fLSKA5 for k=5)
 
   - [-1, 1, Conv, [256, 3, 2]]
   - [[-1, 11], 1, Concat, [1]]
