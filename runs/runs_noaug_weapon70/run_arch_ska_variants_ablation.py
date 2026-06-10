@@ -120,14 +120,13 @@ head:
 """
 
 # =============================================================================
-# Variant 3: SKA at P3 with smaller kernel (5x5 instead of 7x7)
+# Variant 3: SKA at P3 with 5x5 kernel instead of 7x7
 # Same position as original SKA but with reduced kernel size.
 # Smaller kernel = smaller receptive field = less "washing out" of
 # small features. Still provides context but more localized.
-# Note: C2fLSKA kernel size is controlled by the module itself.
-# We use C2fLSKA5 if available, otherwise standard C2fLSKA.
+# C2fLSKA args: [c2, shortcut, n, g, e, k_size]
 # =============================================================================
-ARCH_SKA_SMALL_KERNEL = """# SKA at P3 with smaller context — standard C2fLSKA with 1 rep
+ARCH_SKA_SMALL_KERNEL = """# SKA at P3 with 5x5 kernel (smaller than default 7x7)
 nc: 4
 scales:
   s: [0.50, 0.50, 1024]
@@ -150,7 +149,7 @@ head:
 
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 4], 1, Concat, [1]]
-  - [-1, 1, C2fLSKA, [256, False]]          # 14 — LSKA at P3 but 1 rep (lighter)
+  - [-1, 2, C2fLSKA, [256, False, 1, 1, 0.5, 5]]  # 14 — LSKA k=5 (smaller kernel)
 
   - [-1, 1, Conv, [256, 3, 2]]
   - [[-1, 11], 1, Concat, [1]]
@@ -163,23 +162,164 @@ head:
   - [[14, 17, 20], 1, Detect, [nc]]
 """
 
+# =============================================================================
+# Variant 4: LSKA_Residual at P3 — residual gate preserves small features
+# =============================================================================
+ARCH_SKA_RESIDUAL = """# SKA Residual — learnable gate preserves small object features
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA_Residual, [256, False]]  # 14 — Residual LSKA at P3
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]
+
+  - [[14, 17, 20], 1, Detect, [nc]]
+"""
+
+# =============================================================================
+# Variant 5: LSKA_MultiScale at P3 — dual kernel (5+9) adapts to weapon shape
+# =============================================================================
+ARCH_SKA_MULTISCALE = """# SKA MultiScale — 5x5 for compact + 9x9 for elongated weapons
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA_MultiScale, [256, False]]  # 14 — Multi-scale LSKA at P3
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]
+
+  - [[14, 17, 20], 1, Detect, [nc]]
+"""
+
+# =============================================================================
+# Variant 6: LSKA_Weapon at P3 — multi-scale + residual (full weapon-optimized)
+# =============================================================================
+ARCH_SKA_WEAPON = """# SKA Weapon — multi-scale kernels + residual gate (full optimization)
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA_Weapon, [256, False]]  # 14 — Weapon-optimized LSKA at P3
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]
+
+  - [[14, 17, 20], 1, Detect, [nc]]
+"""
+
 ARCH_RUNS = [
+    # Priority 1: Highest confidence — smallest fix to proven SKA
+    {
+        "name": "arch_ska_residual_70",
+        "desc": "[1/6] SKA Residual — gate preserves small features",
+        "yaml_content": ARCH_SKA_RESIDUAL,
+        "batch": 56,
+    },
+    # Priority 2: Simple parameter change on proven module
+    {
+        "name": "arch_ska_k5_70",
+        "desc": "[2/6] SKA at P3 with 5x5 kernel (smaller, gentler)",
+        "yaml_content": ARCH_SKA_SMALL_KERNEL,
+        "batch": 56,
+    },
+    # Priority 3: Smart but more complex
+    {
+        "name": "arch_ska_multiscale_70",
+        "desc": "[3/6] SKA MultiScale — 5x5+9x9 adapts to weapon shape",
+        "yaml_content": ARCH_SKA_MULTISCALE,
+        "batch": 54,
+    },
+    # Priority 4: Safe for small but might lose P3 gains
     {
         "name": "arch_ska_p4_70",
-        "desc": "SKA at P4 bottom-up — protect P3/small objects",
+        "desc": "[4/6] SKA at P4 bottom-up — protect P3/small objects",
         "yaml_content": ARCH_SKA_P4,
         "batch": 56,
     },
+    # Priority 5: Most complex, highest risk
+    {
+        "name": "arch_ska_weapon_70",
+        "desc": "[5/6] SKA Weapon — multi-scale + residual (full)",
+        "yaml_content": ARCH_SKA_WEAPON,
+        "batch": 54,
+    },
+    # Priority 6: Indirect effect, least clear
     {
         "name": "arch_ska_p4td_70",
-        "desc": "SKA at P4 top-down — enrich features before P3",
+        "desc": "[6/6] SKA at P4 top-down — enrich features before P3",
         "yaml_content": ARCH_SKA_P4_TD,
-        "batch": 56,
-    },
-    {
-        "name": "arch_ska_light_70",
-        "desc": "SKA at P3 but lighter (1 rep instead of 2)",
-        "yaml_content": ARCH_SKA_SMALL_KERNEL,
         "batch": 56,
     },
 ]
