@@ -870,6 +870,113 @@ class LSKA(nn.Module):
         return x * torch.sigmoid(attn)
 
 
+class SEBlock(nn.Module):
+    """
+    Squeeze-and-Excitation block for channel attention.
+    
+    Global context → channel-wise reweighting to emphasize important features.
+    Very lightweight (~1% params), proven effective in ResNet, EfficientNet.
+    """
+
+    def __init__(self, c1: int, reduction: int = 4):
+        """
+        Args:
+            c1: Number of input/output channels
+            reduction: Reduction ratio for bottleneck (default 4)
+        """
+        super().__init__()
+        c_ = max(c1 // reduction, 8)  # bottleneck channels, min 8
+        
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Conv2d(c1, c_, 1, bias=False),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(c_, c1, 1, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: [B, C, H, W] → [B, C, H, W] with channel reweighting"""
+        w = self.avgpool(x)
+        w = self.fc(w)
+        return x * w
+
+
+class ASPPModule(nn.Module):
+    """
+    Atrous Spatial Pyramid Pooling for multi-scale context.
+    
+    Used in DeepLabV3. Captures context at multiple dilation rates:
+    - 1x1: point-wise features
+    - 3x3 dilation=6: medium range
+    - 3x3 dilation=12: large range
+    - Global pool: image-level context
+    """
+
+    def __init__(self, c1: int, c2: int, dilations=[6, 12, 18]):
+        """
+        Args:
+            c1: Input channels
+            c2: Output channels
+            dilations: List of dilation rates for atrous convolutions
+        """
+        super().__init__()
+        c_ = c2 // 4  # each branch contributes c_/4 channels
+        
+        # 1x1 conv
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(c1, c_, 1, bias=False),
+            nn.BatchNorm2d(c_),
+            nn.SiLU(inplace=True)
+        )
+        
+        # Atrous convolutions at different rates
+        self.atrous_convs = nn.ModuleList()
+        for dilation in dilations[:3]:  # use max 3 branches
+            self.atrous_convs.append(
+                nn.Sequential(
+                    nn.Conv2d(c1, c_, 3, padding=dilation, dilation=dilation, bias=False),
+                    nn.BatchNorm2d(c_),
+                    nn.SiLU(inplace=True)
+                )
+            )
+        
+        # Global pooling branch
+        self.global_pool = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(c1, c_, 1, bias=False),
+            nn.BatchNorm2d(c_),
+            nn.SiLU(inplace=True)
+        )
+        
+        # Project concatenated features
+        total_c = c_ * (1 + len(dilations[:3]) + 1)  # 1x1 + atrous + global
+        self.project = nn.Sequential(
+            nn.Conv2d(total_c, c2, 1, bias=False),
+            nn.BatchNorm2d(c2),
+            nn.SiLU(inplace=True)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: [B, C, H, W] → [B, c2, H, W] with multi-scale context"""
+        h, w = x.shape[2:]
+        
+        # 1x1 branch
+        out1 = self.conv1(x)
+        
+        # Atrous branches
+        atrous_outs = [conv(x) for conv in self.atrous_convs]
+        
+        # Global branch (upsample back to original size)
+        global_out = self.global_pool(x)
+        global_out = torch.nn.functional.interpolate(global_out, size=(h, w), mode='bilinear', align_corners=False)
+        
+        # Concatenate all branches
+        out = torch.cat([out1] + atrous_outs + [global_out], dim=1)
+        
+        return self.project(out)
+
+
 class LSKA_Residual(nn.Module):
     """
     LSKA with residual connection for weapon detection.

@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
-from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad, LuggageCBAM, EMA, SimAM, LSKA, LSKA_Residual, LSKA_MultiScale, LSKA_Weapon, DCBAM, DCBAM_MS, ShapeCBAM
+from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad, LuggageCBAM, EMA, SimAM, LSKA, LSKA_Residual, LSKA_MultiScale, LSKA_Weapon, DCBAM, DCBAM_MS, ShapeCBAM, SEBlock, ASPPModule
 from .transformer import TransformerBlock
 
 __all__ = (
@@ -28,6 +28,8 @@ __all__ = (
     "C2fLSKA_Residual",
     "C2fLSKA_MultiScale",
     "C2fLSKA_Weapon",
+    "C2fSE",
+    "C2fASPP",
     "C2fDCBAM",
     "C2fShapeCBAM",
     "ImagePoolingAttn",
@@ -615,6 +617,68 @@ class C2fLSKA_Weapon(nn.Module):
         y = [y[0], y[1]]
         y.extend(m(y[-1]) for m in self.m)
         return self.attn(self.cv2(torch.cat(y, 1)))
+
+
+class C2fSE(nn.Module):
+    """
+    C2f with Squeeze-Excitation for channel attention.
+    
+    Lightweight channel reweighting to emphasize weapon-relevant features.
+    SE adds ~1% parameters but proven effective in classification/detection.
+    """
+
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, reduction=4):
+        super().__init__()
+        self.c = int(c2 * e)
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)
+        self.m = nn.ModuleList(
+            Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) 
+            for _ in range(n)
+        )
+        self.se = SEBlock(c2, reduction=reduction)
+
+    def forward(self, x):
+        y = list(self.cv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.se(self.cv2(torch.cat(y, 1)))
+
+    def forward_split(self, x):
+        y = self.cv1(x).split((self.c, self.c), 1)
+        y = [y[0], y[1]]
+        y.extend(m(y[-1]) for m in self.m)
+        return self.se(self.cv2(torch.cat(y, 1)))
+
+
+class C2fASPP(nn.Module):
+    """
+    C2f with Atrous Spatial Pyramid Pooling.
+    
+    Multi-scale context aggregation via dilated convolutions at different rates.
+    Captures context from point-wise to image-level without large kernel washing.
+    """
+
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__()
+        self.c = int(c2 * e)
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)
+        self.m = nn.ModuleList(
+            Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) 
+            for _ in range(n)
+        )
+        self.aspp = ASPPModule(c2, c2, dilations=[6, 12, 18])
+
+    def forward(self, x):
+        y = list(self.cv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.aspp(self.cv2(torch.cat(y, 1)))
+
+    def forward_split(self, x):
+        y = self.cv1(x).split((self.c, self.c), 1)
+        y = [y[0], y[1]]
+        y.extend(m(y[-1]) for m in self.m)
+        return self.aspp(self.cv2(torch.cat(y, 1)))
 
 
 class C2fDCBAM(nn.Module):
