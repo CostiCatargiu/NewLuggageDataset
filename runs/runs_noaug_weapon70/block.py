@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
-from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad, LuggageCBAM, EMA, SimAM, LSKA, LSKA_Residual, LSKA_MultiScale, LSKA_Weapon, DCBAM, DCBAM_MS, ShapeCBAM, SEBlock, ASPPModule
+from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad, LuggageCBAM, EMA, SimAM, LSKA, DCBAM, DCBAM_MS, ShapeCBAM
 from .transformer import TransformerBlock
 
 __all__ = (
@@ -25,11 +25,6 @@ __all__ = (
     "C2fEMA",
     "C2fSimAM",
     "C2fLSKA",
-    "C2fLSKA_Residual",
-    "C2fLSKA_MultiScale",
-    "C2fLSKA_Weapon",
-    "C2fSE",
-    "C2fASPP",
     "C2fDCBAM",
     "C2fShapeCBAM",
     "ImagePoolingAttn",
@@ -62,6 +57,10 @@ __all__ = (
     "PSA",
     "SCDown",
     "TorchVision",
+    "ZGLSKA",
+    "ZGGC",
+    "ZGSE",
+    "ZGMHSA",
 )
 
 
@@ -522,163 +521,6 @@ class C2fLSKA(nn.Module):
         y = [y[0], y[1]]
         y.extend(m(y[-1]) for m in self.m)
         return self.attn(self.cv2(torch.cat(y, 1)))
-
-
-class C2fLSKA_Residual(nn.Module):
-    """
-    C2f with Residual LSKA for weapon detection.
-    
-    Preserves small object features through a learnable residual gate
-    while still applying large kernel attention for medium/large objects.
-    """
-
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, k_size=7):
-        super().__init__()
-        self.c = int(c2 * e)
-        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
-        self.cv2 = Conv((2 + n) * self.c, c2, 1)
-        self.m = nn.ModuleList(
-            Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) 
-            for _ in range(n)
-        )
-        self.attn = LSKA_Residual(c2, k_size=k_size)
-
-    def forward(self, x):
-        y = list(self.cv1(x).chunk(2, 1))
-        y.extend(m(y[-1]) for m in self.m)
-        return self.attn(self.cv2(torch.cat(y, 1)))
-
-    def forward_split(self, x):
-        y = self.cv1(x).split((self.c, self.c), 1)
-        y = [y[0], y[1]]
-        y.extend(m(y[-1]) for m in self.m)
-        return self.attn(self.cv2(torch.cat(y, 1)))
-
-
-class C2fLSKA_MultiScale(nn.Module):
-    """
-    C2f with Multi-Scale LSKA for weapon detection.
-    
-    Two parallel kernel sizes (5x5 + 9x9) with learned channel-wise mixing:
-    - Small kernel: compact weapons (pistol, knife)
-    - Large kernel: elongated weapons (long gun)
-    """
-
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
-        super().__init__()
-        self.c = int(c2 * e)
-        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
-        self.cv2 = Conv((2 + n) * self.c, c2, 1)
-        self.m = nn.ModuleList(
-            Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) 
-            for _ in range(n)
-        )
-        self.attn = LSKA_MultiScale(c2, k_small=5, k_large=9)
-
-    def forward(self, x):
-        y = list(self.cv1(x).chunk(2, 1))
-        y.extend(m(y[-1]) for m in self.m)
-        return self.attn(self.cv2(torch.cat(y, 1)))
-
-    def forward_split(self, x):
-        y = self.cv1(x).split((self.c, self.c), 1)
-        y = [y[0], y[1]]
-        y.extend(m(y[-1]) for m in self.m)
-        return self.attn(self.cv2(torch.cat(y, 1)))
-
-
-class C2fLSKA_Weapon(nn.Module):
-    """
-    C2f with Weapon-optimized LSKA.
-    
-    Combines multi-scale kernels + residual gate:
-    - Multi-scale: adapts to weapon shape (compact vs elongated)
-    - Residual: preserves small object features
-    """
-
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
-        super().__init__()
-        self.c = int(c2 * e)
-        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
-        self.cv2 = Conv((2 + n) * self.c, c2, 1)
-        self.m = nn.ModuleList(
-            Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) 
-            for _ in range(n)
-        )
-        self.attn = LSKA_Weapon(c2, k_small=5, k_large=9)
-
-    def forward(self, x):
-        y = list(self.cv1(x).chunk(2, 1))
-        y.extend(m(y[-1]) for m in self.m)
-        return self.attn(self.cv2(torch.cat(y, 1)))
-
-    def forward_split(self, x):
-        y = self.cv1(x).split((self.c, self.c), 1)
-        y = [y[0], y[1]]
-        y.extend(m(y[-1]) for m in self.m)
-        return self.attn(self.cv2(torch.cat(y, 1)))
-
-
-class C2fSE(nn.Module):
-    """
-    C2f with Squeeze-Excitation for channel attention.
-    
-    Lightweight channel reweighting to emphasize weapon-relevant features.
-    SE adds ~1% parameters but proven effective in classification/detection.
-    """
-
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, reduction=4):
-        super().__init__()
-        self.c = int(c2 * e)
-        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
-        self.cv2 = Conv((2 + n) * self.c, c2, 1)
-        self.m = nn.ModuleList(
-            Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) 
-            for _ in range(n)
-        )
-        self.se = SEBlock(c2, reduction=reduction)
-
-    def forward(self, x):
-        y = list(self.cv1(x).chunk(2, 1))
-        y.extend(m(y[-1]) for m in self.m)
-        return self.se(self.cv2(torch.cat(y, 1)))
-
-    def forward_split(self, x):
-        y = self.cv1(x).split((self.c, self.c), 1)
-        y = [y[0], y[1]]
-        y.extend(m(y[-1]) for m in self.m)
-        return self.se(self.cv2(torch.cat(y, 1)))
-
-
-class C2fASPP(nn.Module):
-    """
-    C2f with Atrous Spatial Pyramid Pooling.
-    
-    Multi-scale context aggregation via dilated convolutions at different rates.
-    Captures context from point-wise to image-level without large kernel washing.
-    """
-
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
-        super().__init__()
-        self.c = int(c2 * e)
-        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
-        self.cv2 = Conv((2 + n) * self.c, c2, 1)
-        self.m = nn.ModuleList(
-            Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) 
-            for _ in range(n)
-        )
-        self.aspp = ASPPModule(c2, c2, dilations=[6, 12, 18])
-
-    def forward(self, x):
-        y = list(self.cv1(x).chunk(2, 1))
-        y.extend(m(y[-1]) for m in self.m)
-        return self.aspp(self.cv2(torch.cat(y, 1)))
-
-    def forward_split(self, x):
-        y = self.cv1(x).split((self.c, self.c), 1)
-        y = [y[0], y[1]]
-        y.extend(m(y[-1]) for m in self.m)
-        return self.aspp(self.cv2(torch.cat(y, 1)))
 
 
 class C2fDCBAM(nn.Module):
@@ -1795,3 +1637,135 @@ class A2C2f(nn.Module):
         if self.gamma is not None:
             return x + self.gamma.view(1, -1, 1, 1) * self.cv2(torch.cat(y, 1))
         return self.cv2(torch.cat(y, 1))
+
+
+# =============================================================================
+# Zero-Init Gated (ZG) blocks — appended residual branches: y = x + gamma*f(x)
+# with gamma initialized to 0 (exact identity at init, full pretrained
+# weight transfer when appended after layer 20 in the YAML).
+# See runs_noaug_weapon70/gated_blocks.py for design rationale.
+# All take (c1, c2, ...) with c2 == c1 (channel-preserving).
+# =============================================================================
+
+
+class ZGLKA(nn.Module):
+    """Decomposed Large-Kernel Attention primitive (VAN-style) for ZGLSKA.
+
+    5x5 depthwise -> kxk depthwise dilated(3) -> 1x1 pointwise, used as a
+    multiplicative attention map. Effective RF ~ 4 + 3*(k-1) + 1 cells.
+    """
+
+    def __init__(self, c, k=7):
+        super().__init__()
+        self.dw = nn.Conv2d(c, c, 5, 1, 2, groups=c)
+        self.dwd = nn.Conv2d(c, c, k, 1, ((k - 1) // 2) * 3, groups=c, dilation=3)
+        self.pw = nn.Conv2d(c, c, 1)
+
+    def forward(self, x):
+        return self.pw(self.dwd(self.dw(x))) * x
+
+
+class ZGLSKA(nn.Module):
+    """Zero-gated large-kernel context branch. y = x + gamma * f(x), gamma=0.
+
+    f = 1x1 -> SiLU -> ZGLKA(k) -> 1x1. Unlike C2fLSKA this does NOT replace
+    a pretrained block — it is appended after it in the YAML.
+
+    YAML args: [c2, k]  e.g. [512, 7]  (c2 is width-scaled by parse_model)
+    """
+
+    def __init__(self, c1, c2, k=7):
+        super().__init__()
+        assert c1 == c2, "ZGLSKA preserves channels (set YAML c2 = input channels)"
+        self.pw1 = nn.Conv2d(c1, c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c1, k)
+        self.pw2 = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        return x + self.gamma * self.pw2(self.lka(self.act(self.pw1(x))))
+
+
+class ZGGC(nn.Module):
+    """Zero-gated Global Context block (GCNet-style) — for P5 / large objects.
+
+    Softmax-pooled global context vector -> bottleneck transform ->
+    broadcast-added back, behind a zero gate.
+
+    YAML args: [c2, r]  e.g. [1024, 8]
+    """
+
+    def __init__(self, c1, c2, r=8):
+        super().__init__()
+        assert c1 == c2, "ZGGC preserves channels"
+        c_ = max(c1 // r, 16)
+        self.attn = nn.Conv2d(c1, 1, 1)
+        self.transform = nn.Sequential(
+            nn.Conv2d(c1, c_, 1),
+            nn.GroupNorm(1, c_),
+            nn.SiLU(),
+            nn.Conv2d(c_, c1, 1),
+        )
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        w_ = self.attn(x).view(b, 1, h * w).softmax(dim=-1)  # b,1,hw
+        ctx = (x.view(b, c, h * w) @ w_.transpose(1, 2)).view(b, c, 1, 1)
+        return x + self.gamma * self.transform(ctx)
+
+
+class ZGSE(nn.Module):
+    """Zero-gated Squeeze-Excitation. Cheapest gated control variant.
+
+    y = x + gamma * (SE(x) * x).
+
+    YAML args: [c2, r]  e.g. [512, 8]
+    """
+
+    def __init__(self, c1, c2, r=8):
+        super().__init__()
+        assert c1 == c2, "ZGSE preserves channels"
+        c_ = max(c1 // r, 16)
+        self.fc = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(c1, c_, 1),
+            nn.SiLU(),
+            nn.Conv2d(c_, c1, 1),
+            nn.Sigmoid(),
+        )
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        return x + self.gamma * (self.fc(x) * x)
+
+
+class ZGMHSA(nn.Module):
+    """Zero-gated multi-head self-attention — intended for P5 (20x20 tokens).
+
+    DW 3x3 on V as positional encoding (as in PSA blocks).
+
+    YAML args: [c2, num_heads]  e.g. [1024, 4]
+    """
+
+    def __init__(self, c1, c2, num_heads=4):
+        super().__init__()
+        assert c1 == c2, "ZGMHSA preserves channels"
+        assert c1 % num_heads == 0
+        self.nh = num_heads
+        self.scale = (c1 // num_heads) ** -0.5
+        self.qkv = nn.Conv2d(c1, c1 * 3, 1)
+        self.pe = nn.Conv2d(c1, c1, 3, 1, 1, groups=c1)
+        self.proj = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        qkv = self.qkv(x).reshape(b, 3, self.nh, c // self.nh, h * w)
+        q, k, v = qkv.unbind(1)  # each: b, nh, d, hw
+        attn = (q.transpose(-2, -1) @ k) * self.scale  # b, nh, hw, hw
+        attn = attn.softmax(dim=-1)
+        out = (v @ attn.transpose(-2, -1)).reshape(b, c, h, w)
+        out = out + self.pe(v.reshape(b, c, h, w))
+        return x + self.gamma * self.proj(out)

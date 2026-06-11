@@ -57,6 +57,10 @@ __all__ = (
     "PSA",
     "SCDown",
     "TorchVision",
+    "ZGLSKA",
+    "ZGGC",
+    "ZGSE",
+    "ZGMHSA",
 )
 
 
@@ -1633,3 +1637,135 @@ class A2C2f(nn.Module):
         if self.gamma is not None:
             return x + self.gamma.view(1, -1, 1, 1) * self.cv2(torch.cat(y, 1))
         return self.cv2(torch.cat(y, 1))
+
+
+# =============================================================================
+# Zero-Init Gated (ZG) blocks — appended residual branches: y = x + gamma*f(x)
+# with gamma initialized to 0 (exact identity at init, full pretrained
+# weight transfer when appended after layer 20 in the YAML).
+# See runs_noaug_weapon70/gated_blocks.py for design rationale.
+# All take (c1, c2, ...) with c2 == c1 (channel-preserving).
+# =============================================================================
+
+
+class ZGLKA(nn.Module):
+    """Decomposed Large-Kernel Attention primitive (VAN-style) for ZGLSKA.
+
+    5x5 depthwise -> kxk depthwise dilated(3) -> 1x1 pointwise, used as a
+    multiplicative attention map. Effective RF ~ 4 + 3*(k-1) + 1 cells.
+    """
+
+    def __init__(self, c, k=7):
+        super().__init__()
+        self.dw = nn.Conv2d(c, c, 5, 1, 2, groups=c)
+        self.dwd = nn.Conv2d(c, c, k, 1, ((k - 1) // 2) * 3, groups=c, dilation=3)
+        self.pw = nn.Conv2d(c, c, 1)
+
+    def forward(self, x):
+        return self.pw(self.dwd(self.dw(x))) * x
+
+
+class ZGLSKA(nn.Module):
+    """Zero-gated large-kernel context branch. y = x + gamma * f(x), gamma=0.
+
+    f = 1x1 -> SiLU -> ZGLKA(k) -> 1x1. Unlike C2fLSKA this does NOT replace
+    a pretrained block — it is appended after it in the YAML.
+
+    YAML args: [c2, k]  e.g. [512, 7]  (c2 is width-scaled by parse_model)
+    """
+
+    def __init__(self, c1, c2, k=7):
+        super().__init__()
+        assert c1 == c2, "ZGLSKA preserves channels (set YAML c2 = input channels)"
+        self.pw1 = nn.Conv2d(c1, c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c1, k)
+        self.pw2 = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        return x + self.gamma * self.pw2(self.lka(self.act(self.pw1(x))))
+
+
+class ZGGC(nn.Module):
+    """Zero-gated Global Context block (GCNet-style) — for P5 / large objects.
+
+    Softmax-pooled global context vector -> bottleneck transform ->
+    broadcast-added back, behind a zero gate.
+
+    YAML args: [c2, r]  e.g. [1024, 8]
+    """
+
+    def __init__(self, c1, c2, r=8):
+        super().__init__()
+        assert c1 == c2, "ZGGC preserves channels"
+        c_ = max(c1 // r, 16)
+        self.attn = nn.Conv2d(c1, 1, 1)
+        self.transform = nn.Sequential(
+            nn.Conv2d(c1, c_, 1),
+            nn.GroupNorm(1, c_),
+            nn.SiLU(),
+            nn.Conv2d(c_, c1, 1),
+        )
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        w_ = self.attn(x).view(b, 1, h * w).softmax(dim=-1)  # b,1,hw
+        ctx = (x.view(b, c, h * w) @ w_.transpose(1, 2)).view(b, c, 1, 1)
+        return x + self.gamma * self.transform(ctx)
+
+
+class ZGSE(nn.Module):
+    """Zero-gated Squeeze-Excitation. Cheapest gated control variant.
+
+    y = x + gamma * (SE(x) * x).
+
+    YAML args: [c2, r]  e.g. [512, 8]
+    """
+
+    def __init__(self, c1, c2, r=8):
+        super().__init__()
+        assert c1 == c2, "ZGSE preserves channels"
+        c_ = max(c1 // r, 16)
+        self.fc = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(c1, c_, 1),
+            nn.SiLU(),
+            nn.Conv2d(c_, c1, 1),
+            nn.Sigmoid(),
+        )
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        return x + self.gamma * (self.fc(x) * x)
+
+
+class ZGMHSA(nn.Module):
+    """Zero-gated multi-head self-attention — intended for P5 (20x20 tokens).
+
+    DW 3x3 on V as positional encoding (as in PSA blocks).
+
+    YAML args: [c2, num_heads]  e.g. [1024, 4]
+    """
+
+    def __init__(self, c1, c2, num_heads=4):
+        super().__init__()
+        assert c1 == c2, "ZGMHSA preserves channels"
+        assert c1 % num_heads == 0
+        self.nh = num_heads
+        self.scale = (c1 // num_heads) ** -0.5
+        self.qkv = nn.Conv2d(c1, c1 * 3, 1)
+        self.pe = nn.Conv2d(c1, c1, 3, 1, 1, groups=c1)
+        self.proj = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        qkv = self.qkv(x).reshape(b, 3, self.nh, c // self.nh, h * w)
+        q, k, v = qkv.unbind(1)  # each: b, nh, d, hw
+        attn = (q.transpose(-2, -1) @ k) * self.scale  # b, nh, hw, hw
+        attn = attn.softmax(dim=-1)
+        out = (v @ attn.transpose(-2, -1)).reshape(b, c, h, w)
+        out = out + self.pe(v.reshape(b, c, h, w))
+        return x + self.gamma * self.proj(out)

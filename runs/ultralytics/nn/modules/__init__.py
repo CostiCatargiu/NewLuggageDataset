@@ -65,6 +65,10 @@ from .block import (
     SCDown,
     TorchVision,
     A2C2f,
+    ZGLSKA,
+    ZGGC,
+    ZGSE,
+    ZGMHSA,
 )
 from .conv import (
     CBAM,
@@ -159,6 +163,10 @@ __all__ = (
     "C2fEMA",
     "C2fSimAM",
     "C2fLSKA",
+    "ZGLSKA",
+    "ZGGC",
+    "ZGSE",
+    "ZGMHSA",
     "C3k2",
     "SCDown",
     "C2fPSA",
