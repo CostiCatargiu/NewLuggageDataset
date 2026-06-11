@@ -1,0 +1,951 @@
+================================================================================
+  COMPLETE ARCHITECTURE EXPERIMENTS SUMMARY — YOLOv12s Weapon Detection
+  Dataset: weapon_noaug 70% ablation (GunDatasetNoAugSplitAblation70)
+  Base model: YOLOv12s pretrained (yolov12s.pt)
+  Input: 640x640, 80 epochs, seed=0
+================================================================================
+
+BASELINE (standard YOLOv12s, no architecture changes):
+  original_loss_70:  mAP50=78.45%  mAP50_small=61.79%  mAP50_medium=73.13%  mAP50_large=82.75%  mAP50-95=49.79%
+
+BEST TAL-TUNED (no architecture change, training params only):
+  v5_topk15_beta3_70:  mAP50=80.45%  mAP50_small=61.15%  mAP50-95=49.80%  (topk=15, alpha=0.5, beta=3.0)
+  v5_tal07_70:         mAP50=80.02%  mAP50_small=60.28%  mAP50-95=49.89%  (topk=13, alpha=0.7, beta=4.0)
+
+
+================================================================================
+  ORIGINAL YOLOv12s ARCHITECTURE (unmodified baseline)
+  Source: ultralytics/cfg/models/v12/yolov12.yaml
+================================================================================
+
+# YOLOv12 object detection model with P3-P5 outputs
+# CFG file for YOLOv12-turbo
+
+# Parameters
+nc: 80  # number of classes (overridden to 4 for weapon dataset)
+scales:
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024]  # 497 layers, 2,553,904 params, 6.2 GFLOPs
+  s: [0.50, 0.50, 1024]  # 497 layers, 9,127,424 params, 19.7 GFLOPs  <-- USED
+  m: [0.50, 1.00, 512]   # 533 layers, 19,670,784 params, 60.4 GFLOPs
+  l: [1.00, 1.00, 512]   # 895 layers, 26,506,496 params, 83.3 GFLOPs
+  x: [1.00, 1.50, 512]   # 895 layers, 59,414,176 params, 185.9 GFLOPs
+
+# YOLO12-turbo backbone
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv,  [64, 3, 2]]              # 0  — P1/2   (320x320)
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]       # 1  — P2/4   (160x160)
+  - [-1, 2, C3k2,  [256, False, 0.25]]      # 2  — 2 reps, no shortcut
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]       # 3  — P3/8   (80x80)
+  - [-1, 2, C3k2,  [512, False, 0.25]]      # 4  — P3 backbone: 2 reps
+  - [-1, 1, Conv,  [512, 3, 2]]             # 5  — P4/16  (40x40)
+  - [-1, 4, A2C2f, [512, True, 4]]          # 6  — P4 backbone: 4 reps, attention=True, 4 heads
+  - [-1, 1, Conv,  [1024, 3, 2]]            # 7  — P5/32  (20x20)
+  - [-1, 4, A2C2f, [1024, True, 1]]         # 8  — P5 backbone: 4 reps, attention=True, 1 head
+
+# YOLO12-turbo head
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 9
+  - [[-1, 6], 1, Concat, [1]]                    # 10 — cat backbone P4
+  - [-1, 2, A2C2f, [512, False, -1]]              # 11 — P4 top-down: 2 reps, attention=False
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 12
+  - [[-1, 4], 1, Concat, [1]]                    # 13 — cat backbone P3
+  - [-1, 2, A2C2f, [256, False, -1]]              # 14 — P3 head: 2 reps, attention=False
+
+  - [-1, 1, Conv, [256, 3, 2]]                   # 15
+  - [[-1, 11], 1, Concat, [1]]                   # 16 — cat head P4
+  - [-1, 2, A2C2f, [512, False, -1]]              # 17 — P4 bottom-up: 2 reps, attention=False
+
+  - [-1, 1, Conv, [512, 3, 2]]                   # 18
+  - [[-1, 8], 1, Concat, [1]]                    # 19 — cat head P5
+  - [-1, 2, C3k2, [1024, True]]                  # 20 — P5 head: C3k2 (NOT A2C2f), shortcut=True
+
+  - [[14, 17, 20], 1, Detect, [nc]]              # 21 — Detect(P3, P4, P5)
+
+# ---- ARCHITECTURE NOTES ----
+#
+# Key design choices in standard YOLOv12s:
+#
+# BACKBONE:
+#   Layer 2 (P2):  C3k2, 2 reps, no attention — early feature extraction
+#   Layer 4 (P3):  C3k2, 2 reps, no attention — small object features (80x80)
+#   Layer 6 (P4):  A2C2f, 4 reps, attention=True, 4 heads — medium features (40x40)
+#   Layer 8 (P5):  A2C2f, 4 reps, attention=True, 1 head — large features (20x20)
+#
+# HEAD (FPN + PAN):
+#   Layer 11 (P4 top-down):   A2C2f, 2 reps, attention=False
+#   Layer 14 (P3 head):       A2C2f, 2 reps, attention=False  <-- small object detection
+#   Layer 17 (P4 bottom-up):  A2C2f, 2 reps, attention=False
+#   Layer 20 (P5 head):       C3k2, 2 reps, shortcut=True     <-- ONLY layer using C3k2 in head
+#
+# OBSERVATIONS:
+#   - Attention is ONLY in backbone P4/P5 (layers 6, 8)
+#   - HEAD layers have NO attention (all False or C3k2)
+#   - P3 (small objects) has LEAST processing: C3k2 backbone + A2C2f head (no attention)
+#   - P5 head is the ONLY head layer using C3k2 instead of A2C2f
+#   - With 's' scale: depth=0.5, width=0.5, max_channels=1024
+
+
+================================================================================
+  TESTED ARCHITECTURES — RESULTS (sorted by mAP50, best to worst)
+================================================================================
+
+#   Name                        mAP50    D_all   Small    D_small  Med      Large    mAP50-95  Training Params    Status
+--  --------------------------  ------  ------  ------   -------  ------   ------   --------  -----------------  ------
+1   arch_ska_70                 79.03%  +0.58%  55.98%   -5.81%   73.85%   83.70%   49.92%    DEFAULT            BEST mAP50, but kills small
+2   arch_se_p3_70               78.91%  +0.46%  56.64%   -5.15%   74.12%   83.18%   49.63%    DEFAULT            
+3   arch_deep_p3_bidi_70        78.76%  +0.31%  56.95%   -4.84%   74.07%   83.16%   49.21%    TAL07+clips        
+4   arch_ska_p5_70              78.77%  +0.32%  55.33%   -6.46%   74.45%   83.04%   49.23%    DEFAULT            
+5   arch_ska_k5_70              78.70%  +0.25%  54.55%   -7.24%   74.56%   83.10%   49.64%    DEFAULT            
+6   arch_dual_p3_70             78.58%  +0.13%  56.40%   -5.39%   73.46%   83.55%   48.61%    DEFAULT            
+7   arch_p3_attn_70             78.50%  +0.05%  54.52%   -7.27%   73.77%   83.12%   49.20%    TAL07+clips        
+8   arch_ska_residual_70        78.36%  -0.09%  55.58%   -6.21%   73.96%   82.70%   49.39%    DEFAULT            
+9   arch_spp_p3_70              78.33%  -0.12%  57.64%   -4.15%   73.68%   82.97%   49.19%    DEFAULT            LEAST damage to small
+10  arch_p5_attn_702            78.06%  -0.39%  55.60%   -6.19%   73.42%   82.50%   48.78%    DEFAULT            
+11  arch_p5_attn_deeper_p3_70   78.03%  -0.42%  54.20%   -7.59%   73.77%   82.47%   48.50%    DEFAULT            
+12  arch_deeper_p3_backbone_70  77.87%  -0.58%  54.35%   -7.44%   72.67%   82.61%   48.84%    DEFAULT            
+13  arch_deeper_p3_70           77.21%  -1.24%  56.09%   -5.70%   71.80%   82.11%   48.60%    DEFAULT            
+14  arch_ld_70                  77.14%  -1.31%  56.99%   -4.80%   72.13%   81.75%   48.18%    TAL07+clips        
+
+NOT RUN (defined but no results):
+  - arch_p3_attn_ld_70          P3 attention + LD redistribute combined
+  - arch_ska_p4_70              SKA moved to P4 bottom-up
+  - arch_ska_p4td_70            SKA at P4 top-down
+  - arch_ska_multiscale_70      SKA multi-scale (5x5+9x9)
+  - arch_ska_weapon_70          SKA weapon-optimized (multi-scale+residual)
+  - arch_aspp_p3_70             ASPP at P3 head
+  - arch_dense_p3p4_70          Dense skip P3-P4
+
+================================================================================
+  ARCHITECTURE DETAILS — YAML DEFINITIONS
+================================================================================
+
+------------------------------------------------------------------------
+  #1  arch_ska_70 — LSKA at P3 head (large kernel context)
+  Source: run_arch_p5_ablation.py
+  Training: DEFAULT params (topk=10, alpha=0.5, beta=6.0)
+  Change: P3 head layer 14: A2C2f → C2fLSKA (7x7 decomposed kernel)
+  Result: mAP50=79.03% (+0.58%), Small=55.98% (-5.81%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA, [256, False]]          # 14 — LSKA at P3
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #2  arch_se_p3_70 — Squeeze-Excitation at P3 head
+  Source: run_arch_exploration_ablation.py
+  Training: DEFAULT params
+  Change: P3 head layer 14: A2C2f → C2fSE (channel attention)
+  Result: mAP50=78.91% (+0.46%), Small=56.64% (-5.15%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fSE, [256, False]]            # 14 — SE at P3 head
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #3  arch_deep_p3_bidi_70 — Deep P3 (3 reps) + Bidirectional P4
+  Source: run_arch_proposals.py
+  Training: TAL07 params (topk=13, alpha=0.7, beta=4.0, cls=1.2, clips)
+  Change: P3 head 2→3 reps, P5 backbone 4→3 reps,
+          Bidirectional P4 merge (top-down + bottom-up concat → 1x1 project)
+  Result: mAP50=78.76% (+0.31%), Small=56.95% (-4.84%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 3, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11 — P4 top-down
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 3, A2C2f, [256, False, -1]]        # 14 — Deep P3 (3 reps)
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17 — P4 bottom-up
+  # Bidirectional P4 merge
+  - [[11, 17], 1, Concat, [1]]              # 18 — concat both P4 refinements
+  - [-1, 1, Conv, [512, 1, 1]]              # 19 — project back to 512ch
+  - [17, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 22
+  - [[14, 19, 22], 1, Detect, [nc]]         # Detect: P3, P4-bidi, P5
+
+
+------------------------------------------------------------------------
+  #4  arch_ska_p5_70 — LSKA at P3 + P5 A2C2f attention
+  Source: run_arch_p5_ablation.py
+  Training: DEFAULT params
+  Change: P3 head → C2fLSKA, P5 head → A2C2f with attention (was C3k2)
+  Result: mAP50=78.77% (+0.32%), Small=55.33% (-6.46%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA, [256, False]]          # 14 — LSKA at P3
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [1024, True, 1]]         # 20 — A2C2f with ATTENTION (was C3k2)
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #5  arch_ska_k5_70 — LSKA at P3 with 5x5 kernel (smaller than 7x7)
+  Source: run_arch_ska_variants_ablation.py
+  Training: DEFAULT params
+  Change: P3 head → C2fLSKA with 5x5 kernel (less aggressive than 7x7)
+  Result: mAP50=78.70% (+0.25%), Small=54.55% (-7.24%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA, [256, False]]          # 14 — LSKA at P3 (5x5 kernel)
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #6  arch_dual_p3_70 — Dual-path P3 head (lightweight + heavy branches)
+  Source: run_arch_exploration_ablation.py
+  Training: DEFAULT params
+  Change: P3 splits into 2 branches: Path A (1 rep, 128ch) + Path B (3 reps, 256ch)
+          Concat both → 1x1 project back to 256ch
+  Result: mAP50=78.58% (+0.13%), Small=56.40% (-5.39%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]               # 13 — concat for P3
+  # Dual path split
+  - [-1, 1, A2C2f, [128, False, 1]]         # 14 — Path A: lightweight
+  - [13, 3, A2C2f, [256, False, 3]]         # 15 — Path B: heavy
+  # Merge paths
+  - [[14, 15], 1, Concat, [1]]              # 16 — concat (128+256=384ch)
+  - [-1, 1, Conv, [256, 1, 1]]              # 17 — project to 256ch
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 20
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 23
+  - [[17, 20, 23], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #7  arch_p3_attn_70 — Enable attention at P3 head
+  Source: run_arch_proposals.py
+  Training: TAL07 params (topk=13, alpha=0.7, beta=4.0, cls=1.2, clips)
+  Change: P3 head layer 14: A2C2f [256, False] → A2C2f [256, True, 4]
+          (attention=True with 4 heads, was False)
+  Result: mAP50=78.50% (+0.05%), Small=54.52% (-7.27%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, True, 4]]          # 14 — P3 with ATTENTION (was False)
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #8  arch_ska_residual_70 — LSKA with learnable residual gate at P3
+  Source: run_arch_ska_variants_ablation.py
+  Training: DEFAULT params
+  Change: P3 head → C2fLSKA_Residual (LSKA + learnable alpha gate)
+          output = alpha * LSKA(x) + (1-alpha) * x
+  Result: mAP50=78.36% (-0.09%), Small=55.58% (-6.21%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA_Residual, [256, False]]  # 14 — Residual LSKA at P3
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #9  arch_spp_p3_70 — SPPF at P3 head (spatial pyramid pooling)
+  Source: run_arch_exploration_ablation.py
+  Training: DEFAULT params
+  Change: P3 head layer 14: A2C2f → SPPF [256, 5] (multi-scale pooling k=5)
+  Result: mAP50=78.33% (-0.12%), Small=57.64% (-4.15%)  LEAST damage to small
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 1, SPPF, [256, 5]]                 # 14 — SPP at P3 head (k=5)
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #10  arch_p5_attn_702 — P5 head: C3k2 → A2C2f with attention
+  Source: run_arch_p5_ablation.py
+  Training: DEFAULT params
+  Change: P5 head layer 20: C3k2 → A2C2f [1024, True, 1] (attention enabled)
+  Result: mAP50=78.06% (-0.39%), Small=55.60% (-6.19%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]        # 14
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [1024, True, 1]]         # 20 — A2C2f ATTENTION (was C3k2)
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #11  arch_p5_attn_deeper_p3_70 — P5 A2C2f + Deeper backbone P3 (2→3)
+  Source: run_arch_p5_ablation.py
+  Training: DEFAULT params
+  Change: Backbone P3 layer 4: 2→3 reps + P5 head → A2C2f attention
+  Result: mAP50=78.03% (-0.42%), Small=54.20% (-7.59%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 3, C3k2,  [512, False, 0.25]]      # 4 — P3: 2→3 reps
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]        # 14
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [1024, True, 1]]         # 20 — A2C2f ATTENTION (was C3k2)
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #12  arch_deeper_p3_backbone_70 — Backbone P3: 2→4 reps (DOUBLED)
+  Source: run_arch_exploration_ablation.py
+  Training: DEFAULT params
+  Change: Backbone P3 layer 4: C3k2 reps 2→4 (double depth)
+  Result: mAP50=77.87% (-0.58%), Small=54.35% (-7.44%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 4, C3k2,  [512, False, 0.25]]      # 4 — P3: 2→4 reps (DOUBLED)
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]        # 14
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #13  arch_deeper_p3_70 — Backbone P3: 2→3 reps (no P5 reduction)
+  Source: run_arch_p5_ablation.py
+  Training: DEFAULT params
+  Change: Backbone P3 layer 4: C3k2 reps 2→3
+  Result: mAP50=77.21% (-1.24%), Small=56.09% (-5.70%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 3, C3k2,  [512, False, 0.25]]      # 4 — P3: 2→3 reps
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]         # P5 unchanged
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]        # 14
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  #14  arch_ld_70 — LD-Redistribute (P5→P3 capacity shift)
+  Source: run_arch_proposals.py
+  Training: TAL07 params (topk=13, alpha=0.7, beta=4.0, cls=1.2, clips)
+  Change: Backbone P3 2→3 reps, P5 backbone 4→2 reps, P3 head 2→3 reps
+  Result: mAP50=77.14% (-1.31%), Small=56.99% (-4.80%)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 3, C3k2,  [512, False, 0.25]]      # 4 — P3: 2→3 reps (+capacity)
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]          # 6 — P4: unchanged
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 2, A2C2f, [1024, True, 1]]         # 8 — P5: 4→2 reps (-capacity)
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 3, A2C2f, [256, False, -1]]        # 14 — P3 head: 2→3 reps
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+================================================================================
+  DEFINED BUT NOT YET RUN
+================================================================================
+
+------------------------------------------------------------------------
+  arch_p3_attn_ld_70 — P3 attention + LD redistribute combined
+  Source: run_arch_proposals.py
+  Change: Backbone P3 2→3, P5 4→2, P3 head 3 reps + attention True
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 3, C3k2,  [512, False, 0.25]]      # 4 — P3: 2→3 reps
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 2, A2C2f, [1024, True, 1]]         # 8 — P5: 4→2 reps
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 3, A2C2f, [256, True, 4]]          # 14 — P3: 3 reps + ATTENTION
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  arch_ska_p4_70 — LSKA moved from P3 to P4 bottom-up
+  Source: run_arch_ska_variants_ablation.py
+  Change: P4 bottom-up layer 17 → C2fLSKA (P3 untouched)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]        # 14 — P3 unchanged
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA, [512, False]]          # 17 — LSKA at P4 bottom-up
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  arch_ska_p4td_70 — LSKA at P4 top-down (layer 11)
+  Source: run_arch_ska_variants_ablation.py
+  Change: P4 top-down layer 11 → C2fLSKA (enriches before P3)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA, [512, False]]          # 11 — LSKA at P4 top-down
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]        # 14 — P3 unchanged
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  arch_ska_multiscale_70 — LSKA multi-scale (5x5+9x9) at P3
+  Source: run_arch_ska_variants_ablation.py
+  Change: P3 head → C2fLSKA_MultiScale (dual kernel adapts to weapon shape)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA_MultiScale, [256, False]]  # 14 — Multi-scale LSKA at P3
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  arch_ska_weapon_70 — LSKA weapon-optimized (multi-scale + residual) at P3
+  Source: run_arch_ska_variants_ablation.py
+  Change: P3 head → C2fLSKA_Weapon (full optimization for weapon shapes)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fLSKA_Weapon, [256, False]]  # 14 — Weapon-optimized LSKA at P3
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  arch_aspp_p3_70 — ASPP at P3 head (atrous spatial pyramid pooling)
+  Source: run_arch_exploration_ablation.py
+  Change: P3 head → C2fASPP (dilated convolutions at rates 6, 12, 18)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, C2fASPP, [256, False]]          # 14 — ASPP at P3 head
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20
+  - [[14, 17, 20], 1, Detect, [nc]]
+
+
+------------------------------------------------------------------------
+  arch_dense_p3p4_70 — Dense skip P3-P4 (bidirectional feature flow)
+  Source: run_arch_exploration_ablation.py
+  Change: P4 bottom-up concats P4_td + P4_bu + P3_backbone (3-way concat)
+------------------------------------------------------------------------
+nc: 4
+scales:
+  s: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]      # 4 — P3 backbone
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]          # 6 — P4 backbone
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 4, A2C2f, [1024, True, 1]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11 — P4 top-down
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]        # 14 — P3 head
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11, 4], 1, Concat, [1]]           # 16 — DENSE: P4_td + P4_bu + P3_backbone
+  - [-1, 1, Conv, [512, 1, 1]]              # 17 — project back to 512ch
+  - [-1, 2, A2C2f, [512, False, -1]]        # 18 — P4 bottom-up
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 21
+  - [[14, 18, 21], 1, Detect, [nc]]
+
+
+================================================================================
+  KEY FINDINGS
+================================================================================
+
+1. ALL 14 tested architectures HURT small object detection (-4% to -7.6%)
+2. Best overall mAP50: arch_ska_70 at 79.03% (+0.58% vs baseline)
+3. Least damage to small: arch_spp_p3_70 at 57.64% (-4.15% vs baseline 61.79%)
+4. TAL tuning alone gave +2.0% mAP50 (78.45% → 80.45%) with NO architecture change
+5. Architecture + TAL have NEVER been combined and tested together
+
+PATTERN: Any modification at P3 head hurts small objects. P3 features are fragile.
+PATTERN: More depth/capacity at P3 backbone also hurts (overfitting on small dataset).
+PATTERN: Attention at P3 hurts most (-7.27% small), LSKA hurts moderately (-5.81%).
+
+================================================================================
+  UNTESTED IDEAS (potential next steps)
+================================================================================
+
+1. Best architecture + best TAL params combined (never tested!)
+2. P2 scale addition (160x160 feature map for small objects)
+3. BiFPN neck redesign (weighted bidirectional feature fusion)
+4. Decoupled detection head (separate cls/reg branches)
+5. Architecture changes ONLY at P4/P5 (leave P3 completely untouched)
+6. Auxiliary training head at P2 (used during training only, removed at inference)
+
+================================================================================
