@@ -61,6 +61,7 @@ __all__ = (
     "ZGGC",
     "ZGSE",
     "ZGMHSA",
+    "ZGP2Fuse",
 )
 
 
@@ -1769,3 +1770,32 @@ class ZGMHSA(nn.Module):
         out = (v @ attn.transpose(-2, -1)).reshape(b, c, h, w)
         out = out + self.pe(v.reshape(b, c, h, w))
         return x + self.gamma * self.proj(out)
+
+
+class ZGP2Fuse(nn.Module):
+    """Zero-gated P2 -> P3 detail fusion (small-object enrichment).
+
+    Injects high-resolution backbone P2 features (160x160) into the P3 head
+    (80x80) as a zero-gated residual: p3 + gamma * refine(down(p2)).
+    Gives P3 finer spatial detail for small objects WITHOUT adding a P2
+    detection head (which ~374 small train instances cannot support).
+    Identity at init -> baseline behavior preserved, pretrained loads fully.
+
+    YAML (two inputs, like Concat):
+        - [[14, 2], 1, ZGP2Fuse, []]   # f[0]=P3 head, f[1]=P2 backbone
+    parse_model must pass channels: args = [ch[f[0]], ch[f[1]]].
+    """
+
+    def __init__(self, c_p3, c_p2):
+        super().__init__()
+        self.down = nn.Sequential(
+            nn.Conv2d(c_p2, c_p3, 3, 2, 1, bias=False),
+            nn.BatchNorm2d(c_p3),
+            nn.SiLU(),
+        )
+        self.refine = nn.Conv2d(c_p3, c_p3, 3, 1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c_p3, 1, 1))
+
+    def forward(self, x):
+        p3, p2 = x[0], x[1]
+        return p3 + self.gamma * self.refine(self.down(p2))

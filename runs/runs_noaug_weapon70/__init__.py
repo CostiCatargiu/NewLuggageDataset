@@ -69,6 +69,7 @@ from .block import (
     ZGGC,
     ZGSE,
     ZGMHSA,
+    ZGP2Fuse,
 )
 from .conv import (
     CBAM,
@@ -167,6 +168,7 @@ __all__ = (
     "ZGGC",
     "ZGSE",
     "ZGMHSA",
+    "ZGP2Fuse",
     "C3k2",
     "SCDown",
     "C2fPSA",
