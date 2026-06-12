@@ -34,6 +34,9 @@ Usage:
 import time
 import gc
 import os
+
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import torch
 from ultralytics import YOLO
 from ultralytics.utils.torch_utils import intersect_dicts
@@ -102,11 +105,11 @@ ARCH_RUNS = [
     # 1: resolution lever alone — the expected biggest small-object jump
     {"name": "base_960_70",
      "desc": "[1/4] Baseline @ 960 — resolution is the small-object lever",
-     "yaml_content": ARCH_BASELINE, "imgsz": 960, "batch": 24},
+     "yaml_content": ARCH_BASELINE, "imgsz": 960, "batch": 16},
     # 2: best arch + resolution + detect fix
     {"name": "zg_p4_960_70",
      "desc": "[2/4] ZG LSKA@P4 @ 960 + detect-remap",
-     "yaml_content": ARCH_ZG_P4, "imgsz": 960, "batch": 22},
+     "yaml_content": ARCH_ZG_P4, "imgsz": 960, "batch": 14},
     # 3: diagnostic — isolates the Detect-transfer confound at 640
     {"name": "zg_p4_fixdet_70",
      "desc": "[3/4] ZG LSKA@P4 @ 640 + detect-remap — confound check",
@@ -125,23 +128,34 @@ def save_yaml(content, filepath):
 
 
 def load_pretrained_with_detect_remap(model, weights=PRETRAINED):
-    """Load pretrained weights, remapping Detect keys (model.21.* -> model.N.*)
+    """Load pretrained weights, then remap Detect keys (model.21.* -> model.N.*)
     so the box branch (cv2) + DFL transfer even when Detect's index shifted.
     (cls branch cv3 won't transfer anyway: nc=80 vs nc=4 shape mismatch.)
+
+    IMPORTANT: must go through model.load() FIRST — it sets model.ckpt, and
+    without that the trainer rebuilds the model from yaml and DISCARDS any
+    weights loaded via load_state_dict() alone (caused a from-scratch run).
+    The remapped Detect keys are then applied on top of the live module,
+    which the trainer reuses because ckpt is set.
     """
+    model.load(weights)  # standard load: sets model.ckpt, transfers layers 0-20
+
+    det_dst = len(model.model.model) - 1  # Detect is always the last layer
+    if det_dst == DETECT_SRC_IDX:
+        print(f"  [detect-remap] Detect index unchanged ({det_dst}) — nothing to remap")
+        return model
+
     ckpt = torch.load(weights, map_location="cpu")
     src = ckpt.get("model", ckpt)
     csd = (src.float() if hasattr(src, "float") else src).state_dict() \
         if hasattr(src, "state_dict") else src
-    det_dst = len(model.model.model) - 1  # Detect is always the last layer
     pfx_src, pfx_dst = f"model.{DETECT_SRC_IDX}.", f"model.{det_dst}."
-    csd = {(pfx_dst + k[len(pfx_src):]) if k.startswith(pfx_src) else k: v
-           for k, v in csd.items()}
-    sd = model.model.state_dict()
-    matched = intersect_dicts(csd, sd)
+    remapped = {pfx_dst + k[len(pfx_src):]: v
+                for k, v in csd.items() if k.startswith(pfx_src)}
+    matched = intersect_dicts(remapped, model.model.state_dict())
     model.model.load_state_dict(matched, strict=False)
-    print(f"  [detect-remap] Transferred {len(matched)}/{len(sd)} items "
-          f"(Detect {DETECT_SRC_IDX} -> {det_dst})")
+    print(f"  [detect-remap] Detect {DETECT_SRC_IDX} -> {det_dst}: "
+          f"{len(matched)}/{len(remapped)} Detect keys transferred on top")
     return model
 
 

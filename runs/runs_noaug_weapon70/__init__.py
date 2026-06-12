@@ -104,7 +104,7 @@ from .conv import (
     SmallObjectRefinement,
     SpatialAttention,
 )
-from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
+from .head import OBB, Classify, Detect, DetectCGC, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
 from .transformer import (
     AIFI,
     MLP,
@@ -183,6 +183,7 @@ __all__ = (
     "BottleneckCSP",
     "Proto",
     "Detect",
+    "DetectCGC",
     "Segment",
     "Pose",
     "Classify",
