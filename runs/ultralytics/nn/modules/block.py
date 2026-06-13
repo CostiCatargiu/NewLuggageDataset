@@ -69,6 +69,9 @@ __all__ = (
     "ZGLSKASG",
     "ZGLSKAStripFuse",
     "ZGLSKAMultiDil",
+    "ZGLSKAWideFuse",
+    "ZGLSKARefine",
+    "ZGLSKAExpand",
 )
 
 
@@ -2115,6 +2118,105 @@ class ZGLSKAMultiDil(nn.Module):
         self.act = nn.SiLU()
         self.lka = ZGLKAMultiDil(c1, k_a, d_a, k_b, d_b)
         self.pw2 = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        return x + self.gamma * self.pw2(self.lka(self.act(self.pw1(x))))
+
+
+class ZGLSKAWideFuse(nn.Module):
+    """Round 11 [idea 2] — fuse k11 (square) + strip23 WITHOUT channel-starvation.
+
+    Round 10's ZGLSKAStripFuse fused these same two shapes by channel-SPLIT
+    (each shape only sees c1/2 channels) and was the worst round-10 result
+    (78.27, -0.92 vs k11 alone) -- WORSE than round 7's same-scale gate
+    stacking (78.66). Diagnosis: halving per-branch channel width starves
+    each LKA shape of capacity more than adding a whole second gated branch
+    does.
+
+    This fixes that directly: EXPAND first (pw1: c1 -> 2*c1), so each shape
+    gets its own FULL c1-width stream (same width either shape would get
+    operating alone, as in r6's k11 @ 79.19 or round 7's strip23 @ 79.07),
+    concat back to 2*c1, then pw2: 2*c1 -> c1. Single gamma, zero-init.
+
+    y = x + gamma * pw2( cat[ ZGLKA(k_sq)(z1), LSKA_strip(k_strip)(z2) ] ),
+    z1, z2 = act(pw1(x)).chunk(2, dim=1), each c1-wide.
+
+    YAML args: [c2, k_sq, k_strip]  e.g. [512, 11, 23]
+    """
+
+    def __init__(self, c1, c2, k_sq=11, k_strip=23):
+        super().__init__()
+        assert c1 == c2, "ZGLSKAWideFuse preserves channels"
+        self.pw1 = nn.Conv2d(c1, 2 * c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c1, k_sq)
+        self.strip = LSKA(c1, k_size=k_strip)
+        self.pw2 = nn.Conv2d(2 * c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        z1, z2 = self.act(self.pw1(x)).chunk(2, dim=1)
+        y = torch.cat([self.lka(z1), self.strip(z2)], dim=1)
+        return x + self.gamma * self.pw2(y)
+
+
+class ZGLSKARefine(nn.Module):
+    """Round 11 [idea 3] — sequential local-refinement after the proven k11 branch.
+
+    Keeps the dose-response winner (ZGLKA k=11, RF~35 cells, 79.19% alone)
+    completely intact and unchanged, then adds one cheap depthwise k_refine
+    (default 3x3) conv + SiLU AFTER the LKA attention output, before pw2 --
+    a local-detail pass on top of k11's global-context attention map, all
+    inside the SAME gated residual with ONE gamma (no parallel competition,
+    no channel split).
+
+    y = x + gamma * pw2( SiLU(refine(ZGLKA(k)(act(pw1(x))))) ), gamma = 0.
+
+    YAML args: [c2, k, k_refine]  e.g. [512, 11, 3]
+    """
+
+    def __init__(self, c1, c2, k=11, k_refine=3):
+        super().__init__()
+        assert c1 == c2, "ZGLSKARefine preserves channels"
+        self.pw1 = nn.Conv2d(c1, c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c1, k)
+        self.refine = nn.Conv2d(c1, c1, k_refine, 1, k_refine // 2, groups=c1)
+        self.refine_act = nn.SiLU()
+        self.pw2 = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        f = self.lka(self.act(self.pw1(x)))
+        r = self.refine_act(self.refine(f))
+        return x + self.gamma * self.pw2(r)
+
+
+class ZGLSKAExpand(nn.Module):
+    """Round 11 [idea 4] — capacity-expanded k11: is k11 RF-limited or capacity-limited?
+
+    Round 7's k=7/11/15 dose-response (79.05/79.19/79.03) was fairly flat
+    near the peak -- suggesting receptive field is no longer the bottleneck.
+    This keeps k=11 (the peak) but widens the branch: pw1 projects
+    c1 -> expand*c1, ZGLKA(k=11) operates on expand*c1 channels (roughly
+    `expand`x the depthwise-conv capacity of r6's branch), pw2 projects back
+    expand*c1 -> c1. Single gamma, zero-init, same kernel as the proven
+    winner -- only the channel width changes.
+
+    y = x + gamma * pw2( ZGLKA(k)(act(pw1(x))) ),  pw1: c1->e*c1, pw2: e*c1->c1.
+
+    YAML args: [c2, k, expand]  e.g. [512, 11, 2]
+    """
+
+    def __init__(self, c1, c2, k=11, expand=2):
+        super().__init__()
+        assert c1 == c2, "ZGLSKAExpand preserves channels"
+        c_wide = c1 * expand
+        self.pw1 = nn.Conv2d(c1, c_wide, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c_wide, k)
+        self.pw2 = nn.Conv2d(c_wide, c1, 1)
         self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
 
     def forward(self, x):

@@ -77,6 +77,9 @@ from .block import (
     ZGLSKASG,
     ZGLSKAStripFuse,
     ZGLSKAMultiDil,
+    ZGLSKAWideFuse,
+    ZGLSKARefine,
+    ZGLSKAExpand,
 )
 from .conv import (
     CBAM,
@@ -183,6 +186,9 @@ __all__ = (
     "ZGLSKASG",
     "ZGLSKAStripFuse",
     "ZGLSKAMultiDil",
+    "ZGLSKAWideFuse",
+    "ZGLSKARefine",
+    "ZGLSKAExpand",
     "C3k2",
     "SCDown",
     "C2fPSA",
