@@ -74,6 +74,9 @@ from .block import (
     ZGDCN,
     ZGStar,
     ZGDSConv,
+    ZGLSKASG,
+    ZGLSKAStripFuse,
+    ZGLSKAMultiDil,
 )
 from .conv import (
     CBAM,
@@ -177,6 +180,9 @@ __all__ = (
     "ZGDCN",
     "ZGStar",
     "ZGDSConv",
+    "ZGLSKASG",
+    "ZGLSKAStripFuse",
+    "ZGLSKAMultiDil",
     "C3k2",
     "SCDown",
     "C2fPSA",

@@ -66,6 +66,9 @@ __all__ = (
     "ZGDCN",
     "ZGStar",
     "ZGDSConv",
+    "ZGLSKASG",
+    "ZGLSKAStripFuse",
+    "ZGLSKAMultiDil",
 )
 
 
@@ -1987,3 +1990,132 @@ class ZGDSConv(nn.Module):
         y = self.act(self.bn(sx + sy))
         y = self.pw(y)
         return x + self.gamma * y
+
+
+class ZGLSKASG(nn.Module):
+    """Spatially-gated ZGLSKA -- round 9, built on the round-7 dose-response winner.
+
+    y = x + gamma * sigmoid(spatial_gate(x)) * f(x), gamma = 0 at init.
+    f = 1x1 -> SiLU -> ZGLKA(k) -> 1x1   (identical branch to ZGLSKA, k=11
+    confirmed as the dose-response peak: k7=79.05, k11=79.19, k15=79.03).
+
+    ZGLSKA applies its (per-channel) gate UNIFORMLY across the whole P4
+    feature map -- the network learns "how much" large-kernel context to
+    mix in per channel, but not "where". ZGLSKASG adds a per-pixel
+    sigmoid mask predicted from the input by a small 3x3 conv, so the
+    same k=11 branch can be suppressed over background and emphasized
+    around object-shaped regions.
+
+    Identity-at-init is preserved exactly the same way as ZGLSKA: the
+    per-channel `gamma` is zero-initialized, so y = x regardless of the
+    spatial gate's value at step 0. spatial_gate is ALSO zero-initialized
+    (weight+bias=0), so sigmoid(.) = 0.5 uniformly at init -- the spatial
+    gate starts as a no-op multiplier (0.5, constant) and only begins to
+    differentiate spatially once gamma opens and gradients flow into it.
+
+    YAML args: [c2, k]  e.g. [512, 11]
+    """
+
+    def __init__(self, c1, c2, k=11):
+        super().__init__()
+        assert c1 == c2, "ZGLSKASG preserves channels (set YAML c2 = input channels)"
+        self.pw1 = nn.Conv2d(c1, c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c1, k)
+        self.pw2 = nn.Conv2d(c1, c1, 1)
+        self.spatial_gate = nn.Conv2d(c1, 1, 3, 1, 1)
+        nn.init.zeros_(self.spatial_gate.weight)
+        nn.init.zeros_(self.spatial_gate.bias)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        f = self.pw2(self.lka(self.act(self.pw1(x))))
+        g = torch.sigmoid(self.spatial_gate(x))  # (B,1,H,W), starts at 0.5 everywhere
+        return x + self.gamma * g * f
+
+
+class ZGLSKAStripFuse(nn.Module):
+    """Round 10 — fuse the two best single-branch shapes (k11 square + strip23)
+    in ONE gated branch via channel-split, instead of stacking two gates.
+
+    y = x + gamma * pw2( cat[ ZGLKA(k_sq)(z1), LSKA_strip(k_strip)(z2) ] ),
+    gamma = 0 at init, z = act(pw1(x)) split in half along channels.
+
+    Round 7's dose-response found k=11 (square, dilated) is the peak
+    (79.19%) and strip k=23 (1x23+23x1, for elongated objects) is a close
+    second (79.07%) -- two DIFFERENT receptive-field shapes, both near-best.
+    Stacking them as two SEPARATE gated branches hurt (k11+GC@P4 = 78.66,
+    two competing gammas). This instead routes half the channels through
+    each shape inside a SINGLE branch under ONE gamma -- a different failure
+    mode than stacking, so the earlier negative result doesn't directly
+    predict this one.
+
+    YAML args: [c2, k_sq, k_strip]  e.g. [512, 11, 23]
+    """
+
+    def __init__(self, c1, c2, k_sq=11, k_strip=23):
+        super().__init__()
+        assert c1 == c2, "ZGLSKAStripFuse preserves channels"
+        assert c1 % 2 == 0, "ZGLSKAStripFuse requires an even channel count"
+        c_half = c1 // 2
+        self.pw1 = nn.Conv2d(c1, c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c_half, k_sq)
+        self.strip = LSKA(c_half, k_size=k_strip)
+        self.pw2 = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        z1, z2 = self.act(self.pw1(x)).chunk(2, dim=1)
+        y = torch.cat([self.lka(z1), self.strip(z2)], dim=1)
+        return x + self.gamma * self.pw2(y)
+
+
+class ZGLKAMultiDil(nn.Module):
+    """Multi-dilation LKA primitive for ZGLSKAMultiDil.
+
+    5x5 depthwise -> TWO parallel dilated depthwise convs at different
+    (k, dilation) -> summed -> 1x1 pointwise, used as a multiplicative
+    attention map (same usage pattern as ZGLKA, but two receptive-field
+    scales fused into one attention map instead of one).
+    """
+
+    def __init__(self, c, k_a=7, d_a=2, k_b=11, d_b=3):
+        super().__init__()
+        self.dw = nn.Conv2d(c, c, 5, 1, 2, groups=c)
+        self.dwd_a = nn.Conv2d(c, c, k_a, 1, ((k_a - 1) // 2) * d_a, groups=c, dilation=d_a)
+        self.dwd_b = nn.Conv2d(c, c, k_b, 1, ((k_b - 1) // 2) * d_b, groups=c, dilation=d_b)
+        self.pw = nn.Conv2d(c, c, 1)
+
+    def forward(self, x):
+        z = self.dw(x)
+        return self.pw(self.dwd_a(z) + self.dwd_b(z)) * x
+
+
+class ZGLSKAMultiDil(nn.Module):
+    """Round 10 — single-branch multi-scale LKA: k7/dilation2 AND k11/dilation3
+    fused into one attention map under one gamma, instead of picking one k.
+
+    y = x + gamma * pw2(ZGLKAMultiDil(act(pw1(x)))), gamma = 0 at init.
+
+    Round 7's dose-response over a single ZGLKA(k, dilation=3): k7=79.05,
+    k11=79.19 (peak), k15=79.03 -- a fairly flat curve near the peak,
+    suggesting both the k7 (RF~17 cells) and k11 (RF~35 cells) scales carry
+    useful signal individually. This fuses both scales (k7/dilation2,
+    RF~17, and k11/dilation3, RF~35 -- the dose-response peak) inside ONE
+    branch/gate as a single-branch "ensemble" instead of an either/or choice.
+
+    YAML args: [c2, k_a, d_a, k_b, d_b]  e.g. [512, 7, 2, 11, 3]
+    """
+
+    def __init__(self, c1, c2, k_a=7, d_a=2, k_b=11, d_b=3):
+        super().__init__()
+        assert c1 == c2, "ZGLSKAMultiDil preserves channels"
+        self.pw1 = nn.Conv2d(c1, c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKAMultiDil(c1, k_a, d_a, k_b, d_b)
+        self.pw2 = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        return x + self.gamma * self.pw2(self.lka(self.act(self.pw1(x))))
