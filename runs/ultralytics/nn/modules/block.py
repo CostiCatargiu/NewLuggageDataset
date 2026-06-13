@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
-from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad, LuggageCBAM, EMA, SimAM, LSKA, DCBAM, DCBAM_MS, ShapeCBAM
+from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad, LuggageCBAM, EMA, SimAM, LSKA, DCBAM, DCBAM_MS, ShapeCBAM, DeformableConv2d
 from .transformer import TransformerBlock
 
 __all__ = (
@@ -62,6 +62,8 @@ __all__ = (
     "ZGSE",
     "ZGMHSA",
     "ZGP2Fuse",
+    "ZGStrip",
+    "ZGDCN",
 )
 
 
@@ -1770,6 +1772,59 @@ class ZGMHSA(nn.Module):
         out = (v @ attn.transpose(-2, -1)).reshape(b, c, h, w)
         out = out + self.pe(v.reshape(b, c, h, w))
         return x + self.gamma * self.proj(out)
+
+
+class ZGStrip(nn.Module):
+    """Zero-gated SEPARABLE strip-kernel attention (1xk + kx1) — for elongated objects.
+
+    Wraps the proven conv.LSKA primitive (separable horizontal+vertical large
+    kernel, used in the luggage work) in a zero-init gate:
+        y = x + gamma * LSKA_sep(x),  gamma = 0 at init.
+    Rationale (weapon_noaug): square dilated kernels (ZGLKA) dilute context
+    over background for elongated objects; strips match long_gun/knife
+    geometry (median H/W 1.3, long_gun 29% of data). Strip RF k=23 spans
+    most of the P4 map directionally at negligible cost (depthwise 1xk+kx1).
+
+    YAML args: [c2, k]  e.g.  [512, 23]
+    """
+
+    def __init__(self, c1, c2, k=23):
+        super().__init__()
+        assert c1 == c2, "ZGStrip preserves channels"
+        self.attn = LSKA(c1, k_size=k)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        return x + self.gamma * self.attn(x)
+
+
+class ZGDCN(nn.Module):
+    """Zero-gated Deformable Convolution — ADAPTIVE spatial context.
+
+    y = x + gamma * DCNv2(x), gamma = 0 at init.
+    Unlike fixed large kernels (ZGLSKA: same square/strip view everywhere),
+    the DCN predicts per-position sampling offsets: the receptive field bends
+    along a diagonal long_gun, clusters on a pistol, stays local on
+    background. Generalizes the kernel-size/shape search (k7/k11/k15/strip)
+    into a learned, per-object view.
+
+    Stability: DeformableConv2d already zero-inits its offsets (starts as a
+    plain 3x3), and the zero gate keeps the net identity at init — offsets
+    can learn while the gate is still nearly closed.
+
+    YAML args: [c2, k]  e.g.  [512, 3]
+    """
+
+    def __init__(self, c1, c2, k=3):
+        super().__init__()
+        assert c1 == c2, "ZGDCN preserves channels"
+        self.dcn = DeformableConv2d(c1, c1, k=k, s=1, p=k // 2)
+        self.bn = nn.BatchNorm2d(c1)
+        self.act = nn.SiLU()
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        return x + self.gamma * self.act(self.bn(self.dcn(x)))
 
 
 class ZGP2Fuse(nn.Module):
