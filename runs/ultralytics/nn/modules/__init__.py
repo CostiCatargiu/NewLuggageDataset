@@ -72,6 +72,8 @@ from .block import (
     ZGP2Fuse,
     ZGStrip,
     ZGDCN,
+    ZGStar,
+    ZGDSConv,
 )
 from .conv import (
     CBAM,
@@ -173,6 +175,8 @@ __all__ = (
     "ZGP2Fuse",
     "ZGStrip",
     "ZGDCN",
+    "ZGStar",
+    "ZGDSConv",
     "C3k2",
     "SCDown",
     "C2fPSA",

@@ -64,6 +64,8 @@ __all__ = (
     "ZGP2Fuse",
     "ZGStrip",
     "ZGDCN",
+    "ZGStar",
+    "ZGDSConv",
 )
 
 
@@ -1854,3 +1856,134 @@ class ZGP2Fuse(nn.Module):
     def forward(self, x):
         p3, p2 = x[0], x[1]
         return p3 + self.gamma * self.refine(self.down(p2))
+
+
+class ZGStar(nn.Module):
+    """Zero-gated STAR block — multiplicative feature mixing (StarNet, 2024).
+
+    y = x + gamma * proj_out(act(proj1(z)) * proj2(z)), gamma = 0 at init,
+    where z = BN(DWConv7x7(x)).
+
+    Every ZG block so far (LSKA/GC/SE/MHSA/Strip/DCN) is a variant of spatial
+    attention / large-kernel context -- the SKA family. ZGStar uses NO
+    spatial-attention map at all: two parallel 1x1 convs project to a wide
+    hidden dim and are multiplied element-wise (the "star operation").
+    This element-wise product implicitly realizes a high-dimensional
+    polynomial feature expansion in a low-dim space (Ma et al., StarNet,
+    2024) -- a fundamentally different nonlinearity (multiplicative feature
+    interaction) than additive attention. A depthwise 7x7 conv supplies
+    cheap spatial context before the star op.
+
+    YAML args: [c2, hidden_mult]  e.g. [512, 4]  (hidden = c1 * hidden_mult)
+    """
+
+    def __init__(self, c1, c2, hidden_mult=4):
+        super().__init__()
+        assert c1 == c2, "ZGStar preserves channels"
+        c_hidden = c1 * hidden_mult
+        self.dw = nn.Conv2d(c1, c1, 7, 1, 3, groups=c1, bias=False)
+        self.bn = nn.BatchNorm2d(c1)
+        self.proj1 = nn.Conv2d(c1, c_hidden, 1)
+        self.proj2 = nn.Conv2d(c1, c_hidden, 1)
+        self.act = nn.SiLU()
+        self.proj_out = nn.Conv2d(c_hidden, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        z = self.bn(self.dw(x))
+        y = self.act(self.proj1(z)) * self.proj2(z)
+        y = self.proj_out(y)
+        return x + self.gamma * y
+
+
+class ZGDSConv(nn.Module):
+    """Zero-gated Dynamic Snake Convolution — shape prior for elongated objects.
+
+    y = x + gamma * pw(act(bn(DSConv_x(x) + DSConv_y(x)))), gamma = 0 at init.
+
+    Dynamic Snake Convolution (Qi et al., 2023, originally for tubular
+    vessel segmentation) deforms a 1D kernel along a single axis with
+    CUMULATIVE per-tap offsets, so the sampling path "snakes" along whatever
+    elongated structure is present. weapon_noaug's long_gun/knife classes are
+    intrinsically elongated/thin -- this encodes a different adaptivity prior
+    than ZGDCN (independent unconstrained 2D offsets per tap, no path
+    continuity) or ZGLSKA (fixed kernel shape). Implemented with
+    F.grid_sample (pure PyTorch, no torchvision.ops -> avoids the
+    deform_conv2d crash seen with ZGDCN).
+
+    Two branches (kernel snaking along x, kernel snaking along y), each:
+      1. predict per-tap offsets (1 scalar per tap) from a 3x3 conv,
+         zero-initialized so offsets start at 0 (taps sit on the regular
+         grid at init);
+      2. cumulative-sum offsets outward from the center tap (snake path);
+      3. bilinear-sample the input along the deformed 1D path;
+      4. depthwise-combine the K sampled taps -> 1 output per channel.
+
+    YAML args: [c2, k]  e.g. [512, 9]
+    """
+
+    def __init__(self, c1, c2, k=9):
+        super().__init__()
+        assert c1 == c2, "ZGDSConv preserves channels"
+        assert k % 2 == 1, "k must be odd"
+        self.c1 = c1
+        self.k = k
+        self.offset_x = nn.Conv2d(c1, k, 3, 1, 1)
+        self.offset_y = nn.Conv2d(c1, k, 3, 1, 1)
+        nn.init.zeros_(self.offset_x.weight)
+        nn.init.zeros_(self.offset_x.bias)
+        nn.init.zeros_(self.offset_y.weight)
+        nn.init.zeros_(self.offset_y.bias)
+        self.weight_x = nn.Parameter(torch.randn(c1, k) * 0.02)
+        self.weight_y = nn.Parameter(torch.randn(c1, k) * 0.02)
+        self.bn = nn.BatchNorm2d(c1)
+        self.act = nn.SiLU()
+        self.pw = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def _snake_sample(self, x, offsets, weight, axis):
+        B, C, H, W = x.shape
+        K = self.k
+        device, dtype = x.device, x.dtype
+        off = torch.tanh(offsets.float())  # (B,K,H,W), bounded to (-1,1) taps
+        center = K // 2
+        cum = torch.zeros_like(off)
+
+        run = torch.zeros(B, H, W, device=device, dtype=off.dtype)
+        for i in range(center, K):
+            run = run + off[:, i]
+            cum[:, i] = run
+
+        run = torch.zeros(B, H, W, device=device, dtype=off.dtype)
+        for i in range(center - 1, -1, -1):
+            run = run - off[:, i]
+            cum[:, i] = run
+
+        ys = torch.linspace(-1, 1, H, device=device, dtype=off.dtype)
+        xs = torch.linspace(-1, 1, W, device=device, dtype=off.dtype)
+        base_y, base_x = torch.meshgrid(ys, xs, indexing="ij")  # (H,W)
+        step_x = 2.0 / max(W - 1, 1)
+        step_y = 2.0 / max(H - 1, 1)
+
+        out = torch.zeros_like(x)
+        x32 = x.float()
+        for i in range(K):
+            tap = i - center
+            if axis == "x":
+                grid_x = base_x.unsqueeze(0) + tap * step_x + cum[:, i] * step_x
+                grid_y = base_y.unsqueeze(0).expand(B, -1, -1)
+            else:
+                grid_x = base_x.unsqueeze(0).expand(B, -1, -1)
+                grid_y = base_y.unsqueeze(0) + tap * step_y + cum[:, i] * step_y
+            grid = torch.stack([grid_x, grid_y], dim=-1)  # (B,H,W,2)
+            sampled = F.grid_sample(x32, grid, mode="bilinear", padding_mode="border", align_corners=True)
+            w = weight[:, i].view(1, C, 1, 1)
+            out = out + (sampled * w).to(dtype)
+        return out
+
+    def forward(self, x):
+        sx = self._snake_sample(x, self.offset_x(x), self.weight_x, "x")
+        sy = self._snake_sample(x, self.offset_y(x), self.weight_y, "y")
+        y = self.act(self.bn(sx + sy))
+        y = self.pw(y)
+        return x + self.gamma * y
