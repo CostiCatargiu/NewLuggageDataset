@@ -2221,3 +2221,52 @@ class ZGLSKAExpand(nn.Module):
 
     def forward(self, x):
         return x + self.gamma * self.pw2(self.lka(self.act(self.pw1(x))))
+
+
+class ZGLSKAGCFuse(nn.Module):
+    """Round 14 — fuse k_sq LKA (local, proven) with GCNet-style global
+    context, full-width streams (WideFuse structure), one gamma.
+
+    ZGLSKAWideFuse's two branches (k=11 LKA + strip-23 LSKA) are BOTH
+    large-local-RF shapes -- never tested against a branch that's
+    QUALITATIVELY different (globally-pooled context). Round 13's
+    DetectLKACls (local k=11, isolated to the cls branch only) consistently
+    HURT both backbones it was tried on (-0.38, -0.86 vs their unmodified
+    backbones) -- but that tested "local RF, cls-only injection". This tests
+    a different combination: "global context, SHARED feature" (affects both
+    box and cls, like WideFuse's proven structure) instead of cls-only.
+
+    y = x + gamma * pw2( cat[ ZGLKA(k)(z1), z2 + gc_transform(ctx(z2)) ] ),
+    z1, z2 = act(pw1(x)).chunk(2, dim=1), each c1-wide. ctx(z2) is a
+    softmax-attention-pooled global context vector (GCNet-style).
+
+    YAML args: [c2, k, r]  e.g. [512, 11, 8]
+    """
+
+    def __init__(self, c1, c2, k=11, r=8):
+        super().__init__()
+        assert c1 == c2, "ZGLSKAGCFuse preserves channels"
+        self.pw1 = nn.Conv2d(c1, 2 * c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c1, k)
+        c_ = max(c1 // r, 16)
+        self.gc_attn = nn.Conv2d(c1, 1, 1)
+        self.gc_transform = nn.Sequential(
+            nn.Conv2d(c1, c_, 1),
+            nn.GroupNorm(1, c_),
+            nn.SiLU(),
+            nn.Conv2d(c_, c1, 1),
+        )
+        self.pw2 = nn.Conv2d(2 * c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def _gc(self, z):
+        b, c, h, w = z.shape
+        w_ = self.gc_attn(z).view(b, 1, h * w).softmax(dim=-1)  # b,1,hw
+        ctx = (z.view(b, c, h * w) @ w_.transpose(1, 2)).view(b, c, 1, 1)  # b,c,1,1
+        return z + self.gc_transform(ctx)
+
+    def forward(self, x):
+        z1, z2 = self.act(self.pw1(x)).chunk(2, dim=1)
+        y = torch.cat([self.lka(z1), self._gc(z2)], dim=1)
+        return x + self.gamma * self.pw2(y)
