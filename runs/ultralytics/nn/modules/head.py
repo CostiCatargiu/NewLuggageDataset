@@ -10,12 +10,12 @@ from torch.nn.init import constant_, xavier_uniform_
 
 from ultralytics.utils.tal import TORCH_1_10, dist2bbox, dist2rbox, make_anchors
 
-from .block import DFL, BNContrastiveHead, ContrastiveHead, Proto
+from .block import DFL, BNContrastiveHead, ContrastiveHead, Proto, ZGLKA
 from .conv import Conv, DWConv
 from .transformer import MLP, DeformableTransformerDecoder, DeformableTransformerDecoderLayer
 from .utils import bias_init_with_prob, linear_init
 
-__all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10Detect", "DetectCGC"
+__all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10Detect", "DetectCGC", "DetectLKACls"
 
 
 class Detect(nn.Module):
@@ -221,6 +221,47 @@ class DetectCGC(Detect):
         ctx = self._context(x[-1])
         for i in range(self.nl):
             xc = x[i] + self.ctx_gamma[i] * self.ctx_proj[i](ctx)  # cls input (broadcast over HW)
+            x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](xc)), 1)
+        if self.training:  # Training path
+            return x
+        y = self._inference(x)
+        return y if self.export else (y, x)
+
+
+class DetectLKACls(Detect):
+    """Detect with a per-scale, zero-gated Large-Kernel-Attention cls branch.
+
+    Motivation (weapon_noaug 70% ablation, round 13): the proven k=11 ZGLKA
+    receptive field (used in r6/r11_widefuse on the SHARED feature feeding
+    both box and cls) has to compete with the box-regression objective on
+    the same tensor, which likely caps/dilutes any 'other'-class
+    classification gain. DetectCGC showed that isolating a change to the
+    CLS branch only (box/cv2 untouched) is safe and low-risk -- but its
+    global P5-pooled context is a poor match for small, visually-diverse
+    'other' objects (P5 is the worst map for small-object detail).
+
+    This module combines both validated ideas: the proven local k=11 LKA
+    receptive field, applied per-scale, ISOLATED to the cls-branch input
+    only, behind its own per-channel zero-init gate:
+        cls_in_i = x_i + gamma_i * ZGLKA(k)(x_i)
+        x_i = cat([cv2_i(x_i), cv3_i(cls_in_i)], 1)
+    Box branch (cv2) input stays raw -> regression untouched.
+    gamma = 0 at init -> exact stock Detect at epoch 0; with a stock body
+    at index 21, pretrained Detect box weights transfer as usual.
+
+    Drop-in YAML replacement:  - [[14, 17, 20], 1, DetectLKACls, [nc, 11]]
+    """
+
+    def __init__(self, nc=80, k=11, ch=()):
+        """Initialize DetectLKACls with the standard Detect layers plus a per-scale gated LKA cls branch."""
+        super().__init__(nc, ch)
+        self.cls_lka = nn.ModuleList(ZGLKA(c, k) for c in ch)
+        self.cls_gamma = nn.ParameterList(nn.Parameter(torch.zeros(c, 1, 1)) for c in ch)
+
+    def forward(self, x):
+        """Standard Detect forward, but cls branch input is LKA-augmented (zero-gated, per scale)."""
+        for i in range(self.nl):
+            xc = x[i] + self.cls_gamma[i] * self.cls_lka[i](x[i])  # cls input only
             x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](xc)), 1)
         if self.training:  # Training path
             return x

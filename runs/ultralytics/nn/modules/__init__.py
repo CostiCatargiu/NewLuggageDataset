@@ -114,7 +114,7 @@ from .conv import (
     SmallObjectRefinement,
     SpatialAttention,
 )
-from .head import OBB, Classify, Detect, DetectCGC, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
+from .head import OBB, Classify, Detect, DetectCGC, DetectLKACls, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
 from .transformer import (
     AIFI,
     MLP,
@@ -204,6 +204,7 @@ __all__ = (
     "Proto",
     "Detect",
     "DetectCGC",
+    "DetectLKACls",
     "Segment",
     "Pose",
     "Classify",
