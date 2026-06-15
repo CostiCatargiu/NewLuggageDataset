@@ -75,6 +75,7 @@ __all__ = (
     "ZGLSKAGCFuse",
     "ZGLSKAWideFuse3",
     "ZGLSKACompactFuse",
+    "ZGLSKASelectFuse",
 )
 
 
@@ -2386,3 +2387,74 @@ class ZGLSKACompactFuse(nn.Module):
         compact = self.compact_act(self.compact_norm(self.branch_a(z2) + self.branch_b(z2)))
         y = torch.cat([self.lka(z1), compact], dim=1)
         return x + self.gamma * self.pw2(y)
+
+
+class ZGLSKASelectFuse(nn.Module):
+    """Round 17 — spatially content-ADAPTIVE receptive-field routing @ P4-BU.
+
+    Cross-round finding (rounds 6-16): every gated fusion (WideFuse k11+strip23
+    = 79.40, GCFuse = 78.23, WideFuse3 additive k3, CompactFuse k3/k5) combines
+    its branches with a SINGLE GLOBAL mixing rule -- pw2 over a fixed concat, or
+    one per-channel gamma. That weighting is identical at every spatial location,
+    so the small-RF branch fires on large objects (noise) and the large-RF
+    branch fires on small objects (smoothing). The network is forced into ONE
+    global compromise, and the compromise that maximises overall mAP is exactly
+    the one that sacrifices small-"other" detail (AP50_small 23.59 vs baseline
+    38.57). Searching WHICH branches to fuse cannot escape this; the binding
+    constraint is that the fuse is STATIC.
+
+    Innovation: make the branch selection PER-PIXEL and content-dependent. The
+    same three branches as WideFuse3 (square ZGLKA k_sq, strip LSKA k_strip,
+    small depthwise k_small) are combined not by concat+projection but by a
+    lightweight spatial router -> per-location softmax over the 3 branches. The
+    receptive field thus adapts to local object scale: small objects route to
+    the k_small detail branch (preserving fine structure), large objects route
+    to k_sq/k_strip context -- simultaneously, in different regions of the SAME
+    P4 map. This is the one degree of freedom every prior fusion lacked.
+
+    Identity / transfer: gamma=0 at init -> exact identity at epoch 0 (full
+    Detect-remap pretrained transfer, append-only, like the rest of the family).
+    The router weight is zero-init and its bias is warm-started to favour the
+    square-LKA branch, so as gamma grows the early behaviour approximates
+    r11_widefuse/r6 rather than a random mix.
+
+    Controlled ablation vs ZGLSKAWideFuse3: IDENTICAL three branches and the
+    same YAML args -- the ONLY difference is static concat (WideFuse3) vs
+    spatial-softmax routing (this) -- isolating "spatially-adaptive receptive
+    field" as the mechanism. The learned router weights are directly
+    visualisable as a per-location scale map.
+
+    y = x + gamma * pw2( sum_b w_b(x) * branch_b(z_b) ),
+    z1,z2,z3 = act(pw1(x)).chunk(3); w = softmax(router(x), dim=branch), spatial.
+    pw1: c1 -> 3*c1 (full-width per branch); pw2: c1 -> c1 (post weighted-sum).
+
+    YAML args: [c2, k_sq, k_strip, k_small]  e.g. [512, 11, 23, 3]
+    """
+
+    def __init__(self, c1, c2, k_sq=11, k_strip=23, k_small=3):
+        super().__init__()
+        assert c1 == c2, "ZGLSKASelectFuse preserves channels"
+        self.pw1 = nn.Conv2d(c1, 3 * c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c1, k_sq)
+        self.strip = LSKA(c1, k_size=k_strip)
+        self.small = nn.Sequential(
+            nn.Conv2d(c1, c1, k_small, 1, k_small // 2, groups=c1),
+            nn.GroupNorm(1, c1),
+            nn.SiLU(),
+        )
+        self.router = nn.Conv2d(c1, 3, 1)  # per-location logits over the 3 branches
+        self.pw2 = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+        # warm-start: uniform-ish router that favours the square-LKA branch (idx 0),
+        # so once gamma grows the early behaviour approximates r6/r11_widefuse.
+        nn.init.zeros_(self.router.weight)
+        nn.init.zeros_(self.router.bias)
+        self.router.bias.data[0] = 2.0
+
+    def forward(self, x):
+        z1, z2, z3 = self.act(self.pw1(x)).chunk(3, dim=1)
+        feats = torch.stack([self.lka(z1), self.strip(z2), self.small(z3)], dim=1)  # B,3,C,H,W
+        w = self.router(x).softmax(dim=1).unsqueeze(2)  # B,3,1,H,W (per-location)
+        fused = (w * feats).sum(dim=1)  # B,C,H,W
+        return x + self.gamma * self.pw2(fused)
