@@ -26,6 +26,8 @@ __all__ = (
     "DetectCGC",
     "DetectLKACls",
     "DetectSmallCls",
+    "DetectDeepCls",
+    "DetectWideCls",
 )
 
 
@@ -338,6 +340,74 @@ class DetectSmallCls(Detect):
             return x
         y = self._inference(x)
         return y if self.export else (y, x)
+
+
+class DetectDeepCls(Detect):
+    """Detect with a DEEPER classification tower (4 blocks vs the stock 2).
+
+    Motivation (weapon_noaug 70% ablation, round 18): per-class analysis shows
+    the entire dataset ceiling is the "other" class, and its failure mode is
+    CLASSIFICATION, not localization -- recall AR50 ~= 0.84 but precision
+    AP50 ~= 0.51 (a ~0.33 recall-precision gap, vs ~0.09 for the weapon
+    classes). The detector FINDS "other" objects and mis-RANKS them. ~30 prior
+    architecture variants (rounds 1-17: LKA, strip, GC, multi-dil, routing,
+    DetectLKACls/SmallCls/CGC) all added receptive-field / spatial context to
+    the shared or cls-input feature -- i.e. they targeted LOCALIZATION -- and
+    none beat plain loss tuning, because localization was never the bottleneck.
+
+    This instead adds CAPACITY to the classifier itself: the cls branch (cv3)
+    is deepened from the stock 2 (DWConv+Conv) blocks to 4, giving the head
+    representational room to separate the heterogeneous "other" class from
+    background and from the weapon classes. The box branch (cv2) and DFL are
+    left untouched -> localization is unchanged and box weights transfer fully
+    from the pretrained checkpoint; only the cls tower trains fresh, which is
+    exactly the branch the per-class data flags as under-capacity.
+
+    Drop-in YAML replacement:  - [[14, 17, 20], 1, DetectDeepCls, [nc]]
+    """
+
+    def __init__(self, nc=80, ch=()):
+        """Initialize DetectDeepCls with a 4-block depthwise cls tower per scale."""
+        super().__init__(nc, ch)
+        c3 = max(ch[0], min(self.nc, 100))
+        self.cv3 = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(DWConv(x, x, 3), Conv(x, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                nn.Conv2d(c3, self.nc, 1),
+            )
+            for x in ch
+        )
+
+
+class DetectWideCls(Detect):
+    """Detect with a WIDER classification tower (2x cls channels, stock depth).
+
+    Companion to DetectDeepCls (round 18): same diagnosis (the "other" class is
+    a cls-ranking bottleneck, AR50~0.84 vs AP50~0.51), but tests whether the
+    missing classifier capacity is better added as WIDTH than as DEPTH. The cls
+    branch (cv3) keeps the stock 2-block structure but doubles its intermediate
+    channel width (c3 -> 2*c3). Box branch (cv2) and DFL untouched -> full box
+    transfer, cls tower trains fresh. Run head-to-head with DetectDeepCls to
+    read depth-vs-width for the cls bottleneck.
+
+    Drop-in YAML replacement:  - [[14, 17, 20], 1, DetectWideCls, [nc]]
+    """
+
+    def __init__(self, nc=80, ch=()):
+        """Initialize DetectWideCls with a 2x-width depthwise cls tower per scale."""
+        super().__init__(nc, ch)
+        c3 = max(ch[0], min(self.nc, 100)) * 2
+        self.cv3 = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(DWConv(x, x, 3), Conv(x, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                nn.Conv2d(c3, self.nc, 1),
+            )
+            for x in ch
+        )
 
 
 class Segment(Detect):
