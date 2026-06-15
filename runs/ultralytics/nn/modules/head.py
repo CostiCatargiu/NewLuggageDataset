@@ -15,7 +15,18 @@ from .conv import Conv, DWConv
 from .transformer import MLP, DeformableTransformerDecoder, DeformableTransformerDecoderLayer
 from .utils import bias_init_with_prob, linear_init
 
-__all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10Detect", "DetectCGC", "DetectLKACls"
+__all__ = (
+    "Detect",
+    "Segment",
+    "Pose",
+    "Classify",
+    "OBB",
+    "RTDETRDecoder",
+    "v10Detect",
+    "DetectCGC",
+    "DetectLKACls",
+    "DetectSmallCls",
+)
 
 
 class Detect(nn.Module):
@@ -262,6 +273,66 @@ class DetectLKACls(Detect):
         """Standard Detect forward, but cls branch input is LKA-augmented (zero-gated, per scale)."""
         for i in range(self.nl):
             xc = x[i] + self.cls_gamma[i] * self.cls_lka[i](x[i])  # cls input only
+            x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](xc)), 1)
+        if self.training:  # Training path
+            return x
+        y = self._inference(x)
+        return y if self.export else (y, x)
+
+
+class DetectSmallCls(Detect):
+    """Detect with a per-scale, zero-gated SMALL-kernel (local-detail) cls branch.
+
+    Motivation (weapon_noaug 70% ablation, rounds 13-15): per-class
+    AP50_small analysis shows the small-object mAP drop introduced by
+    r11_widefuse_70 (and every other round-6-14 P4-BU/TD variant) is
+    overwhelmingly concentrated in the 'other' class (-14.98pp AP50_small
+    vs baseline; weapon classes only -1.47 to -2.34pp). DetectLKACls
+    (round 13) tried isolating a change to the cls branch with a k=11
+    ZGLKA -- but FAILED (-0.38 to -0.86 mAP50 vs its baseline): a k=11
+    receptive field is too coarse and SMOOTHS OUT exactly the fine local
+    detail a per-anchor classifier needs for small, visually-ambiguous
+    'other' objects. DetectCGC (global P5 context) also under-performed
+    for the same reason in the opposite direction (too global).
+
+    This module takes the OPPOSITE regime from DetectLKACls: a genuinely
+    SMALL receptive field (k=3, dilation=1, depthwise + GroupNorm + SiLU --
+    the same "small" branch design validated structurally in
+    ZGLSKAWideFuse3), applied per-scale, ISOLATED to the cls-branch input
+    only, behind its own per-channel zero-init gate:
+        cls_in_i = x_i + gamma_i * SmallDetail(k)(x_i)
+        x_i = cat([cv2_i(x_i), cv3_i(cls_in_i)], 1)
+    Box branch (cv2) input stays raw -> regression untouched.
+    gamma = 0 at init -> exact stock Detect at epoch 0; with a stock body
+    at index 21 (or wherever Detect sits), pretrained Detect box/cls
+    weights transfer as usual (only the new cls_small/cls_gamma params are
+    fresh).
+
+    Intended pairing: combine with WideFuse@P4-BU UNCHANGED (= r11_widefuse_70
+    architecture, 79.40 mAP50) so the proven shared-feature gain is kept,
+    and this module ADDITIONALLY targets the 'other'-class cls-discriminability
+    loss directly, without re-touching the shared P4 features.
+
+    Drop-in YAML replacement:  - [[14, 17, 20], 1, DetectSmallCls, [nc, 3]]
+    """
+
+    def __init__(self, nc=80, k=3, ch=()):
+        """Initialize DetectSmallCls with the standard Detect layers plus a per-scale gated small-kernel cls branch."""
+        super().__init__(nc, ch)
+        self.cls_small = nn.ModuleList(
+            nn.Sequential(
+                nn.Conv2d(c, c, k, 1, k // 2, groups=c),
+                nn.GroupNorm(1, c),
+                nn.SiLU(),
+            )
+            for c in ch
+        )
+        self.cls_gamma = nn.ParameterList(nn.Parameter(torch.zeros(c, 1, 1)) for c in ch)
+
+    def forward(self, x):
+        """Standard Detect forward, but cls branch input is small-kernel-detail-augmented (zero-gated, per scale)."""
+        for i in range(self.nl):
+            xc = x[i] + self.cls_gamma[i] * self.cls_small[i](x[i])  # cls input only
             x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](xc)), 1)
         if self.training:  # Training path
             return x

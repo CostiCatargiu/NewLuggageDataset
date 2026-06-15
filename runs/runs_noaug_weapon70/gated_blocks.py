@@ -51,7 +51,8 @@ import torch.nn.functional as F
 
 __all__ = ["ZGLSKA", "ZGGC", "ZGSE", "ZGMHSA", "ZGStar", "ZGDSConv", "ZGLSKASG",
            "ZGLSKAStripFuse", "ZGLSKAMultiDil",
-           "ZGLSKAWideFuse", "ZGLSKARefine", "ZGLSKAExpand"]
+           "ZGLSKAWideFuse", "ZGLSKARefine", "ZGLSKAExpand",
+           "ZGLSKAGCFuse", "ZGLSKAWideFuse3", "ZGLSKACompactFuse"]
 
 
 class LKA(nn.Module):
@@ -542,6 +543,151 @@ class ZGLSKAExpand(nn.Module):
         return x + self.gamma * self.pw2(self.lka(self.act(self.pw1(x))))
 
 
+class ZGLSKAGCFuse(nn.Module):
+    """Round 14 -- fuse k_sq LKA (local, proven) with GCNet-style global
+    context, full-width streams (WideFuse structure), one gamma. Mirror of
+    the fork's ultralytics/nn/modules/block.py::ZGLSKAGCFuse, included here
+    so this file's __all__/self-test stay importable standalone.
+
+    YAML args: [c2, k, r]  e.g. [512, 11, 8]
+    """
+
+    def __init__(self, c1, c2, k=11, r=8):
+        super().__init__()
+        assert c1 == c2, "ZGLSKAGCFuse preserves channels"
+        self.pw1 = nn.Conv2d(c1, 2 * c1, 1)
+        self.act = nn.SiLU()
+        self.lka = LKA(c1, k)
+        c_ = max(c1 // r, 16)
+        self.gc_attn = nn.Conv2d(c1, 1, 1)
+        self.gc_transform = nn.Sequential(
+            nn.Conv2d(c1, c_, 1),
+            nn.GroupNorm(1, c_),
+            nn.SiLU(),
+            nn.Conv2d(c_, c1, 1),
+        )
+        self.pw2 = nn.Conv2d(2 * c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def _gc(self, z):
+        b, c, h, w = z.shape
+        w_ = self.gc_attn(z).view(b, 1, h * w).softmax(dim=-1)
+        ctx = (z.view(b, c, h * w) @ w_.transpose(1, 2)).view(b, c, 1, 1)
+        return z + self.gc_transform(ctx)
+
+    def forward(self, x):
+        z1, z2 = self.act(self.pw1(x)).chunk(2, dim=1)
+        y = torch.cat([self.lka(z1), self._gc(z2)], dim=1)
+        return x + self.gamma * self.pw2(y)
+
+
+class ZGLSKAWideFuse3(nn.Module):
+    """Round 15 -- WideFuse + a NEW small-receptive-field detail branch, one gamma.
+
+    Cross-round finding (17 variants, rounds 6-14 + arch_zg): baseline's
+    mAP50_small=61.79% and "other"-class small AP50=38.57% have never been
+    approached by ANY tested architecture. r11_widefuse_70 (best overall,
+    79.40%) has mAP50_small=56.65% and "other"-small AP50=23.59%. Every
+    P4/head-focused module tried reproduces this trade-off, regardless of
+    where it sits -- because WideFuse's two branches (k=11 square ZGLKA +
+    strip-23 LSKA) are BOTH large-receptive-field operators; neither
+    preserves fine small-scale detail at P4-BU.
+
+    Fix: add a THIRD, genuinely small-RF branch (k_small=3 depthwise conv,
+    dilation=1, GroupNorm+SiLU) in parallel with WideFuse's two proven
+    branches, under ONE gamma. pw1 expands c1 -> 3*c1 so each branch gets
+    its own full c1-width stream (no channel starvation).
+
+    This is a STRICT GENERALIZATION of ZGLSKAWideFuse: at init gamma=0
+    (exact identity, same as r11's checkpoint), and during training the
+    small-RF branch can shrink toward zero if unhelpful, collapsing back to
+    ~WideFuse behavior. Downside risk is "ties r11_widefuse_70 (79.40)", not
+    "regresses below it".
+
+    y = x + gamma * pw2( cat[ LKA(k_sq)(z1), LSKAStrip(k_strip)(z2), small(z3) ] ),
+    z1, z2, z3 = act(pw1(x)).chunk(3, dim=1), each c1-wide.
+    pw1: c1 -> 3*c1, pw2: 3*c1 -> c1.
+
+    YAML args: [c2, k_sq, k_strip, k_small]  e.g. [512, 11, 23, 3]
+    """
+
+    def __init__(self, c1, c2, k_sq=11, k_strip=23, k_small=3):
+        super().__init__()
+        assert c1 == c2, "ZGLSKAWideFuse3 preserves channels"
+        self.pw1 = nn.Conv2d(c1, 3 * c1, 1)
+        self.act = nn.SiLU()
+        self.lka = LKA(c1, k_sq)
+        self.strip = LSKAStrip(c1, k_size=k_strip)
+        self.small = nn.Sequential(
+            nn.Conv2d(c1, c1, k_small, 1, k_small // 2, groups=c1),
+            nn.GroupNorm(1, c1),
+            nn.SiLU(),
+        )
+        self.pw2 = nn.Conv2d(3 * c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        z1, z2, z3 = self.act(self.pw1(x)).chunk(3, dim=1)
+        y = torch.cat([self.lka(z1), self.strip(z2), self.small(z3)], dim=1)
+        return x + self.gamma * self.pw2(y)
+
+
+class ZGLSKACompactFuse(nn.Module):
+    """Round 16 -- WideFuse shape, but swap the elongated strip-23 branch for
+    a COMPACT multi-scale SMALL-kernel branch (k3/dilation1 + k5/dilation2).
+    Mirror of the fork's ultralytics/nn/modules/block.py::ZGLSKACompactFuse,
+    included here so this file's __all__/self-test stay importable
+    standalone.
+
+    Cross-round finding (rounds 6-15): every architecture fusing k=11 ZGLKA
+    with another LARGE-RF shape (strip-23 in WideFuse=79.40, GCNet context in
+    GCFuse=78.23) traded away small-object/"other"-class AP50 for overall
+    mAP50. WideFuse3 (round 15) ADDED a third small-RF branch as a strict
+    superset of WideFuse. This module instead REPLACES the second large-RF
+    branch (strip-23) with a small-RF one, keeping the proven k11 ZGLKA
+    branch and WideFuse's 2-branch/expand-then-fuse shape (pw1: c1->2*c1,
+    pw2: 2*c1->c1, one gamma) unchanged.
+
+    The "strip-23" role is filled by a compact multi-scale fusion of two
+    SMALL dilated depthwise convs (k=3/dilation=1, RF=3, and k=5/dilation=2,
+    RF=9) summed, then GroupNorm+SiLU -- cheap, local, multi-scale fine
+    detail (ZGLKAMultiDil-style but at small kernel sizes).
+
+    y = x + gamma * pw2( cat[ LKA(k_sq)(z1), SiLU(GN(dwA(z2)+dwB(z2))) ] ),
+    z1, z2 = act(pw1(x)).chunk(2, dim=1), each c1-wide.
+    pw1: c1 -> 2*c1, pw2: 2*c1 -> c1.
+
+    gamma=0 at init -> exact identity, append-only Detect-remap loader
+    applies as usual. Unlike WideFuse3 (additive superset of WideFuse), this
+    is a DIFFERENT 2-branch architecture at roughly WideFuse's parameter
+    budget (same shape, smaller kernels) -- higher risk/reward: if
+    "other"-small recovers without losing overall mAP50, it suggests the
+    strip-23 branch itself (not just "a second large-RF branch") was the
+    binding constraint.
+
+    YAML args: [c2, k_sq, k_a, d_a, k_b, d_b]  e.g. [512, 11, 3, 1, 5, 2]
+    """
+
+    def __init__(self, c1, c2, k_sq=11, k_a=3, d_a=1, k_b=5, d_b=2):
+        super().__init__()
+        assert c1 == c2, "ZGLSKACompactFuse preserves channels"
+        self.pw1 = nn.Conv2d(c1, 2 * c1, 1)
+        self.act = nn.SiLU()
+        self.lka = LKA(c1, k_sq)
+        self.branch_a = nn.Conv2d(c1, c1, k_a, 1, ((k_a - 1) // 2) * d_a, groups=c1, dilation=d_a)
+        self.branch_b = nn.Conv2d(c1, c1, k_b, 1, ((k_b - 1) // 2) * d_b, groups=c1, dilation=d_b)
+        self.compact_norm = nn.GroupNorm(1, c1)
+        self.compact_act = nn.SiLU()
+        self.pw2 = nn.Conv2d(2 * c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        z1, z2 = self.act(self.pw1(x)).chunk(2, dim=1)
+        compact = self.compact_act(self.compact_norm(self.branch_a(z2) + self.branch_b(z2)))
+        y = torch.cat([self.lka(z1), compact], dim=1)
+        return x + self.gamma * self.pw2(y)
+
+
 if __name__ == "__main__":
     # Sanity: forward shapes + exact identity at init (gamma == 0).
     torch.manual_seed(0)
@@ -553,6 +699,8 @@ if __name__ == "__main__":
         (ZGLSKAStripFuse, 256, (11, 23)), (ZGLSKAMultiDil, 256, (7, 2, 11, 3)),
         (ZGLSKAWideFuse, 256, (11, 23)), (ZGLSKARefine, 256, (11, 3)),
         (ZGLSKAExpand, 256, (11, 2)),
+        (ZGLSKAGCFuse, 256, (11, 8)), (ZGLSKAWideFuse3, 256, (11, 23, 3)),
+        (ZGLSKACompactFuse, 256, (11, 3, 1, 5, 2)),
     ]:
         m = cls(c, c, *args).eval()
         x = torch.randn(2, c, 16, 16)

@@ -72,6 +72,9 @@ __all__ = (
     "ZGLSKAWideFuse",
     "ZGLSKARefine",
     "ZGLSKAExpand",
+    "ZGLSKAGCFuse",
+    "ZGLSKAWideFuse3",
+    "ZGLSKACompactFuse",
 )
 
 
@@ -2269,4 +2272,117 @@ class ZGLSKAGCFuse(nn.Module):
     def forward(self, x):
         z1, z2 = self.act(self.pw1(x)).chunk(2, dim=1)
         y = torch.cat([self.lka(z1), self._gc(z2)], dim=1)
+        return x + self.gamma * self.pw2(y)
+
+
+class ZGLSKAWideFuse3(nn.Module):
+    """Round 15 — WideFuse + a NEW small-receptive-field detail branch, one gamma.
+
+    Cross-round finding (17 variants, rounds 6-14 + arch_zg): baseline's
+    mAP50_small=61.79% and "other"-class small AP50=38.57% have never been
+    approached by ANY tested architecture. The closest is 59.64% mAP50_small
+    (a weak overall performer, 78.66%). r11_widefuse_70 (best overall, 79.40%)
+    has mAP50_small=56.65% and "other"-small AP50=23.59% -- a ~15pp relative
+    drop on "other"-small vs baseline. EVERY P4/head-focused module tried
+    (LKA, strip, GC, star, multi-dil, P2/P3/P4 fusions, cls-branch context)
+    reproduces this same trade-off regardless of where it sits.
+
+    Diagnosis: ZGLSKAWideFuse's two branches (k=11 square ZGLKA + strip-23
+    LSKA) are BOTH large-receptive-field operators -- neither preserves fine,
+    small-scale detail at P4-BU (layer 17), which is exactly the capacity
+    "other"-small needs.
+
+    Fix: add a THIRD, genuinely small-RF branch (k_small=3 depthwise conv,
+    dilation=1, GroupNorm+SiLU -- a pure fine-detail pass) in parallel with
+    WideFuse's two proven branches, all under ONE gamma. pw1 expands
+    c1 -> 3*c1 so each branch gets its own full c1-width stream (no channel
+    starvation, same fix WideFuse itself applied to StripFuse's 2-way split).
+
+    This is a STRICT GENERALIZATION of ZGLSKAWideFuse: at init gamma=0
+    (exact identity, same as WideFuse and the same as r11's checkpoint), and
+    during training the small-RF branch's contribution can shrink toward zero
+    if unhelpful, collapsing back to ~WideFuse behavior. Downside risk is
+    "ties r11_widefuse_70 (79.40)", not "regresses below it".
+
+    y = x + gamma * pw2( cat[ ZGLKA(k_sq)(z1), LSKA(k_strip)(z2), small(z3) ] ),
+    z1, z2, z3 = act(pw1(x)).chunk(3, dim=1), each c1-wide.
+    pw1: c1 -> 3*c1, pw2: 3*c1 -> c1.
+
+    YAML args: [c2, k_sq, k_strip, k_small]  e.g. [512, 11, 23, 3]
+    """
+
+    def __init__(self, c1, c2, k_sq=11, k_strip=23, k_small=3):
+        super().__init__()
+        assert c1 == c2, "ZGLSKAWideFuse3 preserves channels"
+        self.pw1 = nn.Conv2d(c1, 3 * c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c1, k_sq)
+        self.strip = LSKA(c1, k_size=k_strip)
+        self.small = nn.Sequential(
+            nn.Conv2d(c1, c1, k_small, 1, k_small // 2, groups=c1),
+            nn.GroupNorm(1, c1),
+            nn.SiLU(),
+        )
+        self.pw2 = nn.Conv2d(3 * c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        z1, z2, z3 = self.act(self.pw1(x)).chunk(3, dim=1)
+        y = torch.cat([self.lka(z1), self.strip(z2), self.small(z3)], dim=1)
+        return x + self.gamma * self.pw2(y)
+
+
+class ZGLSKACompactFuse(nn.Module):
+    """Round 16 — WideFuse shape, but swap the elongated strip-23 branch for
+    a COMPACT multi-scale SMALL-kernel branch (k3/dilation1 + k5/dilation2).
+
+    Cross-round finding (rounds 6-15): every architecture that fused k=11
+    ZGLKA with another LARGE-receptive-field shape (strip-23 LSKA in
+    WideFuse, 79.40; GCNet global context in GCFuse, 78.23) traded away
+    small-object / "other"-class AP50 for overall mAP50. ZGLSKAWideFuse3
+    (round 15) tested ADDING a third small-RF branch alongside both large
+    branches -- a strict superset. This module tests the more aggressive
+    alternative: directly REPLACING the second large-RF branch (strip-23)
+    with a small-RF one, keeping the proven k11 ZGLKA branch and the
+    WideFuse 2-branch/expand-then-fuse shape (pw1: c1->2*c1, pw2: 2*c1->c1,
+    one gamma) unchanged.
+
+    The "strip-23" role is filled by a compact multi-scale fusion of two
+    SMALL dilated depthwise convs (k=3/dilation=1, RF=3, and k=5/dilation=2,
+    RF=9) summed, then GroupNorm+SiLU -- cheap, local, multi-scale fine
+    detail, in the same spirit as ZGLKAMultiDil (round 10) but at small
+    kernel sizes instead of k7/k11.
+
+    y = x + gamma * pw2( cat[ ZGLKA(k_sq)(z1), SiLU(GN(dwA(z2)+dwB(z2))) ] ),
+    z1, z2 = act(pw1(x)).chunk(2, dim=1), each c1-wide.
+    pw1: c1 -> 2*c1, pw2: 2*c1 -> c1.
+
+    gamma=0 at init -> exact identity, append-only Detect-remap loader
+    applies as usual. Unlike WideFuse3 (additive superset of WideFuse),
+    this is a DIFFERENT 2-branch architecture at the same parameter budget
+    as WideFuse (~same shape, smaller kernels) -- higher risk/reward: if
+    "other"-small recovers without losing overall mAP50, it suggests the
+    strip-23 branch itself (not just "a second large-RF branch") was the
+    binding constraint.
+
+    YAML args: [c2, k_sq, k_a, d_a, k_b, d_b]  e.g. [512, 11, 3, 1, 5, 2]
+    """
+
+    def __init__(self, c1, c2, k_sq=11, k_a=3, d_a=1, k_b=5, d_b=2):
+        super().__init__()
+        assert c1 == c2, "ZGLSKACompactFuse preserves channels"
+        self.pw1 = nn.Conv2d(c1, 2 * c1, 1)
+        self.act = nn.SiLU()
+        self.lka = ZGLKA(c1, k_sq)
+        self.branch_a = nn.Conv2d(c1, c1, k_a, 1, ((k_a - 1) // 2) * d_a, groups=c1, dilation=d_a)
+        self.branch_b = nn.Conv2d(c1, c1, k_b, 1, ((k_b - 1) // 2) * d_b, groups=c1, dilation=d_b)
+        self.compact_norm = nn.GroupNorm(1, c1)
+        self.compact_act = nn.SiLU()
+        self.pw2 = nn.Conv2d(2 * c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        z1, z2 = self.act(self.pw1(x)).chunk(2, dim=1)
+        compact = self.compact_act(self.compact_norm(self.branch_a(z2) + self.branch_b(z2)))
+        y = torch.cat([self.lka(z1), compact], dim=1)
         return x + self.gamma * self.pw2(y)

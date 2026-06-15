@@ -81,6 +81,8 @@ from .block import (
     ZGLSKARefine,
     ZGLSKAExpand,
     ZGLSKAGCFuse,
+    ZGLSKAWideFuse3,
+    ZGLSKACompactFuse,
 )
 from .conv import (
     CBAM,
@@ -115,7 +117,19 @@ from .conv import (
     SmallObjectRefinement,
     SpatialAttention,
 )
-from .head import OBB, Classify, Detect, DetectCGC, DetectLKACls, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
+from .head import (
+    OBB,
+    Classify,
+    Detect,
+    DetectCGC,
+    DetectLKACls,
+    DetectSmallCls,
+    Pose,
+    RTDETRDecoder,
+    Segment,
+    WorldDetect,
+    v10Detect,
+)
 from .transformer import (
     AIFI,
     MLP,
@@ -191,6 +205,8 @@ __all__ = (
     "ZGLSKARefine",
     "ZGLSKAExpand",
     "ZGLSKAGCFuse",
+    "ZGLSKAWideFuse3",
+    "ZGLSKACompactFuse",
     "C3k2",
     "SCDown",
     "C2fPSA",
@@ -207,6 +223,7 @@ __all__ = (
     "Detect",
     "DetectCGC",
     "DetectLKACls",
+    "DetectSmallCls",
     "Segment",
     "Pose",
     "Classify",
