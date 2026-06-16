@@ -28,6 +28,7 @@ __all__ = (
     "DetectSmallCls",
     "DetectDeepCls",
     "DetectWideCls",
+    "DetectAux",
 )
 
 
@@ -408,6 +409,61 @@ class DetectWideCls(Detect):
             )
             for x in ch
         )
+
+
+class DetectAux(Detect):
+    """Detect with a TRAIN-ONLY auxiliary detection head (deep supervision).
+
+    Round 20 -- the idea (and the only legitimate version of an "auxiliary
+    head"): add a second, parallel detection head over the SAME P3/P4/P5
+    feature maps as the main head, supervise it during training, and DROP it at
+    inference. The auxiliary head gives the shared neck features an extra
+    gradient signal (a second, independent set of box/cls towers fitting the
+    same targets), with ZERO inference/deploy cost -- at eval the module behaves
+    exactly like stock Detect.
+
+    Motivation: after rounds 1-19 (~35 inference-path architecture variants) all
+    came up flat vs loss tuning, deep supervision is the one untried lever that
+    is a *training-signal* change rather than an inference-structure change. The
+    aux towers share the main strides, so the standard v8DetectionLoss is reused
+    for both (see utils/loss.py::DetectAuxLoss). Up-/down-weight the aux term via
+    DetectAuxLoss.aux_weight.
+
+    YAML: drop-in for Detect -- e.g.  - [[14, 17, 20], 1, DetectAux, [nc]]
+    """
+
+    def __init__(self, nc=80, ch=()):
+        """Initialize the main Detect plus a parallel auxiliary box/cls head."""
+        super().__init__(nc, ch)
+        c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))
+        self.cv2a = nn.ModuleList(
+            nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch
+        )
+        self.cv3a = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(DWConv(x, x, 3), Conv(x, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                nn.Conv2d(c3, self.nc, 1),
+            )
+            for x in ch
+        )
+
+    def forward(self, x):
+        """Training: return {'main','aux'} for DetectAuxLoss. Inference: stock Detect (aux dropped)."""
+        main = [torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1) for i in range(self.nl)]
+        if self.training:
+            aux = [torch.cat((self.cv2a[i](x[i]), self.cv3a[i](x[i])), 1) for i in range(self.nl)]
+            return {"main": main, "aux": aux}
+        y = self._inference(main)
+        return y if self.export else (y, main)
+
+    def bias_init(self):
+        """Initialize biases for the main head (super) and the auxiliary towers."""
+        super().bias_init()
+        m = self
+        for a, b, s in zip(m.cv2a, m.cv3a, m.stride):
+            a[-1].bias.data[:] = 1.0  # box
+            b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls
 
 
 class Segment(Detect):

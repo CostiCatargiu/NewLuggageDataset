@@ -741,3 +741,27 @@ class E2EDetectLoss:
         one2one = preds["one2one"]
         loss_one2one = self.one2one(one2one, batch)
         return loss_one2many[0] + loss_one2one[0], loss_one2many[1] + loss_one2one[1]
+
+
+class DetectAuxLoss:
+    """Train-only auxiliary-head deep-supervision loss.
+
+    Round 20 -- DetectAux adds a parallel detection head over the same feature
+    maps as the main head; it is supervised during training and DROPPED at
+    inference (zero deploy cost). The total loss is the main detection loss plus
+    a down-weighted auxiliary detection loss, giving the shared neck features an
+    extra gradient signal. Both heads share strides, so the same v8DetectionLoss
+    is reused for each. Mirrors E2EDetectLoss's two-loss structure.
+    """
+
+    def __init__(self, model, aux_weight=0.25):
+        """Initialize with a shared detection loss and the auxiliary weight."""
+        self.det = v8DetectionLoss(model, tal_topk=10)
+        self.aux_weight = aux_weight
+
+    def __call__(self, preds, batch):
+        """Main loss + aux_weight * auxiliary loss; logs the main head's items."""
+        preds = preds[1] if isinstance(preds, tuple) else preds
+        loss_main = self.det(preds["main"], batch)
+        loss_aux = self.det(preds["aux"], batch)
+        return loss_main[0] + self.aux_weight * loss_aux[0], loss_main[1]
