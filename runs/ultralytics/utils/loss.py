@@ -755,9 +755,12 @@ class DetectAuxLoss:
     """
 
     def __init__(self, model, aux_weight=0.25):
-        """Initialize with a shared detection loss and the auxiliary weight."""
+        """Initialize with a shared detection loss and the auxiliary weight.
+
+        Reads aux_weight from the DetectAux head (set via YAML) when present.
+        """
         self.det = v8DetectionLoss(model, tal_topk=10)
-        self.aux_weight = aux_weight
+        self.aux_weight = getattr(model.model[-1], "aux_weight", aux_weight)
 
     def __call__(self, preds, batch):
         """Main loss + aux_weight * auxiliary loss; logs the main head's items.

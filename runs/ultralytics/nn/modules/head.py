@@ -432,9 +432,17 @@ class DetectAux(Detect):
     YAML: drop-in for Detect -- e.g.  - [[14, 17, 20], 1, DetectAux, [nc]]
     """
 
-    def __init__(self, nc=80, ch=()):
-        """Initialize the main Detect plus a parallel auxiliary box/cls head."""
+    def __init__(self, nc=80, aux_weight=0.25, ch=()):
+        """Initialize the main Detect plus a parallel auxiliary box/cls head.
+
+        YAML may be [nc] (default aux_weight) or [nc, aux_weight]. parse_model
+        appends the channel list as the last positional arg, so when no weight is
+        given aux_weight receives that list -- detect and swap for compatibility.
+        """
+        if isinstance(aux_weight, (list, tuple)):  # old [nc] yaml -> ch landed here
+            ch, aux_weight = aux_weight, 0.25
         super().__init__(nc, ch)
+        self.aux_weight = float(aux_weight)
         c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))
         self.cv2a = nn.ModuleList(
             nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch
