@@ -152,21 +152,26 @@ ARCH_P2DEEPCLS = BASE_0_20 + """
 TAL_DEFAULT = dict(tal_topk=10, tal_alpha=0.5, tal_beta=6.0)
 
 RUNS = [
+    # P2 runs add a brand-new stride-4 scale + fresh 4-scale Detect head (the
+    # 3-scale pretrained head cannot remap to 4 scales), so they retrain the most
+    # fresh structure and need a LONGER horizon -- and the cosine LR schedule must
+    # SPAN those epochs to anneal the new scale properly (not resume after 80).
+    # The cls-tower runs only swap cv3 on a fully-transferred model -> 80 is plenty.
     {"name": "r18_p2head_70",
      "desc": "[1/5] stock + P2 (stride-4) head, plain Detect, lightweight C3k2 @ P2 -- scale-only control: does small-object resolution alone help?",
-     "yaml_content": ARCH_P2HEAD, "batch": 28, "seed": 0},
+     "yaml_content": ARCH_P2HEAD, "batch": 28, "seed": 0, "epochs": 150},
     {"name": "r18_p2deepcls_70",
      "desc": "[2/5] stock + P2 head + DetectDeepCls -- THE smart one: small-object RESOLUTION + cls CAPACITY together (small-'other' fails on both: AR0.86/AP0.29)",
-     "yaml_content": ARCH_P2DEEPCLS, "batch": 24, "seed": 0},
+     "yaml_content": ARCH_P2DEEPCLS, "batch": 24, "seed": 0, "epochs": 150},
     {"name": "r18_deepcls_70",
      "desc": "[3/5] stock + DetectDeepCls (cls tower 2->4 blocks) -- cls capacity at normal scales; decomposes run 2 (scale vs cls vs interaction)",
-     "yaml_content": ARCH_DEEPCLS, "batch": 48, "seed": 0},
+     "yaml_content": ARCH_DEEPCLS, "batch": 48, "seed": 0, "epochs": 80},
     {"name": "r18_widecls_70",
      "desc": "[4/5] stock + DetectWideCls (cls tower 2x width) -- depth-vs-width ablation vs run 3",
-     "yaml_content": ARCH_WIDECLS, "batch": 46, "seed": 0},
+     "yaml_content": ARCH_WIDECLS, "batch": 46, "seed": 0, "epochs": 80},
     {"name": "r18_widefuse_deepcls_70",
      "desc": "[5/5] r11_widefuse backbone + DetectDeepCls -- does cls capacity stack on the best backbone?",
-     "yaml_content": ARCH_WIDEFUSE_DEEPCLS, "batch": 34, "seed": 0},
+     "yaml_content": ARCH_WIDEFUSE_DEEPCLS, "batch": 34, "seed": 0, "epochs": 80},
 ]
 
 
@@ -209,7 +214,7 @@ def run_experiment(run):
     print(f"\n{'#' * 70}")
     print(f"# {run['name']}")
     print(f"# {run['desc']}")
-    print(f"# TAL: DEFAULT   Batch: {run['batch']}   Seed: {run['seed']}")
+    print(f"# TAL: DEFAULT   Batch: {run['batch']}   Seed: {run['seed']}   Epochs: {run.get('epochs', 80)}")
     print(f"{'#' * 70}\n")
 
     start_time = time.time()
@@ -220,7 +225,7 @@ def run_experiment(run):
 
         model.train(
             data=DATA_YAML,
-            epochs=80,
+            epochs=run.get("epochs", 80),
             imgsz=IMG_SIZE,
             batch=run["batch"],
             device=DEVICE,

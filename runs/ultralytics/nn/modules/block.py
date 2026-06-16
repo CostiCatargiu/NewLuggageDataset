@@ -76,6 +76,7 @@ __all__ = (
     "ZGLSKAWideFuse3",
     "ZGLSKACompactFuse",
     "ZGLSKASelectFuse",
+    "WeightedConcat",
 )
 
 
@@ -2458,3 +2459,35 @@ class ZGLSKASelectFuse(nn.Module):
         w = self.router(x).softmax(dim=1).unsqueeze(2)  # B,3,1,H,W (per-location)
         fused = (w * feats).sum(dim=1)  # B,C,H,W
         return x + self.gamma * self.pw2(fused)
+
+
+class WeightedConcat(nn.Module):
+    """Round 19 -- BiFPN-style learnable weighted fusion (drop-in for Concat).
+
+    The stock YOLOv12 neck fuses scales with hard Concat -- every input branch
+    contributes equally and unconditionally. EfficientDet's BiFPN showed that
+    making the fusion weights LEARNABLE (per-branch, non-negative) lets the
+    network down-weight uninformative scale inputs and emphasise the ones that
+    matter, yielding more discriminative fused features without growing the
+    backbone. This is the one neck-level lever untouched by the rounds 1-18
+    single-module search (which only inserted blocks into a fixed-topology PAN).
+
+    Each input branch i is scaled by a learnable non-negative weight w_i before
+    concatenation:  out = cat([relu(w_i) * x_i], dim).
+    At init all w_i = 1 -> relu(w_i) = 1 -> EXACTLY standard Concat, so the
+    pretrained neck transfers unchanged and the model only *learns* to reweight
+    the branches during training (identity-at-init, same discipline as the ZG
+    family). Pairs with the BiFPN extra cross-scale edge (3-way fusion at P4)
+    in the round-19 YAMLs.
+
+    YAML args: [dimension, n_inputs]  e.g. [1, 2] or [1, 3]
+    """
+
+    def __init__(self, dimension=1, n=2):
+        super().__init__()
+        self.d = dimension
+        self.w = nn.Parameter(torch.ones(n))
+
+    def forward(self, x):
+        w = torch.relu(self.w)
+        return torch.cat([w[i] * x[i] for i in range(len(x))], self.d)

@@ -58,6 +58,7 @@ from ultralytics.nn.modules import (
     ZGLSKAWideFuse3,
     ZGLSKACompactFuse,
     ZGLSKASelectFuse,
+    WeightedConcat,
     C2fCIB,
     C2fPSA,
     C3Ghost,
@@ -1130,7 +1131,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is ZGP2Fuse:  # two inputs: [P3_head, P2_backbone]; output = P3 channels
             c2 = ch[f[0]]
             args = [ch[f[0]], ch[f[1]]]
-        elif m is Concat:
+        elif m in {Concat, WeightedConcat}:
             c2 = sum(ch[x] for x in f)
         elif m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
             args.append([ch[x] for x in f])
