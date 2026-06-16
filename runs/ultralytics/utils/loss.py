@@ -760,8 +760,15 @@ class DetectAuxLoss:
         self.aux_weight = aux_weight
 
     def __call__(self, preds, batch):
-        """Main loss + aux_weight * auxiliary loss; logs the main head's items."""
+        """Main loss + aux_weight * auxiliary loss; logs the main head's items.
+
+        Training: preds is {"main", "aux"} -> supervise both. Validation: the
+        model is in eval mode and returns only the main feats (no aux), so fall
+        back to the plain detection loss.
+        """
         preds = preds[1] if isinstance(preds, tuple) else preds
+        if not isinstance(preds, dict):  # val/eval path: only main head present
+            return self.det(preds, batch)
         loss_main = self.det(preds["main"], batch)
         loss_aux = self.det(preds["aux"], batch)
         return loss_main[0] + self.aux_weight * loss_aux[0], loss_main[1]
