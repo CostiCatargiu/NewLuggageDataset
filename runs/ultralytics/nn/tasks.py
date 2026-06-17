@@ -78,6 +78,8 @@ from ultralytics.nn.modules import (
     DetectDeepCls,
     DetectWideCls,
     DetectAux,
+    DetectDecoupled,
+    DetectObj,
     DWConv,
     DWConvTranspose2d,
     Focus,
@@ -108,6 +110,7 @@ from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colors
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import (
     DetectAuxLoss,
+    DetectObjLoss,
     E2EDetectLoss,
     v8ClassificationLoss,
     v8DetectionLoss,
@@ -429,6 +432,8 @@ class DetectionModel(BaseModel):
         """Initialize the loss criterion for the DetectionModel."""
         if isinstance(self.model[-1], DetectAux):
             return DetectAuxLoss(self)
+        if isinstance(self.model[-1], DetectObj):
+            return DetectObjLoss(self)
         return E2EDetectLoss(self) if getattr(self, "end2end", False) else v8DetectionLoss(self)
 
 
@@ -1140,11 +1145,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f[0]], ch[f[1]]]
         elif m in {Concat, WeightedConcat}:
             c2 = sum(ch[x] for x in f)
-        elif m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, DetectAux, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
+        elif m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, DetectAux, DetectDecoupled, DetectObj, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
             args.append([ch[x] for x in f])
             if m is Segment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
-            if m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, DetectAux, Segment, Pose, OBB}:
+            if m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, DetectAux, DetectDecoupled, DetectObj, Segment, Pose, OBB}:
                 m.legacy = legacy
         elif m is RTDETRDecoder:  # special case, channels arg must be passed in index 1
             args.insert(1, [ch[x] for x in f])

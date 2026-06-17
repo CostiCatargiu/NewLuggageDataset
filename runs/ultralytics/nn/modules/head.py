@@ -29,6 +29,8 @@ __all__ = (
     "DetectDeepCls",
     "DetectWideCls",
     "DetectAux",
+    "DetectDecoupled",
+    "DetectObj",
 )
 
 
@@ -472,6 +474,89 @@ class DetectAux(Detect):
         for a, b, s in zip(m.cv2a, m.cv3a, m.stride):
             a[-1].bias.data[:] = 1.0  # box
             b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls
+
+
+class DetectDecoupled(Detect):
+    """Task-decoupled head: box and cls read SEPARATE feature maps.
+
+    Round 24 -- every prior head fed the SAME shared neck feature to both the
+    box (cv2) and cls (cv3) branches, so any classification gain on the hard
+    "other" class has to compete with the box-regression objective on the same
+    tensor. This routes the box branch to the main neck features and the cls
+    branch to a DEDICATED cls feature pathway (separate conv layers / weights,
+    provided by the YAML), so classification gets its own representation,
+    uncompromised by localization.
+
+    YAML provides 2*nl inputs in order [box_p3, box_p4, box_p5, cls_p3, cls_p4,
+    cls_p5]; the first nl feed cv2 (box), the last nl feed cv3 (cls):
+      - [[14,17,20, 21,22,23], 1, DetectDecoupled, [nc]]
+    """
+
+    def __init__(self, nc=80, ch=()):
+        """Build cv2 over the box channels and cv3 over the cls channels."""
+        n = len(ch) // 2
+        box_ch, cls_ch = ch[:n], ch[n:]
+        super().__init__(nc, box_ch)  # cv2/cv3/dfl over box_ch; self.nl = n
+        c3 = max(cls_ch[0], min(self.nc, 100))
+        self.cv3 = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(DWConv(x, x, 3), Conv(x, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                nn.Conv2d(c3, self.nc, 1),
+            )
+            for x in cls_ch
+        )
+
+    def forward(self, x):
+        """cv2 reads box features x[:nl]; cv3 reads cls features x[nl:]."""
+        box, cls = x[: self.nl], x[self.nl:]
+        out = [torch.cat((self.cv2[i](box[i]), self.cv3[i](cls[i])), 1) for i in range(self.nl)]
+        if self.training:
+            return out
+        y = self._inference(out)
+        return y if self.export else (y, out)
+
+
+class DetectObj(Detect):
+    """Detect + explicit objectness (foreground/background) branch.
+
+    Round 24 -- the "other"-class failure is precision/ranking (recall ~0.84,
+    AP ~0.51): the detector finds the objects and over-scores background-like
+    anchors. YOLOv8/12 removed the objectness head; this re-adds one. Per anchor
+    it predicts an objectness logit; at INFERENCE the cls logits are shifted by
+    the objectness logit (score = sigmoid(cls + obj)) so low-objectness anchors
+    are suppressed -- directly attacking the false-positive / precision problem.
+
+    Train-only dict output {main, obj}; objectness is supervised by
+    DetectObjLoss (BCE vs the TAL foreground mask). At inference behaves as a
+    normal detector with objectness-reweighted scores.
+
+    Drop-in:  - [[14, 17, 20], 1, DetectObj, [nc]]
+    """
+
+    def __init__(self, nc=80, ch=()):
+        """Initialize the standard Detect plus a per-scale objectness branch."""
+        super().__init__(nc, ch)
+        self.cv4 = nn.ModuleList(
+            nn.Sequential(Conv(x, max(16, x // 4), 3), nn.Conv2d(max(16, x // 4), 1, 1)) for x in ch
+        )
+
+    def forward(self, x):
+        """Training: {main, obj}. Inference: cls logits shifted by objectness."""
+        obj = [self.cv4[i](x[i]) for i in range(self.nl)]
+        main = [torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1) for i in range(self.nl)]
+        if self.training:
+            return {"main": main, "obj": obj}
+        for i in range(self.nl):  # score = sigmoid(cls + obj): suppress low-objectness anchors
+            main[i][:, self.reg_max * 4:] = main[i][:, self.reg_max * 4:] + obj[i]
+        y = self._inference(main)
+        return y if self.export else (y, main)
+
+    def bias_init(self):
+        """Initialize the standard biases; objectness starts neutral (0)."""
+        super().bias_init()
+        for a in self.cv4:
+            a[-1].bias.data[:] = 0.0
 
 
 class Segment(Detect):
