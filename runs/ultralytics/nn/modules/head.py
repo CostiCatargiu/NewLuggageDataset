@@ -31,6 +31,7 @@ __all__ = (
     "DetectAux",
     "DetectDecoupled",
     "DetectObj",
+    "DetectDecoupledObj",
 )
 
 
@@ -534,26 +535,77 @@ class DetectObj(Detect):
     Drop-in:  - [[14, 17, 20], 1, DetectObj, [nc]]
     """
 
-    def __init__(self, nc=80, ch=()):
-        """Initialize the standard Detect plus a per-scale objectness branch."""
+    def __init__(self, nc=80, obj_beta=1.0, ch=()):
+        """Initialize Detect + objectness branch. obj_beta (<1) softens the
+        inference reweighting so it suppresses false positives gently instead of
+        over-suppressing (round 24 obj_beta=1.0 hurt overall mAP). YAML: [nc] or
+        [nc, obj_beta]; parse appends ch last, so swap if obj_beta got the list."""
+        if isinstance(obj_beta, (list, tuple)):
+            ch, obj_beta = obj_beta, 1.0
         super().__init__(nc, ch)
+        self.obj_beta = float(obj_beta)
         self.cv4 = nn.ModuleList(
             nn.Sequential(Conv(x, max(16, x // 4), 3), nn.Conv2d(max(16, x // 4), 1, 1)) for x in ch
         )
 
     def forward(self, x):
-        """Training: {main, obj}. Inference: cls logits shifted by objectness."""
+        """Training: {main, obj}. Inference: cls logits shifted by obj_beta*objectness."""
         obj = [self.cv4[i](x[i]) for i in range(self.nl)]
         main = [torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1) for i in range(self.nl)]
         if self.training:
             return {"main": main, "obj": obj}
-        for i in range(self.nl):  # score = sigmoid(cls + obj): suppress low-objectness anchors
-            main[i][:, self.reg_max * 4:] = main[i][:, self.reg_max * 4:] + obj[i]
+        for i in range(self.nl):  # score = sigmoid(cls + beta*obj): gently suppress low-objectness
+            main[i][:, self.reg_max * 4:] = main[i][:, self.reg_max * 4:] + self.obj_beta * obj[i]
         y = self._inference(main)
         return y if self.export else (y, main)
 
     def bias_init(self):
         """Initialize the standard biases; objectness starts neutral (0)."""
+        super().bias_init()
+        for a in self.cv4:
+            a[-1].bias.data[:] = 0.0
+
+
+class DetectDecoupledObj(DetectDecoupled):
+    """Round 26 -- the SYNTHESIS: decoupled cls pathway + softened objectness.
+
+    Rounds 24/25 found two complementary effects: DetectDecoupled (box and cls
+    on separate features) reliably improved precision and was best-on-validation;
+    DetectObj (objectness) gave the best small-"other" AP in the project but
+    over-suppressed. This head combines them: box reads box features, cls reads
+    the dedicated cls features (decoupled), AND a per-anchor objectness branch
+    (over the box features) gently reweights cls at inference (obj_beta<1).
+    Train-only dict output {main, obj}; supervised by DetectObjLoss.
+
+    YAML provides 2*nl inputs [box..., cls...] like DetectDecoupled, plus an
+    optional obj_beta:  - [[14,21,20, 22,23,24], 1, DetectDecoupledObj, [nc, 0.5]]
+    """
+
+    def __init__(self, nc=80, obj_beta=1.0, ch=()):
+        """Build the decoupled box/cls head plus an objectness branch on box feats."""
+        if isinstance(obj_beta, (list, tuple)):
+            ch, obj_beta = obj_beta, 1.0
+        super().__init__(nc, ch)  # cv2 over box_ch, cv3 over cls_ch; self.nl set
+        self.obj_beta = float(obj_beta)
+        box_ch = ch[: len(ch) // 2]
+        self.cv4 = nn.ModuleList(
+            nn.Sequential(Conv(x, max(16, x // 4), 3), nn.Conv2d(max(16, x // 4), 1, 1)) for x in box_ch
+        )
+
+    def forward(self, x):
+        """box = x[:nl], cls = x[nl:]; objectness over box feats; train-only dict."""
+        box, cls = x[: self.nl], x[self.nl:]
+        obj = [self.cv4[i](box[i]) for i in range(self.nl)]
+        main = [torch.cat((self.cv2[i](box[i]), self.cv3[i](cls[i])), 1) for i in range(self.nl)]
+        if self.training:
+            return {"main": main, "obj": obj}
+        for i in range(self.nl):
+            main[i][:, self.reg_max * 4:] = main[i][:, self.reg_max * 4:] + self.obj_beta * obj[i]
+        y = self._inference(main)
+        return y if self.export else (y, main)
+
+    def bias_init(self):
+        """Decoupled biases (super) + neutral objectness."""
         super().bias_init()
         for a in self.cv4:
             a[-1].bias.data[:] = 0.0

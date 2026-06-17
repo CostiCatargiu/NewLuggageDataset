@@ -80,6 +80,7 @@ from ultralytics.nn.modules import (
     DetectAux,
     DetectDecoupled,
     DetectObj,
+    DetectDecoupledObj,
     DWConv,
     DWConvTranspose2d,
     Focus,
@@ -432,7 +433,7 @@ class DetectionModel(BaseModel):
         """Initialize the loss criterion for the DetectionModel."""
         if isinstance(self.model[-1], DetectAux):
             return DetectAuxLoss(self)
-        if isinstance(self.model[-1], DetectObj):
+        if isinstance(self.model[-1], (DetectObj, DetectDecoupledObj)):
             return DetectObjLoss(self)
         return E2EDetectLoss(self) if getattr(self, "end2end", False) else v8DetectionLoss(self)
 
@@ -1145,11 +1146,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f[0]], ch[f[1]]]
         elif m in {Concat, WeightedConcat}:
             c2 = sum(ch[x] for x in f)
-        elif m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, DetectAux, DetectDecoupled, DetectObj, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
+        elif m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, DetectAux, DetectDecoupled, DetectObj, DetectDecoupledObj, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
             args.append([ch[x] for x in f])
             if m is Segment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
-            if m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, DetectAux, DetectDecoupled, DetectObj, Segment, Pose, OBB}:
+            if m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, DetectAux, DetectDecoupled, DetectObj, DetectDecoupledObj, Segment, Pose, OBB}:
                 m.legacy = legacy
         elif m is RTDETRDecoder:  # special case, channels arg must be passed in index 1
             args.insert(1, [ch[x] for x in f])
