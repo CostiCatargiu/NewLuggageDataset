@@ -149,12 +149,15 @@ head:
 TAL_DEFAULT = dict(tal_topk=10, tal_alpha=0.5, tal_beta=6.0)
 
 RUNS = [
+    # An entire cls neck (layers 21-32) trains FROM SCRATCH, so these need a
+    # longer horizon than the prior decoupled runs (only small towers were fresh
+    # there). 120 epochs so the fresh neck converges and the cosine LR spans it.
     {"name": "r27_dualneck_stock_70",
      "desc": "[1/2] stock backbone + dual neck (separate box & cls feature pyramids)",
-     "yaml_content": ARCH_DUALNECK_STOCK, "batch": BATCH, "seed": 0, "epochs": 80},
+     "yaml_content": ARCH_DUALNECK_STOCK, "batch": BATCH, "seed": 0, "epochs": 120},
     {"name": "r27_dualneck_widefuse_70",
      "desc": "[2/2] widefuse backbone + dual neck (best backbone + full cls decoupling)",
-     "yaml_content": ARCH_DUALNECK_WIDEFUSE, "batch": BATCH, "seed": 0, "epochs": 80},
+     "yaml_content": ARCH_DUALNECK_WIDEFUSE, "batch": BATCH, "seed": 0, "epochs": 120},
 ]
 
 

@@ -32,6 +32,8 @@ __all__ = (
     "DetectDecoupled",
     "DetectObj",
     "DetectDecoupledObj",
+    "DetectCosine",
+    "DetectDecoupledCosine",
 )
 
 
@@ -609,6 +611,97 @@ class DetectDecoupledObj(DetectDecoupled):
         super().bias_init()
         for a in self.cv4:
             a[-1].bias.data[:] = 0.0
+
+
+class CosineCls(nn.Module):
+    """Cosine / prototype classifier (round 28): replaces the linear cls layer.
+
+    logit_c = scale * cos(feature, prototype_c) + bias_c, with L2-normalized
+    feature and learnable per-class prototypes. Scores by ANGULAR similarity
+    rather than a dot product, which is better-calibrated and better-ranked for
+    hard, visually-diverse classes -- aimed at the "found but mis-scored" failure
+    on the catch-all "other" class. Drop-in for the final nn.Conv2d(c3, nc, 1).
+    """
+
+    def __init__(self, c, nc, scale=16.0):
+        super().__init__()
+        self.weight = nn.Parameter(torch.randn(nc, c))  # class prototypes
+        self.scale = nn.Parameter(torch.tensor(float(scale)))
+        self.bias = nn.Parameter(torch.zeros(nc))
+
+    def forward(self, x):
+        xn = x / (x.norm(dim=1, keepdim=True) + 1e-6)               # normalize feature over channels
+        wn = self.weight / (self.weight.norm(dim=1, keepdim=True) + 1e-6)  # normalize prototypes
+        logit = torch.einsum("bchw,nc->bnhw", xn, wn) * self.scale
+        return logit + self.bias.view(1, -1, 1, 1)
+
+
+class DetectCosine(Detect):
+    """Detect with a COSINE/prototype classification head (round 28).
+
+    Every prior head used a linear cls layer. This replaces the final cls conv
+    with CosineCls (angular scoring against learnable class prototypes), changing
+    HOW scores are computed rather than the features feeding them -- the diagnosed
+    failure is scoring/ranking on "other", not missing features. Box branch
+    (cv2) and DFL untouched; pairs with standard BCE.
+
+    Drop-in:  - [[14, 17, 20], 1, DetectCosine, [nc]]   (optional scale: [nc, 16])
+    """
+
+    def __init__(self, nc=80, scale=16.0, ch=()):
+        """Build Detect, then swap the cls branch's final layer for CosineCls."""
+        if isinstance(scale, (list, tuple)):
+            ch, scale = scale, 16.0
+        super().__init__(nc, ch)
+        c3 = max(ch[0], min(self.nc, 100))
+        self.cv3 = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(DWConv(x, x, 3), Conv(x, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                CosineCls(c3, self.nc, scale),
+            )
+            for x in ch
+        )
+
+    def bias_init(self):
+        """Box bias as usual; cosine cls bias set negative for low init confidence."""
+        for a, s in zip(self.cv2, self.stride):
+            a[-1].bias.data[:] = 1.0
+        for c, s in zip(self.cv3, self.stride):
+            c[-1].bias.data[:] = math.log(5 / self.nc / (640 / s) ** 2)
+
+
+class DetectDecoupledCosine(DetectDecoupled):
+    """DetectDecoupled (separate box/cls features) + cosine cls scoring (round 28).
+
+    Combines the two pieces aimed at the "other" problem: decoupled gives the cls
+    branch its own features; cosine scoring turns those features into
+    well-ranked, well-calibrated class scores. YAML provides 2*nl inputs
+    [box..., cls...] like DetectDecoupled (optional scale last).
+    """
+
+    def __init__(self, nc=80, scale=16.0, ch=()):
+        """Build the decoupled head, then swap cv3's final layer for CosineCls."""
+        if isinstance(scale, (list, tuple)):
+            ch, scale = scale, 16.0
+        super().__init__(nc, ch)
+        cls_ch = ch[len(ch) // 2:]
+        c3 = max(cls_ch[0], min(self.nc, 100))
+        self.cv3 = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(DWConv(x, x, 3), Conv(x, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                CosineCls(c3, self.nc, scale),
+            )
+            for x in cls_ch
+        )
+
+    def bias_init(self):
+        """Box bias as usual; cosine cls bias set negative for low init confidence."""
+        for a, s in zip(self.cv2, self.stride):
+            a[-1].bias.data[:] = 1.0
+        for c, s in zip(self.cv3, self.stride):
+            c[-1].bias.data[:] = math.log(5 / self.nc / (640 / s) ** 2)
 
 
 class Segment(Detect):
