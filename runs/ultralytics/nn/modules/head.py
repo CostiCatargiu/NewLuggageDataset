@@ -32,6 +32,7 @@ __all__ = (
     "DetectDecoupled",
     "DetectObj",
     "DetectDecoupledObj",
+    "DetectDecoupledAux",
     "DetectCosine",
     "DetectDecoupledCosine",
 )
@@ -611,6 +612,79 @@ class DetectDecoupledObj(DetectDecoupled):
         super().bias_init()
         for a in self.cv4:
             a[-1].bias.data[:] = 0.0
+
+
+class DetectDecoupledAux(DetectAux):
+    """Decoupled box/cls head + train-only auxiliary deep supervision (rounds 24 + 20).
+
+    Combines the two independently-validated effects on the widefuse backbone:
+      * DetectDecoupled (round 24): box (cv2) and cls (cv3) read SEPARATE feature
+        maps, so classification gets its own representation, uncompromised by the
+        localization objective -- the one reproducible precision gain of the search.
+      * DetectAux (round 20): a parallel box/cls head supervised during training
+        and DROPPED at inference (zero deploy cost), an extra gradient signal on
+        the shared features.
+
+    The aux towers are themselves decoupled (aux box over box feats, aux cls over
+    the dedicated cls feats), mirroring the main head.
+
+    Loss dispatch: subclass of DetectAux -> DetectionModel.init_criterion selects
+    DetectAuxLoss, which supervises the {"main","aux"} dict in training and falls
+    back to the main head in eval (no aux at inference).
+
+    YAML: 2*nl inputs [box_p3,box_p4,box_p5, cls_p3,cls_p4,cls_p5], optional
+    aux_weight last:
+      - [[14, 21, 20, 22, 23, 24], 1, DetectDecoupledAux, [nc, 0.5]]
+    """
+
+    def __init__(self, nc=80, aux_weight=0.25, ch=()):
+        """Decoupled main head (box over box_ch, cls over cls_ch) + decoupled aux towers.
+
+        YAML may be [nc] (ch lands in aux_weight) or [nc, aux_weight]; detect and
+        swap, mirroring DetectAux.
+        """
+        if isinstance(aux_weight, (list, tuple)):  # [nc] yaml -> ch landed in aux_weight
+            ch, aux_weight = aux_weight, 0.25
+        n = len(ch) // 2
+        box_ch, cls_ch = ch[:n], ch[n:]
+        Detect.__init__(self, nc, box_ch)  # cv2/cv3/dfl over box_ch; self.nl = n
+        self.aux_weight = float(aux_weight)
+        c2 = max((16, box_ch[0] // 4, self.reg_max * 4))
+        c3 = max(cls_ch[0], min(self.nc, 100))
+        # main cls branch reads the dedicated cls features (decoupled)
+        self.cv3 = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(DWConv(x, x, 3), Conv(x, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                nn.Conv2d(c3, self.nc, 1),
+            )
+            for x in cls_ch
+        )
+        # train-only aux towers: box over box feats, cls over the dedicated cls feats
+        self.cv2a = nn.ModuleList(
+            nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in box_ch
+        )
+        self.cv3a = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(DWConv(x, x, 3), Conv(x, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                nn.Conv2d(c3, self.nc, 1),
+            )
+            for x in cls_ch
+        )
+
+    def forward(self, x):
+        """box = x[:nl], cls = x[nl:]. Train: decoupled {"main","aux"}. Eval: main only."""
+        box, cls = x[: self.nl], x[self.nl:]
+        main = [torch.cat((self.cv2[i](box[i]), self.cv3[i](cls[i])), 1) for i in range(self.nl)]
+        if self.training:
+            aux = [torch.cat((self.cv2a[i](box[i]), self.cv3a[i](cls[i])), 1) for i in range(self.nl)]
+            return {"main": main, "aux": aux}
+        y = self._inference(main)
+        return y if self.export else (y, main)
+
+    # bias_init inherited from DetectAux: Detect.bias_init handles cv2/cv3 (main),
+    # then the aux loop sets cv2a/cv3a biases. All four ModuleLists have nl entries.
 
 
 class CosineCls(nn.Module):
