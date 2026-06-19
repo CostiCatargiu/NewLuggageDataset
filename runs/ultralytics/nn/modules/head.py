@@ -29,6 +29,7 @@ __all__ = (
     "DetectDeepCls",
     "DetectWideCls",
     "DetectAux",
+    "DetectAuxDual",
     "DetectDecoupled",
     "DetectObj",
     "DetectDecoupledObj",
@@ -479,6 +480,70 @@ class DetectAux(Detect):
         for a, b, s in zip(m.cv2a, m.cv3a, m.stride):
             a[-1].bias.data[:] = 1.0  # box
             b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls
+
+
+class DetectAuxDual(Detect):
+    """Detect with DUAL-PATH auxiliary supervision (detail teacher).
+
+    Round 32B -- the key insight from rounds 11-31 is that DetectAux mirrors
+    the main head (both see the same fused features), so the aux gradient
+    cannot teach the backbone anything the main head doesn't. This head fixes
+    that by routing DIFFERENT features to main vs aux towers:
+
+      Main towers: see context-rich features (post-widefuse P4)
+      Aux towers:  see detail-rich features (pre-widefuse P4)
+
+    This forces the backbone to satisfy BOTH objectives: the main head rewards
+    context (good for medium/large objects) while the aux head rewards detail
+    preservation (good for small objects). The backbone must maintain fine-
+    grained features because the aux head supervises them directly.
+
+    At inference: aux towers are dropped, zero cost (same as DetectAux).
+
+    YAML provides 2*nl inputs:
+      [main_p3, main_p4_fused, main_p5,  aux_p3, aux_p4_prefuse, aux_p5]
+    Example:
+      - [[14, 21, 20, 14, 17, 20], 1, DetectAuxDual, [nc, 0.5]]
+    Where 21 = post-widefuse P4, 17 = pre-widefuse P4.
+    """
+
+    def __init__(self, nc=80, aux_weight=0.25, ch=()):
+        if isinstance(aux_weight, (list, tuple)):
+            ch, aux_weight = aux_weight, 0.25
+        n = len(ch) // 2
+        main_ch, aux_ch = ch[:n], ch[n:]
+        super().__init__(nc, main_ch)  # builds cv2/cv3 over main channels
+        self.aux_weight = float(aux_weight)
+        c2 = max((16, aux_ch[0] // 4, self.reg_max * 4))
+        c3 = max(aux_ch[0], min(self.nc, 100))
+        self.cv2a = nn.ModuleList(
+            nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in aux_ch
+        )
+        self.cv3a = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(DWConv(x, x, 3), Conv(x, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                nn.Conv2d(c3, self.nc, 1),
+            )
+            for x in aux_ch
+        )
+
+    def forward(self, x):
+        """Main head sees x[:nl] (fused), aux sees x[nl:] (detail). Inference: main only."""
+        main_x, aux_x = x[: self.nl], x[self.nl :]
+        main = [torch.cat((self.cv2[i](main_x[i]), self.cv3[i](main_x[i])), 1) for i in range(self.nl)]
+        if self.training:
+            aux = [torch.cat((self.cv2a[i](aux_x[i]), self.cv3a[i](aux_x[i])), 1) for i in range(self.nl)]
+            return {"main": main, "aux": aux}
+        y = self._inference(main)
+        return y if self.export else (y, main)
+
+    def bias_init(self):
+        """Initialize biases for main (super) and aux towers."""
+        super().bias_init()
+        for a, b, s in zip(self.cv2a, self.cv3a, self.stride):
+            a[-1].bias.data[:] = 1.0
+            b[-1].bias.data[: self.nc] = math.log(5 / self.nc / (640 / s) ** 2)
 
 
 class DetectDecoupled(Detect):
