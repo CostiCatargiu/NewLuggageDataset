@@ -381,6 +381,17 @@ class v8DetectionLoss:
         self.shape_gamma = getattr(h, 'shape_gamma', 1.0)
         self.shape_min = getattr(h, 'shape_min', 0.3)
 
+        # Section F: Ignore-region masking for an under-annotated class (PU-style).
+        #   "other" objects are present but not always labeled, so the model is
+        #   penalized as a false positive for correctly detecting them. When enabled,
+        #   on BACKGROUND anchors where the model is already confident the class is
+        #   present, we ZERO that class's negative BCE -> treat likely-missing
+        #   annotations as "ignore" instead of hard background. GT positives and all
+        #   other class channels are untouched. Default OFF (no behavior change).
+        self.ignore_unlabeled_cls = getattr(h, 'ignore_unlabeled_cls', False)
+        self.ignore_cls_id = int(getattr(h, 'ignore_cls_id', -1))   # e.g. the "other" class id
+        self.ignore_conf = float(getattr(h, 'ignore_conf', 0.5))    # confidence gate for ignoring
+
         # =====================================================================
         # LOSS FUNCTIONS
         # =====================================================================
@@ -572,7 +583,17 @@ class v8DetectionLoss:
         target_scores_sum = max(target_scores.sum(), 1)
 
         # Classification loss (BCE)
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum
+        cls_loss = self.bce(pred_scores, target_scores.to(dtype))  # (b, anchors, nc), elementwise
+        # Ignore-region masking (Section F): on background anchors where the model is
+        # confident the under-annotated class is present, drop that class's negative
+        # loss so likely-missing annotations are treated as "ignore", not background.
+        if self.ignore_unlabeled_cls and 0 <= self.ignore_cls_id < self.nc:
+            bg = (fg_mask == 0)                                              # (b, anchors) background
+            conf = pred_scores[..., self.ignore_cls_id].detach().sigmoid()  # (b, anchors)
+            ignore = bg & (conf >= self.ignore_conf)                        # (b, anchors)
+            chan = torch.where(ignore, torch.zeros_like(conf), torch.ones_like(conf))
+            cls_loss[..., self.ignore_cls_id] = cls_loss[..., self.ignore_cls_id] * chan
+        loss[1] = cls_loss.sum() / target_scores_sum
 
         # Bounding box losses
         if fg_mask.sum():
