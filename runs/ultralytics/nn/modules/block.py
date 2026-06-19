@@ -76,6 +76,7 @@ __all__ = (
     "ZGLSKAWideFuse3",
     "ZGLSKACompactFuse",
     "ZGLSKASelectFuse",
+    "ZGSmallDetail",
     "WeightedConcat",
 )
 
@@ -2459,6 +2460,67 @@ class ZGLSKASelectFuse(nn.Module):
         w = self.router(x).softmax(dim=1).unsqueeze(2)  # B,3,1,H,W (per-location)
         fused = (w * feats).sum(dim=1)  # B,C,H,W
         return x + self.gamma * self.pw2(fused)
+
+
+class ZGSmallDetail(nn.Module):
+    """Round 30 — zero-gated small-kernel detail guard for P3 features.
+
+    Cross-round finding (rounds 6-29, 90 experiments): r21_widefuse_aux_w50
+    (ZGLSKAWideFuse @ P4 + DetectAux, aux_weight=0.5) is the best overall model
+    (mAP50=79.57, mAP50-95=50.33) but its small-object mAP50 drops 3.8pp vs
+    baseline (57.95 vs 61.79) and "other"-class AP50_small collapses by 12pp
+    (26.49 vs 38.57). The model's RECALL on small objects is actually the best
+    of all runs (AR50_small=88.69) — it finds them but misclassifies them.
+
+    Root cause: ZGLSKAWideFuse's two branches (k=11 square LKA + strip-23 LSKA)
+    are BOTH large-RF operators at P4. During training, gradients from these
+    large-RF branches shift shared backbone representations toward medium/large
+    object features, degrading the fine-grained P3 features that small objects
+    depend on. The P3 head (layer 14) passes through UNTOUCHED to Detect, but
+    its upstream backbone features are polluted.
+
+    Fix: a complementary SMALL-kernel gated block placed AFTER layer 14 (P3 head)
+    and BEFORE Detect. Two parallel depthwise convolutions (k=3 + k=5, dilation=1)
+    capture fine local detail at two micro-scales, summed and projected — NO
+    large-RF operator. This counterbalances the widefuse's large-RF bias by
+    reinforcing precisely the fine-grained, small-scale features that get
+    degraded.
+
+    r16_CompactFuse (which replaced strip-23 with small k3+k5 kernels at P4)
+    recovered "other" AP50_small from 23.59 -> 32.87 (+9.3pp), proving small-
+    kernel operators DO recover fine detail. But CompactFuse REPLACED the strip-23
+    at P4, losing overall mAP50 (79.40 -> 78.25). This approach KEEPS widefuse
+    intact at P4 and adds the detail guard SEPARATELY at P3.
+
+    Identity / transfer: gamma=0 at init -> exact identity at epoch 0, append-only
+    (standard Detect-remap pretrained loader). The block can only HELP P3 features;
+    if unhelpful, gamma stays near zero and the module collapses to a no-op.
+
+    y = x + gamma * pw2( act2( GN( dw3(z) + dw5(z) ) ) ), z = act(pw1(x)).
+    pw1: c1 -> c1, pw2: c1 -> c1.
+
+    YAML args: [c2, k_fine, k_mid]  e.g. [256, 3, 5]
+    YAML usage (after widefuse at P4):
+      - [14, 1, ZGSmallDetail, [256, 3, 5]]        # P3 detail guard
+      - [[<p3_guard>, <widefuse>, 20], 1, Detect/DetectAux, [nc, ...]]
+    """
+
+    def __init__(self, c1, c2, k_fine=3, k_mid=5):
+        super().__init__()
+        assert c1 == c2, "ZGSmallDetail preserves channels"
+        self.pw1 = nn.Conv2d(c1, c1, 1)
+        self.act = nn.SiLU()
+        self.dw_fine = nn.Conv2d(c1, c1, k_fine, 1, k_fine // 2, groups=c1)
+        self.dw_mid = nn.Conv2d(c1, c1, k_mid, 1, k_mid // 2, groups=c1)
+        self.norm = nn.GroupNorm(1, c1)
+        self.act2 = nn.SiLU()
+        self.pw2 = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        z = self.act(self.pw1(x))
+        detail = self.act2(self.norm(self.dw_fine(z) + self.dw_mid(z)))
+        return x + self.gamma * self.pw2(detail)
 
 
 class WeightedConcat(nn.Module):
