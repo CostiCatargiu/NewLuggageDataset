@@ -1,0 +1,13 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/count_other_annotations.py
+other id = 2
+
+split     imgs  imgs_w_other  other_GT   cand  %boxes_missing  %imgs_w_other_missing
+train    18592          2941      3750    566           13.1%                  17.0%
+val       3984           633       805    246           23.4%                  32.9%
+test      3980           626       812    255           23.9%                  32.7%
+
+  %boxes_missing = candidates / (existing_other_GT + candidates)  [LOWER BOUND -- model
+  suppresses the unlabeled objects, so true incompleteness is higher].
+  %imgs_w_other_missing = flagged images / images that actually contain 'other'.
+
+Process finished with exit code 0
