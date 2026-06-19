@@ -77,6 +77,7 @@ __all__ = (
     "ZGLSKACompactFuse",
     "ZGLSKASelectFuse",
     "ZGSmallDetail",
+    "ZGLSKAWideFuseV2",
     "WeightedConcat",
 )
 
@@ -2460,6 +2461,65 @@ class ZGLSKASelectFuse(nn.Module):
         w = self.router(x).softmax(dim=1).unsqueeze(2)  # B,3,1,H,W (per-location)
         fused = (w * feats).sum(dim=1)  # B,C,H,W
         return x + self.gamma * self.pw2(fused)
+
+
+class ZGLSKAWideFuseV2(nn.Module):
+    """Round 31 -- The Hybrid Branch WideFuse.
+
+    This is the direct, surgical fix for r21's small-object precision problem.
+    It keeps the proven two-branch, expand-then-fuse structure of ZGLSKAWideFuse,
+    but upgrades the second branch to be a HYBRID of large and small RF operators.
+
+    - Branch 1 (Unchanged): The proven square k=11 LKA for general context.
+    - Branch 2 (Hybrid): This branch now has two parallel sub-paths:
+        - Large-RF Path: The original strip-23 LKA for elongated objects.
+        - Small-RF Path: The ZGSmallDetail logic (k=3 + k=5) for fine detail.
+      The outputs of these two sub-paths are ADDED together before returning to
+      the main fusion point. This creates a single, powerful Hybrid Branch that
+      is effective at all scales, preventing the large-RF operators from
+      destroying small-object features at the source.
+
+    y = x + gamma * pw2( cat[ LKA(z1), (strip(z2) + small(z2)) ] ),
+    z1, z2 = act(pw1(x)).chunk(2, dim=1), each c1-wide.
+    pw1: c1 -> 2*c1, pw2: 2*c1 -> c1. Zero-init gamma as always.
+
+    YAML args: [c2, k_sq, k_strip, k_fine, k_mid]
+               e.g. [512, 11, 23, 3, 5]
+    """
+
+    def __init__(self, c1, c2, k_sq=11, k_strip=23, k_fine=3, k_mid=5):
+        super().__init__()
+        assert c1 == c2, "ZGLSKAWideFuseV2 preserves channels"
+        self.pw1 = nn.Conv2d(c1, 2 * c1, 1)
+        self.act = nn.SiLU()
+
+        # Branch 1: Square LKA (unchanged)
+        self.lka = LKA(c1, k_sq)
+
+        # Branch 2: Hybrid (Large RF + Small RF)
+        self.strip = LSKAStrip(c1, k_size=k_strip)
+        self.dw_fine = nn.Conv2d(c1, c1, k_fine, 1, k_fine // 2, groups=c1)
+        self.dw_mid = nn.Conv2d(c1, c1, k_mid, 1, k_mid // 2, groups=c1)
+        self.small_norm = nn.GroupNorm(1, c1)
+        self.small_act = nn.SiLU()
+        
+        self.pw2 = nn.Conv2d(2 * c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        z1, z2 = self.act(self.pw1(x)).chunk(2, dim=1)
+        
+        # Branch 1 output
+        y1 = self.lka(z1)
+
+        # Branch 2 (Hybrid) output
+        y2_large_rf = self.strip(z2)
+        y2_small_rf = self.small_act(self.small_norm(self.dw_fine(z2) + self.dw_mid(z2)))
+        y2_hybrid = y2_large_rf + y2_small_rf
+
+        # Fuse and gate
+        y = torch.cat([y1, y2_hybrid], dim=1)
+        return x + self.gamma * self.pw2(y)
 
 
 class ZGSmallDetail(nn.Module):
