@@ -33,6 +33,7 @@ __all__ = (
     "DetectObj",
     "DetectDecoupledObj",
     "DetectDecoupledAux",
+    "DetectMultiProto",
     "DetectCosine",
     "DetectDecoupledCosine",
 )
@@ -685,6 +686,76 @@ class DetectDecoupledAux(DetectAux):
 
     # bias_init inherited from DetectAux: Detect.bias_init handles cv2/cv3 (main),
     # then the aux loop sets cv2a/cv3a biases. All four ModuleLists have nl entries.
+
+
+class MultiProtoHead(nn.Module):
+    """Mixture classification logits: K learnable sub-prototypes per class, combined
+    by a soft-OR (logsumexp over the K sub-logits).
+
+    Round 30 — the catch-all "other" class is multimodal (it lumps together many
+    visually unrelated sub-types), so a single 1x1 cls conv learns ONE hyperplane
+    per class and cannot rank a multimodal class cleanly -> the measured high-recall
+    / low-precision signature. This layer emits K logits per class and reduces them
+    with logsumexp, i.e. "does the feature match ANY of this class's sub-prototypes",
+    letting a multimodal class occupy several regions of feature space. A unimodal
+    class (the saturated weapon classes) can leave the extra prototypes redundant.
+    K=1 reduces exactly to a standard cls conv. Drop-in for the final nn.Conv2d.
+    """
+
+    def __init__(self, c_in, nc, k=4):
+        super().__init__()
+        self.nc = nc
+        self.k = int(k)
+        self.conv = nn.Conv2d(c_in, nc * self.k, 1)
+
+    def forward(self, x):
+        b, _, h, w = x.shape
+        z = self.conv(x).view(b, self.nc, self.k, h, w)
+        return torch.logsumexp(z, dim=2)  # soft-OR over sub-prototypes -> (b, nc, h, w)
+
+
+class DetectMultiProto(Detect):
+    """Detect with a MIXTURE (multi-prototype) classification head (round 30).
+
+    Replaces the final 1x1 cls conv in each cv3 tower with a MultiProtoHead: K
+    sub-prototypes per class, combined by logsumexp. Targets the diagnosed ceiling
+    -- the multimodal "other" class is mis-ranked by a single linear boundary (the
+    round-28 single-prototype cosine head made this WORSE, evidence the one-mode
+    assumption is the problem). Box branch (cv2) and the forward/inference path are
+    unchanged; cv3 still outputs nc channels (the logsumexp reduces K -> nc), so the
+    standard v8DetectionLoss BCE applies directly and gradients flow to all K modes.
+
+    Append-only, near-zero inference cost. YAML: [nc] or [nc, k]:
+      - [[14, 21, 20], 1, DetectMultiProto, [nc, 4]]
+    """
+
+    def __init__(self, nc=80, k=4, ch=()):
+        """Build a standard Detect, then swap each cv3 final conv for a MultiProtoHead.
+
+        YAML may be [nc] (ch lands in k) or [nc, k]; detect and swap, mirroring DetectAux.
+        """
+        if isinstance(k, (list, tuple)):  # [nc] yaml -> ch landed in k
+            ch, k = k, 4
+        super().__init__(nc, ch)
+        self.k = int(k)
+        c3 = max(ch[0], min(self.nc, 100))
+        self.cv3 = nn.ModuleList(
+            nn.Sequential(
+                nn.Sequential(DWConv(x, x, 3), Conv(x, c3, 1)),
+                nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+                MultiProtoHead(c3, self.nc, self.k),
+            )
+            for x in ch
+        )
+
+    def bias_init(self):
+        """Box biases as in Detect; cls sub-prototype biases set so the logsumexp of
+        the K modes starts at the standard Detect cls prior (target - log(K) each)."""
+        m = self
+        for a, b, s in zip(m.cv2, m.cv3, m.stride):
+            a[-1].bias.data[:] = 1.0  # box
+            target = math.log(5 / m.nc / (640 / s) ** 2)  # standard cls prior
+            b[-1].conv.bias.data.view(m.nc, m.k)[:] = target - math.log(m.k)
 
 
 class CosineCls(nn.Module):
