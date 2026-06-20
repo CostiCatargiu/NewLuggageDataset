@@ -1,25 +1,28 @@
 #!/usr/bin/env python3
 """
 Pseudo-label / candidate-generate MISSING annotations for ALL classes — whole dataset,
-with candidates SPLIT PER CLASS so you can merge/review each class independently.
+with WEAPON-FIRST PRIORITY and candidates split per class.
 
-CANDIDATE RULE (per detection of any class c):
-  keep it iff:
-    - conf >= CONF_THRES
-    - it does NOT overlap any existing GT box (any class)   (IoU < IOU_SKIP)
-    - it does NOT overlap a DIFFERENT-class prediction       (IoU < CONFLICT_IOU
-      with a box of another class at conf >= CONFLICT_CONF)
-    - area >= MIN_BOX_FRAC
-  the pseudo box is written with the DETECTED class id.
+PRIORITY (to avoid weapon-as-"other" misclassification):
+  within each image, candidates are accepted in order:
+    1) weapon classes first (everything except "other"), highest confidence first
+    2) then "other", highest confidence first
+  an accepted box BLOCKS any later, lower-priority candidate of a DIFFERENT class
+  that overlaps it (IoU >= CONFLICT_IOU). So if the same instance fires as both a
+  weapon and "other", the WEAPON is kept and the "other" candidate is dropped.
+
+CANDIDATE RULE (per detection of class c):
+  keep iff conf >= CONF_THRES, area >= MIN_BOX_FRAC, it does NOT overlap any
+  existing GT box (IoU < IOU_SKIP), and it does NOT overlap an already-accepted
+  candidate of a different class (IoU < CONFLICT_IOU).
 
 OUTPUTS (originals never touched):
   OUT_ROOT/<split>/<stem>.txt                       augmented = original + ALL candidates
   OUT_ROOT/by_class/<classname>/<split>/<stem>.txt  candidate boxes for THAT class only
   OUT_ROOT/manifest_<classname>_<split>.csv         per-class manifest (image, n_added)
 
-So to use one class: merge OUT_ROOT/by_class/other into train; review the rest.
-Well-annotated classes (weapons) should show very few candidates (mostly FPs at low
-conf) — don't auto-merge those. NEVER auto-merge val/test for any class.
+Well-annotated classes (weapons) should show few real candidates; merge into TRAIN
+only the classes you trust ("other"); human-review the rest. NEVER auto-merge val/test.
 """
 
 import os
@@ -36,12 +39,12 @@ from ultralytics import YOLO
 # =============================================================================
 MODEL_WEIGHTS = "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/runs_noaug_weapon_full/v5_tal07_loose_full/weights/best.pt"
 DATA_YAML     = "/home/constantin/Doctorat/GunDatasetNoAugSplit70percentage/data.yaml"
+OTHER_NAME    = "other"   # the LOW-priority class; everything else is treated as a weapon (high priority)
 SPLITS        = ["train", "val", "test"]
 
-CONF_THRES    = 0.15      # keep detections at/above this confidence (LOW -> noisy for clean classes)
+CONF_THRES    = 0.30      # keep detections at/above this confidence
 IOU_SKIP      = 0.30      # skip if it overlaps any existing GT box (already annotated)
-CONFLICT_IOU  = 0.40      # skip if it overlaps a DIFFERENT-class prediction (ambiguous)
-CONFLICT_CONF = 0.15      # a different-class prediction this confident counts as a conflict
+CONFLICT_IOU  = 0.40      # skip if it overlaps an already-accepted DIFFERENT-class candidate
 MIN_BOX_FRAC  = 0.0008    # drop specks (box area < this fraction of the image); 0 disables
 MAX_PER_IMAGE = 40        # safety cap on added boxes per image (across all classes)
 IMGSZ         = 640
@@ -54,6 +57,14 @@ IMG_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 # =============================================================================
 # HELPERS
 # =============================================================================
+def resolve_other_id(names):
+    items = names.items() if isinstance(names, dict) else enumerate(names)
+    for i, n in items:
+        if str(n).strip().lower() == OTHER_NAME.lower():
+            return int(i)
+    return -1   # no "other" class -> all classes treated as equal priority (by confidence)
+
+
 def resolve_split_images(data, key):
     if key not in data or data[key] in (None, ""):
         return []
@@ -120,20 +131,19 @@ def _write(path, lines):
             f.write("\n".join(lines) + "\n")
 
 
-def process_split(model, images, split, names):
-    aug_dir = os.path.join(OUT_ROOT, split)                 # original + ALL candidates
-    byclass_dir = os.path.join(OUT_ROOT, "by_class")        # per-class candidate-only
+def process_split(model, images, split, names, other_id):
+    aug_dir = os.path.join(OUT_ROOT, split)
+    byclass_dir = os.path.join(OUT_ROOT, "by_class")
     os.makedirs(aug_dir, exist_ok=True)
 
     per_class_count = defaultdict(int)
-    per_class_manifest = defaultdict(list)                  # class -> [(img, n)]
+    per_class_manifest = defaultdict(list)
     n_added = n_imgs_aug = 0
-    pred_conf = min(CONF_THRES, CONFLICT_CONF)
 
     BATCH = 64
     for start in range(0, len(images), BATCH):
         batch = images[start:start + BATCH]
-        results = model.predict(batch, conf=pred_conf, imgsz=IMGSZ, device=DEVICE,
+        results = model.predict(batch, conf=CONF_THRES, imgsz=IMGSZ, device=DEVICE,
                                 verbose=False, stream=False)
         for img_path, r in zip(batch, results):
             label_path = img_to_label_path(img_path)
@@ -144,32 +154,38 @@ def process_split(model, images, split, names):
             conf = r.boxes.conf.cpu().numpy()
             xywhn = r.boxes.xywhn.cpu().numpy()
 
-            by_class = defaultdict(list)   # class id -> [label lines] for this image
+            by_class = defaultdict(list)
+            accepted_boxes = []   # xyxy of accepted candidates (this image)
+            accepted_cls = []     # their class ids
             if len(cls):
-                all_xyxy = xywhn_to_xyxy(xywhn)
-                cand_idx = np.where(conf >= CONF_THRES)[0]
-                iou_cg = iou_matrix(all_xyxy[cand_idx], gt_xyxy)
-                iou_ca = iou_matrix(all_xyxy[cand_idx], all_xyxy)
-                kept = 0
-                for r_i, j in enumerate(cand_idx):
-                    c = int(cls[j]); box = xywhn[j]
-                    if gt_xyxy.shape[0] and iou_cg[r_i].max() >= IOU_SKIP:
+                xyxy = xywhn_to_xyxy(xywhn)
+                # PRIORITY ORDER: weapons (cls != other) before "other"; higher conf first
+                order = sorted(range(len(cls)),
+                               key=lambda j: (1 if cls[j] == other_id else 0, -conf[j]))
+                for j in order:
+                    c = int(cls[j]); box = xyxy[j]
+                    # already annotated here?
+                    if gt_xyxy.shape[0] and iou_matrix(box[None], gt_xyxy).max() >= IOU_SKIP:
                         continue
-                    if ((cls != c) & (conf >= CONFLICT_CONF) & (iou_ca[r_i] >= CONFLICT_IOU)).any():
+                    # conflict with an already-accepted higher-priority/conf candidate of another class?
+                    if accepted_boxes:
+                        ab = np.array(accepted_boxes, np.float32)
+                        ious = iou_matrix(box[None], ab)[0]
+                        clash = any(ious[k] >= CONFLICT_IOU and accepted_cls[k] != c
+                                    for k in range(len(accepted_cls)))
+                        if clash:
+                            continue
+                    if xywhn[j, 2] * xywhn[j, 3] < MIN_BOX_FRAC:
                         continue
-                    if box[2] * box[3] < MIN_BOX_FRAC:
-                        continue
-                    by_class[c].append(f"{c} {box[0]:.6f} {box[1]:.6f} {box[2]:.6f} {box[3]:.6f}")
-                    kept += 1
-                    if kept >= MAX_PER_IMAGE:
+                    by_class[c].append(
+                        f"{c} {xywhn[j,0]:.6f} {xywhn[j,1]:.6f} {xywhn[j,2]:.6f} {xywhn[j,3]:.6f}")
+                    accepted_boxes.append(box)
+                    accepted_cls.append(c)
+                    if len(accepted_boxes) >= MAX_PER_IMAGE:
                         break
 
             all_pseudo = [ln for c in by_class for ln in by_class[c]]
-
-            # 1) combined augmented file (original + all candidates)
             _write(os.path.join(aug_dir, stem), orig_lines + all_pseudo)
-
-            # 2) per-class candidate-only files + manifests
             for c, lines in by_class.items():
                 cname = names[c] if c < len(names) else str(c)
                 _write(os.path.join(byclass_dir, cname, split, stem), lines)
@@ -181,7 +197,6 @@ def process_split(model, images, split, names):
                 n_added += len(all_pseudo)
         print(f"  [{split}] {min(start + BATCH, len(images))}/{len(images)}  +{n_added} candidates")
 
-    # per-class manifests
     for c, rows in per_class_manifest.items():
         cname = names[c] if c < len(names) else str(c)
         with open(os.path.join(OUT_ROOT, f"manifest_{cname}_{split}.csv"), "w", newline="") as f:
@@ -200,12 +215,14 @@ def main():
     data = yaml.safe_load(open(DATA_YAML))
     names = data["names"]
     names = [names[i] for i in range(len(names))] if isinstance(names, dict) else list(names)
+    other_id = resolve_other_id(names)
     os.makedirs(OUT_ROOT, exist_ok=True)
 
     print("=" * 72)
-    print(f"  PSEUDO-LABEL CANDIDATES (per class) {names} — WHOLE DATASET")
+    print(f"  PSEUDO-LABEL CANDIDATES (weapon-first priority) {names}")
     print(f"  model: {MODEL_WEIGHTS}")
-    print(f"  keep if conf>={CONF_THRES}, IoU(GT)<{IOU_SKIP}, IoU(other-class pred)<{CONFLICT_IOU}")
+    print(f"  priority: weapons before '{OTHER_NAME}' (id={other_id}); weapon wins overlaps")
+    print(f"  keep if conf>={CONF_THRES}, IoU(GT)<{IOU_SKIP}, IoU(accepted other-class)<{CONFLICT_IOU}")
     print("=" * 72)
 
     model = YOLO(MODEL_WEIGHTS)
@@ -215,20 +232,15 @@ def main():
         if not imgs:
             print(f"  [{split}] not present / empty — skipped")
             continue
-        summaries.append(process_split(model, imgs, split, names))
+        summaries.append(process_split(model, imgs, split, names, other_id))
 
     print("\n" + "=" * 72)
     print("  DONE — candidates per class:")
-    header = f"  {'split':<6} {'images':>7} {'imgs_aug':>9} " + " ".join(f"{n:>10}" for n in names)
-    print(header)
+    print(f"  {'split':<6} {'images':>7} {'imgs_aug':>9} " + " ".join(f"{n:>10}" for n in names))
     for s in summaries:
-        row = f"  {s['split']:<6} {s['images']:>7} {s['imgs_aug']:>9} " + \
-              " ".join(f"{s['per_class'].get(n, 0):>10}" for n in names)
-        print(row)
-    print("\n  Per-class candidate labels: OUT_ROOT/by_class/<class>/<split>/")
-    print("  Per-class manifests:        OUT_ROOT/manifest_<class>_<split>.csv")
-    print("  A class with MANY candidates is under-annotated; FEW -> already well labeled")
-    print("  (its candidates are mostly false positives — don't auto-merge those).")
+        print(f"  {s['split']:<6} {s['images']:>7} {s['imgs_aug']:>9} " +
+              " ".join(f"{s['per_class'].get(n, 0):>10}" for n in names))
+    print("\n  by_class/<class>/<split>/ + manifest_<class>_<split>.csv per class.")
     print("=" * 72)
 
 
