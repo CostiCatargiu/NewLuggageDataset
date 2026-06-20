@@ -48,21 +48,21 @@ from ultralytics import YOLO
 # =============================================================================
 # CONFIG
 # =============================================================================
-MODEL_WEIGHTS = "runs_noaug_weapon_full/r21_arch_full/weights/best.pt"  # <-- your trained model
-DATA_YAML     = "/home/constantin/Doctorat/GunDatasetNoAugSplit/data.yaml"
+MODEL_WEIGHTS = "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/runs_noaug_weapon_full/v5_tal07_loose_full/weights/best.pt"  # <-- your trained model
+DATA_YAML     = "/home/constantin/Doctorat/GunDatasetNoAugSplit70percentage/data.yaml"
 OTHER_NAME    = "other"        # class to pseudo-label (resolved to an id from data.yaml names)
 SPLITS        = ["train", "val", "test"]   # processed if present in the data.yaml
 
-CONF_THRES          = 0.55     # keep "other" detections at/above this confidence
+CONF_THRES          = 0.15     # keep "other" detections at/above this confidence
 IOU_SKIP            = 0.30     # skip if it overlaps any EXISTING GT box  (already annotated)
 WEAPON_CONFLICT_IOU = 0.40     # skip if it overlaps a WEAPON prediction  (ambiguous / misclassified)
-WEAPON_CONFLICT_CONF= 0.25     # a weapon prediction this confident counts as a conflict
+WEAPON_CONFLICT_CONF= 0.15     # a weapon prediction this confident counts as a conflict
 MIN_BOX_FRAC        = 0.0008   # drop specks (box area < this fraction of the image); 0 disables
 MAX_PER_IMAGE       = 20       # safety cap on added boxes per image
 IMGSZ               = 640
 DEVICE              = 0
 
-OUT_ROOT = "pseudo_labels_other"          # OUT_ROOT/<split>/<name>.txt  (augmented labels)
+OUT_ROOT = "/home/constantin/Doctorat/GunDatasetNoAugSplit/pseudo_labels_other"          # OUT_ROOT/<split>/<name>.txt  (augmented labels)
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 
 
