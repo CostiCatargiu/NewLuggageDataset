@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 """
-Pseudo-label / candidate-generate MISSING annotations for ALL classes — whole dataset.
-
-Generalizes make_pseudo_labels_other.py from the single "other" class to every class.
-For each class it proposes the confident detections that are likely UNANNOTATED.
+Pseudo-label / candidate-generate MISSING annotations for ALL classes — whole dataset,
+with candidates SPLIT PER CLASS so you can merge/review each class independently.
 
 CANDIDATE RULE (per detection of any class c):
   keep it iff:
     - conf >= CONF_THRES
-    - it does NOT overlap any existing GT box (any class)   (IoU < IOU_SKIP)   -> unlabeled region
+    - it does NOT overlap any existing GT box (any class)   (IoU < IOU_SKIP)
     - it does NOT overlap a DIFFERENT-class prediction       (IoU < CONFLICT_IOU
-      with a box of another class at conf >= CONFLICT_CONF)  -> ambiguous, skip
-    - it is not a tiny speck                                 (area >= MIN_BOX_FRAC)
+      with a box of another class at conf >= CONFLICT_CONF)
+    - area >= MIN_BOX_FRAC
   the pseudo box is written with the DETECTED class id.
 
-NOTE on well-annotated classes: the weapon classes are saturated / already well
-labeled, so at a low CONF_THRES most of their "unmatched" detections are FALSE
-POSITIVES, not missing labels. The per-class stats below tell you which classes
-actually have a gap (expect many for "other", few for weapons). Only auto-merge
-into TRAIN the classes you trust; review the rest. NEVER auto-merge val/test.
+OUTPUTS (originals never touched):
+  OUT_ROOT/<split>/<stem>.txt                       augmented = original + ALL candidates
+  OUT_ROOT/by_class/<classname>/<split>/<stem>.txt  candidate boxes for THAT class only
+  OUT_ROOT/manifest_<classname>_<split>.csv         per-class manifest (image, n_added)
 
-Originals are never overwritten; output goes to OUT_ROOT/<split>/.
+So to use one class: merge OUT_ROOT/by_class/other into train; review the rest.
+Well-annotated classes (weapons) should show very few candidates (mostly FPs at low
+conf) — don't auto-merge those. NEVER auto-merge val/test for any class.
 """
 
 import os
@@ -114,11 +113,20 @@ def iou_matrix(a, b):
     return np.where(union > 0, inter / union, 0.0)
 
 
+def _write(path, lines):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        if lines:
+            f.write("\n".join(lines) + "\n")
+
+
 def process_split(model, images, split, names):
-    out_dir = os.path.join(OUT_ROOT, split)
-    os.makedirs(out_dir, exist_ok=True)
-    manifest = []
-    per_class = defaultdict(int)
+    aug_dir = os.path.join(OUT_ROOT, split)                 # original + ALL candidates
+    byclass_dir = os.path.join(OUT_ROOT, "by_class")        # per-class candidate-only
+    os.makedirs(aug_dir, exist_ok=True)
+
+    per_class_count = defaultdict(int)
+    per_class_manifest = defaultdict(list)                  # class -> [(img, n)]
     n_added = n_imgs_aug = 0
     pred_conf = min(CONF_THRES, CONFLICT_CONF)
 
@@ -129,67 +137,60 @@ def process_split(model, images, split, names):
                                 verbose=False, stream=False)
         for img_path, r in zip(batch, results):
             label_path = img_to_label_path(img_path)
+            stem = os.path.basename(label_path)
             gt_xyxy, orig_lines = read_gt_xyxy(label_path)
 
             cls = r.boxes.cls.cpu().numpy().astype(int)
             conf = r.boxes.conf.cpu().numpy()
             xywhn = r.boxes.xywhn.cpu().numpy()
-            if len(cls) == 0:
-                # still write the (unchanged) original so the split is a complete set
-                _write(out_dir, label_path, orig_lines, [])
-                continue
 
-            all_xyxy = xywhn_to_xyxy(xywhn)                       # every detection (for conflict check)
-            cand_mask = conf >= CONF_THRES                        # the candidates
-            cand_idx = np.where(cand_mask)[0]
+            by_class = defaultdict(list)   # class id -> [label lines] for this image
+            if len(cls):
+                all_xyxy = xywhn_to_xyxy(xywhn)
+                cand_idx = np.where(conf >= CONF_THRES)[0]
+                iou_cg = iou_matrix(all_xyxy[cand_idx], gt_xyxy)
+                iou_ca = iou_matrix(all_xyxy[cand_idx], all_xyxy)
+                kept = 0
+                for r_i, j in enumerate(cand_idx):
+                    c = int(cls[j]); box = xywhn[j]
+                    if gt_xyxy.shape[0] and iou_cg[r_i].max() >= IOU_SKIP:
+                        continue
+                    if ((cls != c) & (conf >= CONFLICT_CONF) & (iou_ca[r_i] >= CONFLICT_IOU)).any():
+                        continue
+                    if box[2] * box[3] < MIN_BOX_FRAC:
+                        continue
+                    by_class[c].append(f"{c} {box[0]:.6f} {box[1]:.6f} {box[2]:.6f} {box[3]:.6f}")
+                    kept += 1
+                    if kept >= MAX_PER_IMAGE:
+                        break
 
-            iou_cg = iou_matrix(all_xyxy[cand_idx], gt_xyxy)      # candidate vs existing GT
-            iou_ca = iou_matrix(all_xyxy[cand_idx], all_xyxy)     # candidate vs all detections
+            all_pseudo = [ln for c in by_class for ln in by_class[c]]
 
-            pseudo = []
-            for r_i, j in enumerate(cand_idx):
-                c = cls[j]
-                box = xywhn[j]
-                # already annotated here?
-                if gt_xyxy.shape[0] and iou_cg[r_i].max() >= IOU_SKIP:
-                    continue
-                # conflict with a different-class prediction?
-                conflict = ((cls != c) & (conf >= CONFLICT_CONF) & (iou_ca[r_i] >= CONFLICT_IOU))
-                if conflict.any():
-                    continue
-                if box[2] * box[3] < MIN_BOX_FRAC:
-                    continue
-                pseudo.append(f"{c} {box[0]:.6f} {box[1]:.6f} {box[2]:.6f} {box[3]:.6f}")
-                per_class[c] += 1
-                if len(pseudo) >= MAX_PER_IMAGE:
-                    break
+            # 1) combined augmented file (original + all candidates)
+            _write(os.path.join(aug_dir, stem), orig_lines + all_pseudo)
 
-            _write(out_dir, label_path, orig_lines, pseudo)
-            if pseudo:
+            # 2) per-class candidate-only files + manifests
+            for c, lines in by_class.items():
+                cname = names[c] if c < len(names) else str(c)
+                _write(os.path.join(byclass_dir, cname, split, stem), lines)
+                per_class_count[c] += len(lines)
+                per_class_manifest[c].append((img_path, len(lines)))
+
+            if all_pseudo:
                 n_imgs_aug += 1
-                n_added += len(pseudo)
-                manifest.append((img_path, len(orig_lines), len(pseudo)))
+                n_added += len(all_pseudo)
         print(f"  [{split}] {min(start + BATCH, len(images))}/{len(images)}  +{n_added} candidates")
 
-    with open(os.path.join(OUT_ROOT, f"manifest_{split}.csv"), "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["image", "n_existing_labels", "n_candidates_added"])
-        w.writerows(manifest)
+    # per-class manifests
+    for c, rows in per_class_manifest.items():
+        cname = names[c] if c < len(names) else str(c)
+        with open(os.path.join(OUT_ROOT, f"manifest_{cname}_{split}.csv"), "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["image", "n_candidates_added"])
+            w.writerows(rows)
 
-    return dict(split=split, images=len(images), imgs_aug=n_imgs_aug, added=n_added,
-                per_class={names[k] if k < len(names) else k: v for k, v in sorted(per_class.items())},
-                out_dir=out_dir)
-
-
-def _write(out_dir, label_path, orig_lines, pseudo):
-    out_path = os.path.join(out_dir, os.path.basename(label_path))
-    with open(out_path, "w") as f:
-        if orig_lines:
-            f.write("\n".join(orig_lines))
-            if pseudo:
-                f.write("\n")
-        if pseudo:
-            f.write("\n".join(pseudo) + "\n")
+    pc = {names[c] if c < len(names) else c: per_class_count[c] for c in sorted(per_class_count)}
+    return dict(split=split, images=len(images), imgs_aug=n_imgs_aug, added=n_added, per_class=pc)
 
 
 # =============================================================================
@@ -202,29 +203,32 @@ def main():
     os.makedirs(OUT_ROOT, exist_ok=True)
 
     print("=" * 72)
-    print(f"  PSEUDO-LABEL CANDIDATES for ALL classes {names} — WHOLE DATASET")
+    print(f"  PSEUDO-LABEL CANDIDATES (per class) {names} — WHOLE DATASET")
     print(f"  model: {MODEL_WEIGHTS}")
     print(f"  keep if conf>={CONF_THRES}, IoU(GT)<{IOU_SKIP}, IoU(other-class pred)<{CONFLICT_IOU}")
     print("=" * 72)
 
     model = YOLO(MODEL_WEIGHTS)
+    summaries = []
     for split in SPLITS:
         imgs = resolve_split_images(data, split)
         if not imgs:
             print(f"  [{split}] not present / empty — skipped")
             continue
-        s = process_split(model, imgs, split, names)
-        pct = 100 * s["imgs_aug"] / max(s["images"], 1)
-        print(f"\n  {split}: images={s['images']}  images_with_candidates={s['imgs_aug']} ({pct:.1f}%)"
-              f"  total_candidates={s['added']}")
-        print(f"         per-class: {s['per_class']}")
-        print(f"         labels -> {s['out_dir']}/\n")
+        summaries.append(process_split(model, imgs, split, names))
 
-    print("=" * 72)
-    print("  Read the per-class counts: a class with MANY candidates is under-annotated;")
-    print("  a class with FEW is already well labeled (its candidates are mostly false")
-    print("  positives — don't auto-merge those). TRAIN auto-merge only the trusted")
-    print("  classes; human-review the rest. NEVER auto-merge val/test.")
+    print("\n" + "=" * 72)
+    print("  DONE — candidates per class:")
+    header = f"  {'split':<6} {'images':>7} {'imgs_aug':>9} " + " ".join(f"{n:>10}" for n in names)
+    print(header)
+    for s in summaries:
+        row = f"  {s['split']:<6} {s['images']:>7} {s['imgs_aug']:>9} " + \
+              " ".join(f"{s['per_class'].get(n, 0):>10}" for n in names)
+        print(row)
+    print("\n  Per-class candidate labels: OUT_ROOT/by_class/<class>/<split>/")
+    print("  Per-class manifests:        OUT_ROOT/manifest_<class>_<split>.csv")
+    print("  A class with MANY candidates is under-annotated; FEW -> already well labeled")
+    print("  (its candidates are mostly false positives — don't auto-merge those).")
     print("=" * 72)
 
 
