@@ -15,6 +15,7 @@ The ORIGINAL split is preserved (labels overwritten in place). Per-split backup
 made once. DRY_RUN=True first to see the match report, then set False.
 """
 import os
+import re
 import csv
 import glob
 import shutil
@@ -25,21 +26,24 @@ import shutil
 REVIEW_DS  = "/home/constantin/Doctorat/GunDatasetNoAugSplit/review_candidates2_reviewed"  # reviewed export root
 NAME_MAP   = "/home/constantin/Doctorat/GunDatasetNoAugSplit/review_candidates2/name_map.csv"
 BACKUP_SUB = "labels_prereview_backup"
-EXT_TOKENS = ("_jpg", "_jpeg", "_png", "_bmp", "_webp")
 DRY_RUN    = True     # True = report only; False = overwrite original labels
 
-
-def core_key(name):
-    """basename -> drop ext -> cut at '.rf'  (lowercased)."""
-    base = os.path.splitext(os.path.basename(name))[0]
-    return base.split(".rf", 1)[0].lower()
+# trailing tokens Roboflow appends: '_<ext>' optionally followed by an aug index '_<n>'
+_EXT_TAIL = re.compile(r"_(jpg|jpeg|png|bmp|webp)(_\d+)?$")
 
 
-def strip_one_ext_token(s):
-    for t in EXT_TOKENS:
-        if s.endswith(t):
-            return s[: -len(t)]
-    return s
+def canon(name):
+    """Canonical key: drop ext -> cut at '.rf' -> lowercase -> repeatedly strip any
+    trailing '_<ext>' (optionally followed by '_<digit>' aug index). Applied to BOTH
+    the reviewed names and the map's exported_image so the round-trip stacking of
+    _jpg/_jpeg/_png tokens (and _1/_2 copies) collapses to the same stable base."""
+    b = os.path.splitext(os.path.basename(name))[0]
+    b = b.split(".rf", 1)[0].lower()
+    while True:
+        nb = _EXT_TAIL.sub("", b)
+        if nb == b:
+            return b
+        b = nb
 
 
 def orig_label_from_image(img_path):
@@ -49,12 +53,12 @@ def orig_label_from_image(img_path):
 
 
 def load_map():
-    """exported_image stem (lower) -> dict(original_path, original_stem, split)."""
+    """canon(exported_image) -> row.  Collisions (same canon from >1 export) -> None."""
     m = {}
     with open(NAME_MAP) as f:
         for row in csv.DictReader(f):
-            stem = os.path.splitext(os.path.basename(row["exported_image"]))[0].lower()
-            m[stem] = row
+            k = canon(row["exported_image"])
+            m[k] = None if k in m else row     # mark ambiguous keys as None
     return m
 
 
@@ -69,11 +73,11 @@ def main():
     backed_up = set()
     matched = unmatched = written = 0
     for rl in reviewed:
-        core = core_key(rl)
-        row = name_map.get(core) or name_map.get(strip_one_ext_token(core))
+        key = canon(rl)
+        row = name_map.get(key)
         if row is None:
             unmatched += 1
-            print(f"    UNMATCHED  {os.path.basename(rl)}  (key='{core}')")
+            print(f"    UNMATCHED  {os.path.basename(rl)}  (key='{key}')")
             continue
 
         matched += 1
