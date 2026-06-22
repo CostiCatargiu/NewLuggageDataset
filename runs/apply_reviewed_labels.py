@@ -1,124 +1,105 @@
 #!/usr/bin/env python3
 """
-Push REVIEWED labels back into the ORIGINAL dataset.
+Push REVIEWED labels back into the ORIGINAL dataset, using name_map.csv to resolve
+the Roboflow round-trip renaming exactly.
 
-Walks the reviewed dataset (all splits), and for each reviewed label finds the
-matching image in the ORIGINAL dataset BY NAME, then overwrites that original
-label with the reviewed one — keeping each image in its ORIGINAL split.
+Roboflow round-trip: your export was  train__<base>.jpg  (recorded in name_map.csv
+as 'exported_image'). After upload/review/re-download Roboflow renames it to
+  train__<base>_jpg.rf.<NEWHASH>.jpg   (appends an ext token + a NEW .rf hash).
+So we map a reviewed file back by:
+  reviewed name -> strip ext -> cut at '.rf' -> strip ONE trailing _jpg/_jpeg/_png
+  -> match to the 'exported_image' stem in name_map.csv
+  -> get that row's original_path -> overwrite that original label (in its split).
 
-Why match by a normalized KEY instead of exact filename:
-  Roboflow names are  <base>.rf.<hash>.<ext>.  When you re-upload/re-download,
-  the hash changes and the split may be re-shuffled. The stable identity is the
-  part BEFORE '.rf' (the original base). So we match on:
-      strip extension -> cut at '.rf' -> strip any 'split__' prefix the export added
-  The ORIGINAL split is preserved (we only replace label *content* at the original
-  location, never move images), so a Roboflow re-split can't scramble your eval set.
-
-SAFETY: backs up each original split's labels once (labels -> labels_prereview_backup)
-before overwriting. DRY_RUN=True first to preview the match report; then set False.
+The ORIGINAL split is preserved (labels overwritten in place). Per-split backup
+made once. DRY_RUN=True first to see the match report, then set False.
 """
 import os
+import csv
 import glob
 import shutil
 
 # =============================================================================
 # CONFIG
 # =============================================================================
-ORIG_DS      = "/home/constantin/Doctorat/GunDatasetNoAugSplit"
-ORIG_SPLITS  = ["train", "valid", "test"]
-LABELS_SUB   = "labels"
-IMAGES_SUB   = "images"
-
-REVIEW_DS    = "/home/constantin/Doctorat/GunDatasetNoAugSplit/review_candidates2_reviewed"  # reviewed export root
-BACKUP_SUB   = "labels_prereview_backup"
-STRIP_PREFIXES = ["train__", "valid__", "val__", "test__"]
-IMG_EXTS     = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
-
-DRY_RUN      = True     # True = only report matches; False = actually overwrite labels
+REVIEW_DS  = "/home/constantin/Doctorat/GunDatasetNoAugSplit/review_candidates2_reviewed"  # reviewed export root
+NAME_MAP   = "/home/constantin/Doctorat/GunDatasetNoAugSplit/review_candidates2/name_map.csv"
+BACKUP_SUB = "labels_prereview_backup"
+EXT_TOKENS = ("_jpg", "_jpeg", "_png", "_bmp", "_webp")
+DRY_RUN    = True     # True = report only; False = overwrite original labels
 
 
-def norm_key(name, strip_prefix=False):
-    """basename -> drop ext -> cut at '.rf' -> optionally strip split prefix."""
+def core_key(name):
+    """basename -> drop ext -> cut at '.rf'  (lowercased)."""
     base = os.path.splitext(os.path.basename(name))[0]
-    base = base.split(".rf", 1)[0]
-    if strip_prefix:
-        for p in STRIP_PREFIXES:
-            if base.startswith(p):
-                base = base[len(p):]
-                break
-    return base
+    return base.split(".rf", 1)[0].lower()
 
 
-def build_original_index():
-    """key -> list of (split, original_label_path).  Lists catch ambiguous keys."""
-    index = {}
-    for split in ORIG_SPLITS:
-        img_dir = os.path.join(ORIG_DS, split, IMAGES_SUB)
-        lbl_dir = os.path.join(ORIG_DS, split, LABELS_SUB)
-        if not os.path.isdir(img_dir):
-            continue
-        for ext in IMG_EXTS:
-            for img in glob.glob(os.path.join(img_dir, "**", f"*{ext}"), recursive=True):
-                key = norm_key(img)
-                lbl = os.path.join(lbl_dir, os.path.splitext(os.path.basename(img))[0] + ".txt")
-                index.setdefault(key, []).append((split, lbl))
-    return index
+def strip_one_ext_token(s):
+    for t in EXT_TOKENS:
+        if s.endswith(t):
+            return s[: -len(t)]
+    return s
 
 
-def find_reviewed_labels():
-    """All label .txt files anywhere under the reviewed dataset."""
-    return sorted(glob.glob(os.path.join(REVIEW_DS, "**", "*.txt"), recursive=True))
+def orig_label_from_image(img_path):
+    parts = img_path.replace("\\", "/").rsplit("/images/", 1)
+    lbl = (parts[0] + "/labels/" + parts[1]) if len(parts) == 2 else os.path.splitext(img_path)[0]
+    return os.path.splitext(lbl)[0] + ".txt", (parts[0] if len(parts) == 2 else os.path.dirname(img_path))
+
+
+def load_map():
+    """exported_image stem (lower) -> dict(original_path, original_stem, split)."""
+    m = {}
+    with open(NAME_MAP) as f:
+        for row in csv.DictReader(f):
+            stem = os.path.splitext(os.path.basename(row["exported_image"]))[0].lower()
+            m[stem] = row
+    return m
 
 
 def main():
-    index = build_original_index()
-    print(f"  original images indexed: {sum(len(v) for v in index.values())} "
-          f"({len(index)} unique keys)")
+    name_map = load_map()
+    print(f"  name_map entries: {len(name_map)}")
 
-    reviewed = find_reviewed_labels()
-    reviewed = [p for p in reviewed if os.path.basename(p).lower() not in
-                ("classes.txt", "readme.txt")]
-    print(f"  reviewed label files:    {len(reviewed)}\n")
+    reviewed = sorted(glob.glob(os.path.join(REVIEW_DS, "**", "*.txt"), recursive=True))
+    reviewed = [p for p in reviewed if os.path.basename(p).lower() not in ("classes.txt", "readme.txt")]
+    print(f"  reviewed label files: {len(reviewed)}\n")
 
     backed_up = set()
-    matched = unmatched = ambiguous = written = 0
+    matched = unmatched = written = 0
     for rl in reviewed:
-        key = norm_key(rl, strip_prefix=True)
-        hits = index.get(key)
-        if not hits:
+        core = core_key(rl)
+        row = name_map.get(core) or name_map.get(strip_one_ext_token(core))
+        if row is None:
             unmatched += 1
-            print(f"    UNMATCHED  {os.path.basename(rl)}  (key='{key}')")
-            continue
-        if len(hits) > 1:
-            ambiguous += 1
-            print(f"    AMBIGUOUS  {os.path.basename(rl)}  (key='{key}' -> "
-                  f"{len(hits)} originals: {[h[0] for h in hits]}) — skipped")
+            print(f"    UNMATCHED  {os.path.basename(rl)}  (key='{core}')")
             continue
 
         matched += 1
-        split, orig_lbl = hits[0]
+        orig_img = row["original_path"]
+        orig_lbl, split_dir = orig_label_from_image(orig_img)
         if DRY_RUN:
             continue
 
         # back up this split's labels once
-        if split not in backed_up:
-            src = os.path.join(ORIG_DS, split, LABELS_SUB)
-            bak = os.path.join(ORIG_DS, split, BACKUP_SUB)
+        bak = os.path.join(split_dir, BACKUP_SUB)
+        src = os.path.join(split_dir, "labels")
+        if src not in backed_up:
             if os.path.isdir(src) and not os.path.isdir(bak):
                 shutil.copytree(src, bak)
                 print(f"    [backup] {src} -> {bak}")
-            backed_up.add(split)
+            backed_up.add(src)
 
         os.makedirs(os.path.dirname(orig_lbl), exist_ok=True)
-        shutil.copyfile(rl, orig_lbl)     # reviewed label overwrites the original (same split)
+        shutil.copyfile(rl, orig_lbl)
         written += 1
 
-    print(f"\n  matched: {matched}   unmatched: {unmatched}   ambiguous: {ambiguous}")
+    print(f"\n  matched: {matched}   unmatched: {unmatched}")
     if DRY_RUN:
-        print("  DRY_RUN=True — nothing written. Review the matches above, then set DRY_RUN=False.")
+        print("  DRY_RUN=True — nothing written. Check matches, then set DRY_RUN=False.")
     else:
-        print(f"  labels overwritten in original dataset: {written}")
-        print(f"  (originals backed up per split to '{BACKUP_SUB}'; revert by restoring it.)")
+        print(f"  original labels overwritten: {written}  (per-split backups in '{BACKUP_SUB}')")
 
 
 if __name__ == "__main__":
