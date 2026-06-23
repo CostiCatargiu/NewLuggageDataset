@@ -2540,7 +2540,7 @@ class ZGLSKAWideFuseV2(nn.Module):
         self.act = nn.SiLU()
 
         # Branch 1: Square LKA (unchanged)
-        self.lka = ZGLKA(c1, c1, k_sq)
+        self.lka = ZGLKA(c1, k_sq)
 
         # Branch 2: Hybrid (Large RF + Small RF)
         self.strip = LSKA(c1, k_size=k_strip)
