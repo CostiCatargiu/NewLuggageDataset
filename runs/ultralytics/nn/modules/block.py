@@ -2540,10 +2540,10 @@ class ZGLSKAWideFuseV2(nn.Module):
         self.act = nn.SiLU()
 
         # Branch 1: Square LKA (unchanged)
-        self.lka = LKA(c1, k_sq)
+        self.lka = ZGLKA(c1, c1, k_sq)
 
         # Branch 2: Hybrid (Large RF + Small RF)
-        self.strip = LSKAStrip(c1, k_size=k_strip)
+        self.strip = LSKA(c1, k_size=k_strip)
         self.dw_fine = nn.Conv2d(c1, c1, k_fine, 1, k_fine // 2, groups=c1)
         self.dw_mid = nn.Conv2d(c1, c1, k_mid, 1, k_mid // 2, groups=c1)
         self.small_norm = nn.GroupNorm(1, c1)
