@@ -25,6 +25,7 @@ __all__ = (
     "C2fEMA",
     "C2fSimAM",
     "C2fLSKA",
+    "DySample",
     "C2fDCBAM",
     "C2fShapeCBAM",
     "ImagePoolingAttn",
@@ -2461,6 +2462,51 @@ class ZGLSKASelectFuse(nn.Module):
         w = self.router(x).softmax(dim=1).unsqueeze(2)  # B,3,1,H,W (per-location)
         fused = (w * feats).sum(dim=1)  # B,C,H,W
         return x + self.gamma * self.pw2(fused)
+
+
+class DySample(nn.Module):
+    """Dynamic content-aware upsampler (DySample, ICCV 2023), 'lp' style.
+
+    Drop-in replacement for nn.Upsample(scale_factor=2) in the FPN top-down path.
+    Instead of fixed nearest/bilinear interpolation, it predicts per-location
+    sampling offsets and gathers via grid_sample -> recovers fine spatial detail
+    when upsampling toward the P3 (small-object) level, where nearest-neighbour
+    upsampling blurs exactly the detail small objects need. Channel-preserving;
+    the offset conv is near-zero-init so it starts ~ bilinear (safe transfer).
+
+    YAML: drop-in for nn.Upsample ->  - [-1, 1, DySample, [2]]   (scale=2)
+    """
+
+    def __init__(self, c1, scale=2, groups=4):
+        super().__init__()
+        assert c1 % groups == 0, "DySample: channels must be divisible by groups"
+        self.scale = scale
+        self.groups = groups
+        self.offset = nn.Conv2d(c1, 2 * groups * scale * scale, 1)
+        nn.init.normal_(self.offset.weight, std=0.001)
+        nn.init.zeros_(self.offset.bias)
+        self.register_buffer("init_pos", self._init_pos())
+
+    def _init_pos(self):
+        h = torch.arange((-self.scale + 1) / 2, (self.scale - 1) / 2 + 1) / self.scale
+        return torch.stack(torch.meshgrid([h, h])).transpose(1, 2).repeat(
+            1, self.groups, 1, 1).reshape(1, -1, 1, 1)
+
+    def forward(self, x):
+        offset = self.offset(x) * 0.25 + self.init_pos
+        B, _, H, W = offset.shape
+        offset = offset.view(B, 2, -1, H, W)
+        coords_h = torch.arange(H, device=x.device) + 0.5
+        coords_w = torch.arange(W, device=x.device) + 0.5
+        coords = torch.stack(torch.meshgrid([coords_w, coords_h])).transpose(
+            1, 2).unsqueeze(1).unsqueeze(0).type(x.dtype).to(x.device)
+        normalizer = torch.tensor([W, H], dtype=x.dtype, device=x.device).view(1, 2, 1, 1, 1)
+        coords = 2 * (coords + offset) / normalizer - 1
+        coords = F.pixel_shuffle(coords.reshape(B, -1, H, W), self.scale).view(
+            B, 2, -1, self.scale * H, self.scale * W).permute(0, 2, 3, 4, 1).contiguous().flatten(0, 1)
+        xg = x.reshape(B * self.groups, -1, H, W)
+        return F.grid_sample(xg, coords, mode="bilinear", align_corners=False,
+                             padding_mode="border").view(B, -1, self.scale * H, self.scale * W)
 
 
 class ZGLSKAWideFuseV2(nn.Module):

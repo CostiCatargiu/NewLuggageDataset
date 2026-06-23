@@ -85,6 +85,7 @@ from .block import (
     ZGLSKACompactFuse,
     ZGLSKASelectFuse,
     ZGLSKAWideFuseV2,
+    DySample,
     ZGSmallDetail,
     WeightedConcat,
 )
@@ -224,6 +225,7 @@ __all__ = (
     "ZGLSKACompactFuse",
     "ZGLSKASelectFuse",
     "ZGLSKAWideFuseV2",
+    "DySample",
     "ZGSmallDetail",
     "WeightedConcat",
     "C3k2",

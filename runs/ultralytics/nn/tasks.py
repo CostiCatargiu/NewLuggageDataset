@@ -59,6 +59,7 @@ from ultralytics.nn.modules import (
     ZGLSKACompactFuse,
     ZGLSKASelectFuse,
     ZGLSKAWideFuseV2,
+    DySample,
     ZGSmallDetail,
     WeightedConcat,
     C2fCIB,
@@ -1153,6 +1154,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is ZGP2Fuse:  # two inputs: [P3_head, P2_backbone]; output = P3 channels
             c2 = ch[f[0]]
             args = [ch[f[0]], ch[f[1]]]
+        elif m is DySample:  # content-aware upsampler; channel-preserving drop-in for nn.Upsample
+            c1 = ch[f]
+            c2 = c1
+            args = [c1, *args]
         elif m in {Concat, WeightedConcat}:
             c2 = sum(ch[x] for x in f)
         elif m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, DetectAux, DetectAuxDual, DetectDecoupled, DetectObj, DetectDecoupledObj, DetectDecoupledAux, DetectMultiProto, DetectCosine, DetectDecoupledCosine, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
