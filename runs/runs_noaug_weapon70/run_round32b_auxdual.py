@@ -118,20 +118,27 @@ head:
 # TRAINING PARAMETER CONFIGURATIONS
 # =============================================================================
 DEFAULT_TAL_PARAMS = dict(tal_topk=10, tal_alpha=0.5, tal_beta=6.0)
-BEST_TAL_PARAMS = dict(tal_topk=15, tal_alpha=0.5, tal_beta=3.0)
+BEST_TAL_70 = dict(tal_topk=15, tal_alpha=0.5, tal_beta=3.0)
+REVIEW_TAL = dict(tal_topk=13, tal_alpha=0.7, tal_beta=4.0)
 
 RUNS = [
     {
         "name": "r32b_auxdual_arch_only_70",
-        "desc": "[1/2] Arch-only: WideFuseV2 + DetectAuxDual with DEFAULT TAL",
+        "desc": "[1/3] Arch-only: WideFuseV2 + DetectAuxDual with DEFAULT TAL",
         "yaml_content": ARCH_YAML_CONTENT,
         "training_params": DEFAULT_TAL_PARAMS,
     },
     {
-        "name": "r32b_auxdual_besttal_70",
-        "desc": "[2/2] Best-of-both: WideFuseV2 + DetectAuxDual with BEST TAL",
+        "name": "r32b_auxdual_besttal70_70",
+        "desc": "[2/3] Best-of-both: WideFuseV2 + DetectAuxDual + 70% best TAL (topk15/b3)",
         "yaml_content": ARCH_YAML_CONTENT,
-        "training_params": BEST_TAL_PARAMS,
+        "training_params": BEST_TAL_70,
+    },
+    {
+        "name": "r32b_auxdual_reviewtal_70",
+        "desc": "[3/3] Best-of-both: WideFuseV2 + DetectAuxDual + review TAL (topk13/a07/b4)",
+        "yaml_content": ARCH_YAML_CONTENT,
+        "training_params": REVIEW_TAL,
     },
 ]
 
@@ -222,7 +229,7 @@ def main():
     total_start = time.time()
 
     print(f"\n{'=' * 80}")
-    print(f"  70% ABLATION -- ROUND 32B: DUAL-PATH AUX SUPERVISION (2 runs)")
+    print(f"  70% ABLATION -- ROUND 32B: DUAL-PATH AUX SUPERVISION (3 runs)")
     print(f"  Target: Force backbone to preserve detail via dual-path aux supervision")
     print(f"  Key change: Aux head sees PRE-widefuse P4, main head sees POST-widefuse P4")
     print(f"{'=' * 80}")
