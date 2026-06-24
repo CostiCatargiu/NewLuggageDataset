@@ -26,6 +26,8 @@ __all__ = (
     "C2fSimAM",
     "C2fLSKA",
     "DySample",
+    "ZGGlobalContext",
+    "ZGGatherContext",
     "C2fDCBAM",
     "C2fShapeCBAM",
     "ImagePoolingAttn",
@@ -2462,6 +2464,67 @@ class ZGLSKASelectFuse(nn.Module):
         w = self.router(x).softmax(dim=1).unsqueeze(2)  # B,3,1,H,W (per-location)
         fused = (w * feats).sum(dim=1)  # B,C,H,W
         return x + self.gamma * self.pw2(fused)
+
+
+class ZGGlobalContext(nn.Module):
+    """Global-context block (GCNet / non-local-lite) -- AXIS: global context modeling.
+
+    Per-location features lack whole-image context, which is exactly what the
+    heterogeneous "other" class (defined by what it is NOT) needs to be
+    disambiguated. This computes a single global descriptor (global average pool),
+    transforms it through a small MLP, and broadcasts it back additively into every
+    spatial location. Channel-preserving; gamma=0 at init -> exact identity at epoch
+    0 (clean pretrained transfer, append-only like the rest of the family).
+
+    YAML: drop-in single-input, e.g.  - [21, 1, ZGGlobalContext, [512]]
+          (the channel arg is nominal and width-scaled by parse_model).
+    """
+
+    def __init__(self, c1, c2, reduction=8):
+        super().__init__()
+        assert c1 == c2, "ZGGlobalContext preserves channels"
+        hidden = max(8, c1 // reduction)
+        self.fc = nn.Sequential(
+            nn.Conv2d(c1, hidden, 1), nn.SiLU(), nn.Conv2d(hidden, c1, 1)
+        )
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        ctx = x.mean(dim=(2, 3), keepdim=True)   # (B, C, 1, 1) global descriptor
+        ctx = self.fc(ctx)
+        return x + self.gamma * ctx              # gated additive broadcast
+
+
+class ZGGatherContext(nn.Module):
+    """Global CROSS-SCALE context injected into the finest level -- AXIS: gather-
+    distribute neck (Gold-YOLO-style global fusion vs the local PAN).
+
+    The standard PAN fuses only adjacent scales (P3 sees P4). Small objects and the
+    context-defined "other" class both fail for lack of GLOBAL multi-scale context.
+    This gathers a global descriptor from P3, P4 AND P5 (avg-pool each), fuses them,
+    and broadcasts the result back into the P3 (small-object) level as a gated
+    additive context -- so every P3 location sees whole-scene, all-scale information.
+
+    Multi-input: YAML 'from' = [P3, P4, P5]; output = enhanced P3 (P3 channels).
+    gamma=0 at init -> identity. Inference cost is negligible (pooled 1x1 path).
+
+    YAML: - [[14, 17, 20], 1, ZGGatherContext, []]
+    """
+
+    def __init__(self, chs):
+        super().__init__()
+        c_p3, c_p4, c_p5 = chs
+        self.proj = nn.Sequential(
+            nn.Conv2d(c_p3 + c_p4 + c_p5, c_p3, 1), nn.SiLU(),
+            nn.Conv2d(c_p3, c_p3, 1),
+        )
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        p3, p4, p5 = x
+        g = torch.cat([t.mean(dim=(2, 3), keepdim=True) for t in (p3, p4, p5)], dim=1)
+        g = self.proj(g)             # (B, c_p3, 1, 1)
+        return p3 + self.gamma * g   # broadcast global cross-scale context into P3
 
 
 class DySample(nn.Module):

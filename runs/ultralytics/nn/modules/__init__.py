@@ -86,6 +86,8 @@ from .block import (
     ZGLSKASelectFuse,
     ZGLSKAWideFuseV2,
     DySample,
+    ZGGlobalContext,
+    ZGGatherContext,
     ZGSmallDetail,
     WeightedConcat,
 )
@@ -226,6 +228,8 @@ __all__ = (
     "ZGLSKASelectFuse",
     "ZGLSKAWideFuseV2",
     "DySample",
+    "ZGGlobalContext",
+    "ZGGatherContext",
     "ZGSmallDetail",
     "WeightedConcat",
     "C3k2",

@@ -60,6 +60,8 @@ from ultralytics.nn.modules import (
     ZGLSKASelectFuse,
     ZGLSKAWideFuseV2,
     DySample,
+    ZGGlobalContext,
+    ZGGatherContext,
     ZGSmallDetail,
     WeightedConcat,
     C2fCIB,
@@ -1064,6 +1066,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             ZGLSKASelectFuse,
             ZGLSKAWideFuseV2,
             ZGSmallDetail,
+            ZGGlobalContext,
             C3k2,
             RepNCSPELAN4,
             ELAN1,
@@ -1158,6 +1161,9 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1 = ch[f]
             c2 = c1
             args = [c1, *args]
+        elif m is ZGGatherContext:  # multi-input [P3,P4,P5] -> enhanced P3 (P3 channels)
+            c2 = ch[f[0]]
+            args = [[ch[x] for x in f]]
         elif m in {Concat, WeightedConcat}:
             c2 = sum(ch[x] for x in f)
         elif m in {Detect, DetectCGC, DetectLKACls, DetectSmallCls, DetectDeepCls, DetectWideCls, DetectAux, DetectAuxDual, DetectDecoupled, DetectObj, DetectDecoupledObj, DetectDecoupledAux, DetectMultiProto, DetectCosine, DetectDecoupledCosine, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
