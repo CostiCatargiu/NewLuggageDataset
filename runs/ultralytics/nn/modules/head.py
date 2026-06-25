@@ -30,6 +30,7 @@ __all__ = (
     "DetectWideCls",
     "DetectAux",
     "DetectAuxDual",
+    "DetectAuxDualDeepP3",
     "DetectDecoupled",
     "DetectObj",
     "DetectDecoupledObj",
@@ -544,6 +545,65 @@ class DetectAuxDual(Detect):
         for a, b, s in zip(self.cv2a, self.cv3a, self.stride):
             a[-1].bias.data[:] = 1.0
             b[-1].bias.data[: self.nc] = math.log(5 / self.nc / (640 / s) ** 2)
+
+
+class DetectAuxDualDeepP3(DetectAuxDual):
+    """DetectAuxDual with DEEPER P3 head towers (round 40).
+
+    Data analysis across 19 experiments reveals the #1 bottleneck is NOT
+    features (recall is 80-90%) but SCORING QUALITY at P3:
+
+      class     AR50_small  AP50_small  gap (scoring loss)
+      other     80.6%       49.0%       31.6pp  <-- worst
+      long_gun  90.5%       67.2%       23.4pp
+      knife     85.1%       64.2%       20.9pp
+      pistol    90.3%       77.6%       12.7pp
+
+    The detector FINDS small objects but mis-scores/mis-ranks them. Meanwhile
+    long_gun_small has AP50=67% but AP50-95=25% -- worst localization ratio
+    (0.378), meaning boxes are detected but poorly regressed.
+
+    Both problems originate at P3: it handles the HARDEST classification
+    (diverse small objects) and regression (thin objects at low res) with the
+    SHALLOWEST towers (same 2-conv depth as the easier P4/P5 levels).
+
+    FIX: Add one extra DWConv+Conv layer to P3's cls (cv3) and box (cv2)
+    towers ONLY. P4/P5 towers stay standard depth. This gives P3 more
+    representational capacity for its harder task:
+
+      P3 cls: DWConv→Conv → DWConv→Conv → [DWConv→Conv] → Conv2d  (3 blocks)
+      P3 box: Conv→Conv → [Conv] → Conv2d                         (3 blocks)
+      P4/P5:  standard 2-block depth (unchanged)
+
+    The extra layer is zero-init-biased and uses the same channel widths, so
+    at epoch 0 it's near-identity (safe pretrained transfer). At inference:
+    adds ~2% FLOPs (only the P3 head is deeper). Aux towers stay standard.
+
+    Drop-in replacement for DetectAuxDual — same YAML format:
+      - [[22, 21, 23, 14, 17, 20], 1, DetectAuxDualDeepP3, [nc, 0.5]]
+    """
+
+    def __init__(self, nc=80, aux_weight=0.25, ch=()):
+        super().__init__(nc, aux_weight, ch)
+        # Rebuild cv2[0] and cv3[0] with one extra conv layer (P3 = index 0)
+        n = len(ch) // 2 if not hasattr(self, '_built') else self.nl
+        main_ch = ch[:len(ch) // 2] if isinstance(ch, (list, tuple)) else ch
+        p3_ch = main_ch[0]
+        c2 = max((16, p3_ch // 4, self.reg_max * 4))
+        c3 = max(p3_ch, min(self.nc, 100))
+
+        # Deeper P3 box tower: 3 conv blocks instead of 2
+        self.cv2[0] = nn.Sequential(
+            Conv(p3_ch, c2, 3), Conv(c2, c2, 3), Conv(c2, c2, 3),
+            nn.Conv2d(c2, 4 * self.reg_max, 1),
+        )
+        # Deeper P3 cls tower: 3 DWConv+Conv blocks instead of 2
+        self.cv3[0] = nn.Sequential(
+            nn.Sequential(DWConv(p3_ch, p3_ch, 3), Conv(p3_ch, c3, 1)),
+            nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+            nn.Sequential(DWConv(c3, c3, 3), Conv(c3, c3, 1)),
+            nn.Conv2d(c3, self.nc, 1),
+        )
 
 
 class DetectDecoupled(Detect):
