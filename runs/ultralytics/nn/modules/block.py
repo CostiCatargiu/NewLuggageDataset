@@ -27,6 +27,7 @@ __all__ = (
     "C2fLSKA",
     "DySample",
     "ZGGlobalContext",
+    "ZGGlobalContext2",
     "ZGGatherContext",
     "C2fDCBAM",
     "C2fShapeCBAM",
@@ -2525,6 +2526,40 @@ class ZGGatherContext(nn.Module):
         g = torch.cat([t.mean(dim=(2, 3), keepdim=True) for t in (p3, p4, p5)], dim=1)
         g = self.proj(g)             # (B, c_p3, 1, 1)
         return p3 + self.gamma * g   # broadcast global cross-scale context into P3
+
+
+class ZGGlobalContext2(nn.Module):
+    """globalctx + max-pool branch (avg+max global descriptor) -- the last-arch
+    refinement of the round-38 winner.
+
+    ZGGlobalContext built its global descriptor from AVERAGE pool only (whole-scene
+    context). This adds a MAX-pool branch: avg captures context, max captures the
+    single most SALIENT activation -- the cue small/rare weapon instances spike on
+    but that averages away in avg-pool (the CBAM/BAM channel-attention insight).
+    Both descriptors are concatenated -> MLP -> gated additive broadcast.
+
+    Stays gentle/gated/identity-init (gamma=0 -> identity at epoch 0), the property
+    that made globalctx generalize and the aggressive variants (gather, wfv2_p3)
+    fail. It ENRICHES the winning module rather than stacking a second one (which
+    is what sank r39). Channel-preserving, ~0 inference cost.
+
+    YAML: drop-in single-input, e.g.  - [21, 1, ZGGlobalContext2, [512]]
+    """
+
+    def __init__(self, c1, c2, reduction=8):
+        super().__init__()
+        assert c1 == c2, "ZGGlobalContext2 preserves channels"
+        hidden = max(8, c1 // reduction)
+        self.fc = nn.Sequential(
+            nn.Conv2d(2 * c1, hidden, 1), nn.SiLU(), nn.Conv2d(hidden, c1, 1)
+        )
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        avg = x.mean(dim=(2, 3), keepdim=True)           # scene context
+        mx = x.amax(dim=(2, 3), keepdim=True)            # most salient activation
+        ctx = self.fc(torch.cat([avg, mx], dim=1))       # (B, C, 1, 1)
+        return x + self.gamma * ctx                      # gated additive broadcast
 
 
 class DySample(nn.Module):
