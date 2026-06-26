@@ -104,9 +104,12 @@ TAL_BEST_LOOSE = dict(
     tal_topk=13, tal_alpha=0.7, tal_beta=4.0, iou_type="DIoU", use_vfl=False,
 )
 
-# Headline model only: best arch (globalctx) + best TAL.
+# Three finalists, each seeded (1 & 2) -> 6 runs:
+#   globalctx + best TAL (headline) | globalctx + default (pure arch) | stock + best TAL (loss only)
 CONFIGS = [
-    {"name": "globalctx_full_besttal", "arch": "globalctx", "loss": TAL_BEST_LOOSE},  # headline
+    {"name": "globalctx_full_besttal", "arch": "globalctx", "loss": TAL_BEST_LOOSE},  # best arch + best TAL
+    {"name": "globalctx_full_default", "arch": "globalctx", "loss": TAL_DEFAULT},     # best arch (default loss)
+    {"name": "stock_full_besttal",     "arch": "stock",     "loss": TAL_BEST_LOOSE},  # stock + best TAL
 ]
 
 
