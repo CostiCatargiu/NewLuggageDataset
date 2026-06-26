@@ -1,0 +1,129 @@
+<svg viewBox="0 0 1230 760" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif">
+<style>
+  .t  { font-size: 13px; fill: #1b1b1b; }
+  .ts { font-size: 11px; fill: #555; }
+  .th { font-size: 17px; font-weight: 600; fill: #1b1b1b; }
+  .box { stroke-width: 1; }
+  .blue   { fill: #E6F1FB; stroke: #185FA5; }
+  .coral  { fill: #FAECE7; stroke: #993C1D; }
+  .pink   { fill: #FBEAF0; stroke: #993556; }
+  .amber  { fill: #FAEEDA; stroke: #854F0B; }
+  .green  { fill: #EAF3DE; stroke: #3B6D11; }
+  .teal   { fill: #E1F5EE; stroke: #0F6E56; }
+  .purple { fill: #EEEDFE; stroke: #534AB7; }
+  .det    { fill: #FAECE7; stroke: #993C1D; stroke-width: 1.6; }
+  .lbl-blue { fill: #0C447C; } .lbl-coral { fill: #712B13; } .lbl-pink { fill: #72243E; }
+  .lbl-amber { fill: #633806; } .lbl-green { fill: #27500A; } .lbl-teal { fill: #085041; }
+  .lbl-purple { fill: #3C3489; }
+  .flow  { stroke: #5F5E5A; stroke-width: 1.2; fill: none; }
+  .skip  { stroke: #185FA5; stroke-width: 1.2; fill: none; stroke-dasharray: 5 3; }
+  .aux   { stroke: #1D9E75; stroke-width: 1.2; fill: none; stroke-dasharray: 6 3; }
+  .frame { fill: none; stroke: #888780; stroke-width: 1.4; }
+  .framenew { fill: #534AB7; fill-opacity: 0.06; stroke: #534AB7; stroke-width: 1.7; stroke-dasharray: 8 4; }
+</style>
+<defs>
+<marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1.5 L7,4.5 L1,7.5" fill="none" stroke="#5F5E5A" stroke-width="1.3"/></marker>
+<marker id="ab" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1.5 L7,4.5 L1,7.5" fill="none" stroke="#185FA5" stroke-width="1.3"/></marker>
+<marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1.5 L7,4.5 L1,7.5" fill="none" stroke="#1D9E75" stroke-width="1.3"/></marker>
+</defs>
+
+<rect class="frame" x="12" y="48" width="222" height="486" rx="14"/>
+<rect class="frame" x="377" y="48" width="236" height="648" rx="14"/>
+<rect class="framenew" x="695" y="48" width="520" height="350" rx="14"/>
+
+<text class="th" x="123" y="40" text-anchor="middle">Backbone</text>
+<text class="ts" x="123" y="524" text-anchor="middle" font-weight="bold">stock YOLOv12s — unchanged</text>
+<text class="th" x="495" y="40" text-anchor="middle">Neck (PAN)</text>
+<text class="ts" x="495" y="688" text-anchor="middle" font-weight="bold">stock YOLOv12s — unchanged</text>
+<text class="th" x="955" y="40" text-anchor="middle">Head — globalctx</text>
+<text class="ts" x="955" y="66" text-anchor="middle" fill="#3C3489" font-weight="bold">new modules (our contribution)</text>
+
+<g class="flow">
+<path d="M122,94 L122,112"/><path d="M122,146 L122,164"/><path d="M122,198 L122,216"/><path d="M122,250 L122,268"/><path d="M122,302 L122,320"/><path d="M122,354 L122,372"/><path d="M122,406 L122,424"/><path d="M122,458 L122,476"/>
+<path d="M495,94 L495,112"/><path d="M495,146 L495,164"/><path d="M495,198 L495,216"/><path d="M495,250 L495,268"/><path d="M495,302 L495,320"/><path d="M495,354 L495,372"/><path d="M495,406 L495,424"/><path d="M495,458 L495,476"/><path d="M495,510 L495,528"/><path d="M495,562 L495,580"/><path d="M495,614 L495,632"/>
+</g>
+
+<g class="skip">
+<path d="M215,285 L393,285" marker-end="url(#ab)"/>
+<path d="M215,389 L268,389 L268,129 L393,129" marker-end="url(#ab)"/>
+<path d="M215,493 L244,493 L244,77 L393,77" marker-end="url(#ab)"/>
+</g>
+<text class="ts" x="300" y="279" text-anchor="middle" fill="#185FA5">P3 (stride 8)</text>
+<text class="ts" x="335" y="123" text-anchor="middle" fill="#185FA5">P4 (stride 16)</text>
+<text class="ts" x="335" y="71" text-anchor="middle" fill="#185FA5">P5 (stride 32)</text>
+
+<g class="flow">
+<path d="M595,337 L650,337 L650,120 L703,120" marker-end="url(#a)"/>
+<path d="M595,493 L632,493 L632,210 L703,210" marker-end="url(#a)"/>
+<path d="M595,649 L674,649 L674,300 L703,300" marker-end="url(#a)"/>
+<path d="M855,120 L883,120" marker-end="url(#a)"/>
+<path d="M855,210 L883,210" marker-end="url(#a)"/>
+<path d="M855,300 L883,300" marker-end="url(#a)"/>
+<path d="M1035,120 L1048,120" marker-end="url(#a)"/>
+<path d="M1035,210 L1048,210" marker-end="url(#a)"/>
+<path d="M1035,300 L1048,300" marker-end="url(#a)"/>
+<path d="M1130,322 L1130,352" marker-end="url(#a)"/>
+</g>
+<text class="ts" x="660" y="332" text-anchor="middle" fill="#185FA5">P3</text>
+<text class="ts" x="642" y="205" text-anchor="middle" fill="#185FA5">P4</text>
+<text class="ts" x="684" y="295" text-anchor="middle" fill="#185FA5">P5</text>
+
+<g class="aux">
+<path d="M595,505 L640,505 L640,360 L1075,360 L1075,322" marker-end="url(#ag)"/>
+</g>
+<text class="ts" x="840" y="354" text-anchor="middle" fill="#1D9E75">raw P3 / P4 / P5 → aux (training only, dropped at inference)</text>
+
+<text class="ts" x="34" y="58">L0 · P1/2 s2</text><rect class="box blue" x="30" y="60" width="185" height="34" rx="5"/><text class="t lbl-blue" x="122" y="82" text-anchor="middle">Conv [64,3,2]</text>
+<text class="ts" x="34" y="110">L1 · P2/4 s4</text><rect class="box blue" x="30" y="112" width="185" height="34" rx="5"/><text class="t lbl-blue" x="122" y="134" text-anchor="middle">Conv [128,3,2,1,2]</text>
+<text class="ts" x="34" y="162">L2 · ×2</text><rect class="box coral" x="30" y="164" width="185" height="34" rx="5"/><text class="t lbl-coral" x="122" y="186" text-anchor="middle">C3k2 [256,F,.25]</text>
+<text class="ts" x="34" y="214">L3 · P3/8 s8</text><rect class="box blue" x="30" y="216" width="185" height="34" rx="5"/><text class="t lbl-blue" x="122" y="238" text-anchor="middle">Conv [256,3,2,1,4]</text>
+<text class="ts" x="34" y="266">L4 · ×2 · P3</text><rect class="box coral" x="30" y="268" width="185" height="34" rx="5"/><text class="t lbl-coral" x="122" y="290" text-anchor="middle">C3k2 [512,F,.25]</text>
+<text class="ts" x="34" y="318">L5 · P4/16 s16</text><rect class="box blue" x="30" y="320" width="185" height="34" rx="5"/><text class="t lbl-blue" x="122" y="342" text-anchor="middle">Conv [512,3,2]</text>
+<text class="ts" x="34" y="370">L6 · ×4 · P4</text><rect class="box pink" x="30" y="372" width="185" height="34" rx="5"/><text class="t lbl-pink" x="122" y="394" text-anchor="middle">A2C2f [512,T,4]</text>
+<text class="ts" x="34" y="422">L7 · P5/32 s32</text><rect class="box blue" x="30" y="424" width="185" height="34" rx="5"/><text class="t lbl-blue" x="122" y="446" text-anchor="middle">Conv [1024,3,2]</text>
+<text class="ts" x="34" y="474">L8 · ×4 · P5</text><rect class="box pink" x="30" y="476" width="185" height="34" rx="5"/><text class="t lbl-pink" x="122" y="498" text-anchor="middle">A2C2f [1024,T,1]</text>
+
+<text class="ts" x="399" y="58">L9</text><rect class="box amber" x="395" y="60" width="200" height="34" rx="5"/><text class="t lbl-amber" x="495" y="82" text-anchor="middle">Upsample ×2</text>
+<text class="ts" x="399" y="110">L10</text><rect class="box green" x="395" y="112" width="200" height="34" rx="5"/><text class="t lbl-green" x="495" y="134" text-anchor="middle">Concat (P5↑+P4)</text>
+<text class="ts" x="399" y="162">L11 · ×2</text><rect class="box pink" x="395" y="164" width="200" height="34" rx="5"/><text class="t lbl-pink" x="495" y="186" text-anchor="middle">A2C2f [512,F,-1]</text>
+<text class="ts" x="399" y="214">L12</text><rect class="box amber" x="395" y="216" width="200" height="34" rx="5"/><text class="t lbl-amber" x="495" y="238" text-anchor="middle">Upsample ×2</text>
+<text class="ts" x="399" y="266">L13</text><rect class="box green" x="395" y="268" width="200" height="34" rx="5"/><text class="t lbl-green" x="495" y="290" text-anchor="middle">Concat (P4↑+P3)</text>
+<text class="ts" x="399" y="318">L14 · P3 neck · ×2</text><rect class="box pink" x="395" y="320" width="200" height="34" rx="5"/><text class="t lbl-pink" x="495" y="342" text-anchor="middle">A2C2f [256,F,-1]</text>
+<text class="ts" x="399" y="370">L15</text><rect class="box blue" x="395" y="372" width="200" height="34" rx="5"/><text class="t lbl-blue" x="495" y="394" text-anchor="middle">Conv [256,3,2]</text>
+<text class="ts" x="399" y="422">L16</text><rect class="box green" x="395" y="424" width="200" height="34" rx="5"/><text class="t lbl-green" x="495" y="446" text-anchor="middle">Concat (P3↓+L11)</text>
+<text class="ts" x="399" y="474">L17 · P4 neck · ×2</text><rect class="box pink" x="395" y="476" width="200" height="34" rx="5"/><text class="t lbl-pink" x="495" y="498" text-anchor="middle">A2C2f [512,F,-1]</text>
+<text class="ts" x="399" y="526">L18</text><rect class="box blue" x="395" y="528" width="200" height="34" rx="5"/><text class="t lbl-blue" x="495" y="550" text-anchor="middle">Conv [512,3,2]</text>
+<text class="ts" x="399" y="578">L19</text><rect class="box green" x="395" y="580" width="200" height="34" rx="5"/><text class="t lbl-green" x="495" y="602" text-anchor="middle">Concat (P4↓+P5)</text>
+<text class="ts" x="399" y="630">L20 · P5 neck · ×2</text><rect class="box coral" x="395" y="632" width="200" height="34" rx="5"/><text class="t lbl-coral" x="495" y="654" text-anchor="middle">C3k2 [1024,T]</text>
+
+<text class="ts" x="707" y="98">L22 · P3</text><rect class="box teal" x="703" y="100" width="152" height="40" rx="5"/><text class="t lbl-teal" x="779" y="124" text-anchor="middle">ZGSmallDetail</text>
+<text class="ts" x="707" y="188">L21 · P4</text><rect class="box teal" x="703" y="190" width="152" height="40" rx="5"/><text class="t lbl-teal" x="779" y="214" text-anchor="middle">ZGLSKAWideFuseV2</text>
+<text class="ts" x="707" y="278">L23 · P5</text><rect class="box teal" x="703" y="280" width="152" height="40" rx="5"/><text class="t lbl-teal" x="779" y="304" text-anchor="middle">ZGLSKAWideFuse</text>
+
+<text class="ts" x="887" y="98">L24</text><rect class="box purple" x="883" y="100" width="152" height="40" rx="5"/><text class="t lbl-purple" x="959" y="124" text-anchor="middle">ZGGlobalContext</text>
+<text class="ts" x="887" y="188">L25</text><rect class="box purple" x="883" y="190" width="152" height="40" rx="5"/><text class="t lbl-purple" x="959" y="214" text-anchor="middle">ZGGlobalContext</text>
+<text class="ts" x="887" y="278">L26</text><rect class="box purple" x="883" y="280" width="152" height="40" rx="5"/><text class="t lbl-purple" x="959" y="304" text-anchor="middle">ZGGlobalContext</text>
+
+<text class="ts" x="1052" y="98">L27</text>
+<rect class="box det" x="1050" y="100" width="150" height="222" rx="6"/>
+<text class="t lbl-coral" x="1125" y="130" text-anchor="middle" font-weight="600">DetectAuxDual</text>
+<text class="ts" x="1125" y="150" text-anchor="middle">nc = 4</text>
+<text class="ts" x="1125" y="184" text-anchor="middle">main ← enhanced</text>
+<text class="ts" x="1125" y="200" text-anchor="middle">P3 / P4 / P5</text>
+<text class="ts" x="1125" y="232" text-anchor="middle">aux ← raw P3/P4/P5</text>
+<text class="ts" x="1125" y="248" text-anchor="middle">(train-only)</text>
+<text class="ts" x="1125" y="286" text-anchor="middle">3 heads @ inference</text>
+<text class="t lbl-coral" x="1130" y="370" text-anchor="middle" font-weight="600">detections</text>
+<text class="ts" x="1130" y="386" text-anchor="middle">boxes + scores</text>
+
+<rect class="box blue" x="30" y="724" width="12" height="12" rx="3"/><text class="ts" x="46" y="734">Conv</text>
+<rect class="box coral" x="100" y="724" width="12" height="12" rx="3"/><text class="ts" x="116" y="734">C3k2</text>
+<rect class="box pink" x="172" y="724" width="12" height="12" rx="3"/><text class="ts" x="188" y="734">A2C2f</text>
+<rect class="box amber" x="250" y="724" width="12" height="12" rx="3"/><text class="ts" x="266" y="734">Upsample</text>
+<rect class="box green" x="340" y="724" width="12" height="12" rx="3"/><text class="ts" x="356" y="734">Concat</text>
+<rect class="box teal" x="420" y="724" width="12" height="12" rx="3"/><text class="ts" x="436" y="734">enhancement (new)</text>
+<rect class="box purple" x="585" y="724" width="12" height="12" rx="3"/><text class="ts" x="601" y="734">global context (new)</text>
+<rect class="framenew" x="760" y="724" width="12" height="12" rx="2"/><text class="ts" x="778" y="734">new (this work)</text>
+<text class="ts" x="900" y="734" fill="#185FA5">— — FPN lateral (P3/P4/P5)</text>
+<text class="ts" x="1075" y="734" fill="#1D9E75">— — train-only aux</text>
+</svg>
