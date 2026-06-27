@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 740" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#444"/>
+    </marker>
+    <marker id="arG" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#1E7A46"/>
+    </marker>
+    <marker id="arR" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#C0392B"/>
+    </marker>
+  </defs>
+
+  <style>
+    .ttl{font-size:23px;font-weight:bold;fill:#1F3864}
+    .h{font-size:17px;font-weight:bold}
+    .lbl{font-size:13px;fill:#333}
+    .sm{font-size:12px;fill:#555}
+    .fr{font-size:12px;font-weight:bold;fill:#1B1B1B}
+    .bad{fill:#C0392B}
+    .good{fill:#1E7A46}
+    .leak{stroke:#C0392B;stroke-width:2;stroke-dasharray:5 4;fill:none}
+    .flow{stroke:#444;stroke-width:1.8;fill:none}
+    .flowG{stroke:#1E7A46;stroke-width:2;fill:none}
+    .split{fill:#F4F6FA;stroke:#9AA8BF;stroke-width:1.4}
+  </style>
+
+  <text x="40" y="40" class="ttl">Why video frames leak — and how cluster-based splitting prevents it</text>
+
+  <!-- ============ SOURCE ============ -->
+  <text x="40" y="86" class="h" fill="#1F3864">Video footage</text>
+  <!-- camera -->
+  <rect x="40" y="100" width="60" height="40" rx="6" fill="#2E5496"/>
+  <circle cx="70" cy="120" r="12" fill="#fff"/><circle cx="70" cy="120" r="6" fill="#2E5496"/>
+  <path d="M100,108 L122,98 L122,142 L100,132 Z" fill="#2E5496"/>
+  <text x="40" y="166" class="sm">extracted as frames</text>
+
+  <!-- frame strip -->
+  <!-- cluster A (blue) -->
+  <g>
+    <rect x="40"  y="200" width="50" height="38" rx="5" fill="#CFE0F7" stroke="#3D6FBF" stroke-width="1.6"/>
+    <text x="65"  y="224" text-anchor="middle" class="fr">A1</text>
+    <rect x="40"  y="248" width="50" height="38" rx="5" fill="#CFE0F7" stroke="#3D6FBF" stroke-width="1.6"/>
+    <text x="65"  y="272" text-anchor="middle" class="fr">A2</text>
+    <rect x="40"  y="296" width="50" height="38" rx="5" fill="#CFE0F7" stroke="#3D6FBF" stroke-width="1.6"/>
+    <text x="65"  y="320" text-anchor="middle" class="fr">A3</text>
+    <text x="100" y="270" class="sm" fill="#3D6FBF">&#8776;</text>
+    <text x="100" y="246" class="sm" fill="#3D6FBF">&#8776;</text>
+  </g>
+  <text x="98" y="318" class="sm" fill="#3D6FBF">cluster A</text>
+  <text x="98" y="332" class="sm" fill="#3D6FBF">(near-identical)</text>
+
+  <!-- cluster B (orange) -->
+  <g>
+    <rect x="40"  y="368" width="50" height="38" rx="5" fill="#FBE3C7" stroke="#D98A2B" stroke-width="1.6"/>
+    <text x="65"  y="392" text-anchor="middle" class="fr">B1</text>
+    <rect x="40"  y="416" width="50" height="38" rx="5" fill="#FBE3C7" stroke="#D98A2B" stroke-width="1.6"/>
+    <text x="65"  y="440" text-anchor="middle" class="fr">B2</text>
+    <text x="100" y="414" class="sm" fill="#D98A2B">&#8776;</text>
+  </g>
+  <text x="98" y="438" class="sm" fill="#D98A2B">cluster B</text>
+
+  <!-- singleton (gray) -->
+  <rect x="40"  y="476" width="50" height="38" rx="5" fill="#E6E6E6" stroke="#888" stroke-width="1.6"/>
+  <text x="65"  y="500" text-anchor="middle" class="fr">C1</text>
+  <text x="98" y="500" class="sm" fill="#777">singleton</text>
+
+  <!-- divider arrows from source to the two panels -->
+  <path d="M170,300 C 230,300 230,150 300,150" class="flow" marker-end="url(#ar)"/>
+  <path d="M170,400 C 230,400 230,540 300,540" class="flowG" marker-end="url(#arG)"/>
+
+  <!-- ============ NAIVE (top) ============ -->
+  <rect x="300" y="70" width="940" height="278" rx="10" fill="#FCEEEC" stroke="#E2B4AE" stroke-width="1.4"/>
+  <text x="320" y="100" class="h bad">Naive per-frame split</text>
+  <circle cx="548" cy="94" r="10" fill="none" stroke="#C0392B" stroke-width="2.2"/>
+  <path d="M543,89 L553,99 M553,89 L543,99" stroke="#C0392B" stroke-width="2.2" stroke-linecap="round"/>
+  <text x="320" y="122" class="sm">each frame randomly assigned &#8594; near-duplicate frames land in different subsets</text>
+
+  <!-- split boxes -->
+  <rect x="360" y="150" width="240" height="170" rx="8" class="split"/>
+  <text x="480" y="172" text-anchor="middle" class="h" fill="#34495E">TRAIN</text>
+  <rect x="640" y="150" width="240" height="170" rx="8" class="split"/>
+  <text x="760" y="172" text-anchor="middle" class="h" fill="#34495E">VAL</text>
+  <rect x="920" y="150" width="240" height="170" rx="8" class="split"/>
+  <text x="1040" y="172" text-anchor="middle" class="h" fill="#34495E">TEST</text>
+
+  <!-- frames scattered: A1->train, A3->val, A2->test ; B1->train, B2->val ; C1->test -->
+  <rect x="385" y="200" width="50" height="38" rx="5" fill="#CFE0F7" stroke="#3D6FBF" stroke-width="1.6"/><text x="410" y="224" text-anchor="middle" class="fr">A1</text>
+  <rect x="500" y="250" width="50" height="38" rx="5" fill="#FBE3C7" stroke="#D98A2B" stroke-width="1.6"/><text x="525" y="274" text-anchor="middle" class="fr">B1</text>
+
+  <rect x="665" y="200" width="50" height="38" rx="5" fill="#CFE0F7" stroke="#3D6FBF" stroke-width="1.6"/><text x="690" y="224" text-anchor="middle" class="fr">A3</text>
+  <rect x="790" y="255" width="50" height="38" rx="5" fill="#FBE3C7" stroke="#D98A2B" stroke-width="1.6"/><text x="815" y="279" text-anchor="middle" class="fr">B2</text>
+
+  <rect x="945" y="200" width="50" height="38" rx="5" fill="#CFE0F7" stroke="#3D6FBF" stroke-width="1.6"/><text x="970" y="224" text-anchor="middle" class="fr">A2</text>
+  <rect x="1075" y="255" width="50" height="38" rx="5" fill="#E6E6E6" stroke="#888" stroke-width="1.6"/><text x="1100" y="279" text-anchor="middle" class="fr">C1</text>
+
+  <!-- leak connectors (A1 train <-> A2 test, A1 train <-> A3 val, B1 train <-> B2 val) -->
+  <path d="M435,212 C 700,135 760,135 970,205" class="leak" marker-end="url(#arR)"/>
+  <path d="M435,222 C 560,250 560,222 665,219" class="leak" marker-end="url(#arR)"/>
+  <path d="M550,266 C 660,300 700,300 805,290" class="leak" marker-end="url(#arR)"/>
+  <text x="690" y="132" text-anchor="middle" class="lbl bad" font-weight="bold">near-duplicate in train &amp; test  &#8594;  inflated metrics</text>
+
+  <!-- ============ CLUSTER (bottom) ============ -->
+  <rect x="300" y="408" width="940" height="300" rx="10" fill="#EAF6EF" stroke="#A9D6BC" stroke-width="1.4"/>
+  <text x="320" y="438" class="h good">Near-duplicate cluster split (ours)</text>
+  <circle cx="660" cy="432" r="10" fill="none" stroke="#1E7A46" stroke-width="2.2"/>
+  <path d="M655,432 L659,437 L666,427" stroke="#1E7A46" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="320" y="460" class="sm">group near-identical frames into clusters, then assign each whole cluster to a single subset</text>
+
+  <!-- cluster groupings -->
+  <rect x="350" y="488" width="190" height="120" rx="8" fill="#fff" stroke="#3D6FBF" stroke-width="1.6" stroke-dasharray="4 3"/>
+  <text x="445" y="508" text-anchor="middle" class="sm" fill="#3D6FBF" font-weight="bold">cluster A</text>
+  <rect x="362" y="518" width="44" height="34" rx="5" fill="#CFE0F7" stroke="#3D6FBF" stroke-width="1.4"/><text x="384" y="540" text-anchor="middle" class="fr">A1</text>
+  <rect x="412" y="518" width="44" height="34" rx="5" fill="#CFE0F7" stroke="#3D6FBF" stroke-width="1.4"/><text x="434" y="540" text-anchor="middle" class="fr">A2</text>
+  <rect x="462" y="518" width="44" height="34" rx="5" fill="#CFE0F7" stroke="#3D6FBF" stroke-width="1.4"/><text x="484" y="540" text-anchor="middle" class="fr">A3</text>
+
+  <rect x="350" y="624" width="140" height="60" rx="8" fill="#fff" stroke="#D98A2B" stroke-width="1.6" stroke-dasharray="4 3"/>
+  <text x="420" y="618" text-anchor="middle" class="sm" fill="#D98A2B" font-weight="bold">cluster B</text>
+  <rect x="362" y="636" width="44" height="34" rx="5" fill="#FBE3C7" stroke="#D98A2B" stroke-width="1.4"/><text x="384" y="658" text-anchor="middle" class="fr">B1</text>
+  <rect x="412" y="636" width="44" height="34" rx="5" fill="#FBE3C7" stroke="#D98A2B" stroke-width="1.4"/><text x="434" y="658" text-anchor="middle" class="fr">B2</text>
+
+  <!-- destination split boxes -->
+  <rect x="700" y="488" width="200" height="64" rx="8" class="split"/><text x="800" y="526" text-anchor="middle" class="h" fill="#34495E">TRAIN</text>
+  <rect x="700" y="566" width="200" height="64" rx="8" class="split"/><text x="800" y="604" text-anchor="middle" class="h" fill="#34495E">VAL</text>
+  <rect x="700" y="644" width="200" height="50" rx="8" class="split"/><text x="800" y="675" text-anchor="middle" class="h" fill="#34495E">TEST</text>
+
+  <!-- whole-cluster arrows -->
+  <path d="M540,548 C 620,548 620,520 700,520" class="flowG" marker-end="url(#arG)"/>
+  <path d="M490,654 C 600,654 600,598 700,598" class="flowG" marker-end="url(#arG)"/>
+
+  <text x="960" y="556" class="lbl good" font-weight="bold">no frame crosses a boundary</text>
+  <text x="960" y="576" class="sm good">&#8594; 0 cross-split near-duplicates</text>
+  <text x="960" y="596" class="sm good">&#8594; leakage-free evaluation</text>
+
+  <!-- ============ LEGEND ============ -->
+  <rect x="40" y="556" width="230" height="150" rx="8" fill="#fff" stroke="#ccc"/>
+  <text x="56" y="578" class="sm" font-weight="bold">Legend</text>
+  <rect x="56" y="590" width="22" height="16" rx="3" fill="#CFE0F7" stroke="#3D6FBF"/><text x="86" y="603" class="sm">cluster A frames</text>
+  <rect x="56" y="612" width="22" height="16" rx="3" fill="#FBE3C7" stroke="#D98A2B"/><text x="86" y="625" class="sm">cluster B frames</text>
+  <rect x="56" y="634" width="22" height="16" rx="3" fill="#E6E6E6" stroke="#888"/><text x="86" y="647" class="sm">singleton frame</text>
+  <line x1="56" y1="664" x2="78" y2="664" class="leak"/><text x="86" y="668" class="sm bad">leak (near-dup across splits)</text>
+  <line x1="56" y1="686" x2="78" y2="686" class="flowG"/><text x="86" y="690" class="sm good">clean assignment</text>
+</svg>
