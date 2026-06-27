@@ -180,19 +180,23 @@ def main():
         totals[k] = sum(cluster_vec(c)[k] for c in clusters)
     target = {s: {"img": RATIOS[s] * totals["img"], **{k: RATIOS[s] * totals[k] for k in all_cls}} for s in RATIOS}
 
-    # stratified greedy: place largest clusters first into the split that best fits targets
+    # stratified greedy: largest clusters first, each placed in the split with the most
+    # REMAINING capacity relative to its target (image ratio dominant, class balance secondary).
     order = sorted(range(len(clusters)), key=lambda c: len(clusters[c]), reverse=True)
     cur = {s: {"img": 0, **{k: 0 for k in all_cls}} for s in RATIOS}
     assign = {}
+    K = max(len(all_cls), 1)
     for ci in order:
         vec = cluster_vec(clusters[ci]); m = len(clusters[ci])
-        best, best_cost = None, None
+        best, best_need = None, None
         for s in RATIOS:
-            cost = ((cur[s]["img"] + m - target[s]["img"]) / max(target[s]["img"], 1)) ** 2
+            # relative remaining capacity; higher = more in need. Image term dominates (x4)
+            # so the 70/15/15 image ratio is enforced; class terms balance per-class as a secondary.
+            need = 4.0 * (target[s]["img"] - cur[s]["img"]) / max(target[s]["img"], 1.0)
             for k in all_cls:
-                cost += ((cur[s][k] + vec[k] - target[s][k]) / max(target[s][k], 1)) ** 2
-            if best_cost is None or cost < best_cost:
-                best_cost, best = cost, s
+                need += (1.0 / K) * (target[s][k] - cur[s][k]) / max(target[s][k], 1.0)
+            if best_need is None or need > best_need:
+                best_need, best = need, s
         assign[ci] = best
         cur[best]["img"] += m
         for k in all_cls:
