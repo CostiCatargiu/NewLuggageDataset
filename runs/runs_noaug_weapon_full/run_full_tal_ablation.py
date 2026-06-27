@@ -2,17 +2,18 @@
 """
 Cumulative TAL / loss-component ablation on the FULL revised dataset.
 
-On the STOCK YOLOv12s baseline (no architecture changes), starting from the vanilla
-default loss, we switch on one loss component at a time and measure its marginal
-effect. Running on stock isolates the loss contribution from the architecture. Three runs:
+On the STOCK YOLOv12s baseline (no architecture changes), each run adds ONE loss
+component on top of the vanilla default loss, INDIVIDUALLY (not cumulative), so each
+component's standalone effect is isolated. Three runs:
 
-  1. swa_boost  : default + alpha schedule ("SWA-alpha") + small-object boost
-  2. + clip     : add the IoU / DFL clip schedules
-  3. + tal_tune : add the tuned TAL assignment (topk/alpha/beta) + cls weight + DIoU
-                  (== the full best-TAL recipe)
+  1. swa_boost  : default + alpha schedule ("SWA-alpha") + small-object boost   (only)
+  2. clip       : default + IoU / DFL clip schedules                            (only)
+  3. tal_tune   : default + tuned TAL assignment (topk/alpha/beta) + cls + DIoU (only)
 
-Reference point: stock + vanilla default loss = the bottom of this ladder, so the
-three runs trace default -> swa_boost -> +clip -> full best-TAL on stock.
+Reference: stock + vanilla default loss is the baseline each run is compared against
+(the component delta = run - default). The full best-TAL run (all components together)
+is available separately, so default + the 3 isolated parts + the full combo lets you
+see both each part alone AND whether they add up.
 
 Terminology note: "SWA" here means the assignment alpha schedule
 (alpha_start/end/min/max), per the project's naming — not weight averaging.
@@ -84,29 +85,30 @@ head:
   - [[24, 25, 26, 14, 17, 20], 1, DetectAuxDual, [nc, {AUX_W}]]  # 27
 """
 
-# ---- cumulative loss recipes -------------------------------------------------
-# Step 1: alpha schedule ("SWA-alpha") + small-object boost; clips OFF, TAL = default
-LOSS_SWA_BOOST = dict(
+# ---- INDIVIDUAL loss components: each = stock vanilla default + ONE component ----
+# (NOT cumulative — every run isolates a single component on top of the default loss)
+LOSS_DEFAULT = dict(
     tal_topk=10, tal_alpha=0.5, tal_beta=6.0,
-    alpha_start=0.7, alpha_end=0.3, alpha_min=0.2, alpha_max=0.8,
-    small_obj_px=40, small_obj_boost=2.5,
+    alpha_start=0.0, alpha_end=0.0, alpha_min=0.0, alpha_max=0.0,
     iou_clip_start=999.0, iou_clip_end=999.0, dfl_clip_start=999.0, dfl_clip_end=999.0,
+    small_obj_boost=1.0, small_obj_px=0,
     center_loss_weight_init=0.0, center_loss_weight_min=0.0, use_vfl=False,
 )
-# Step 2: + IoU/DFL clip schedules
-LOSS_SWA_BOOST_CLIP = dict(LOSS_SWA_BOOST,
-    iou_clip_start=50.0, iou_clip_end=20.0, dfl_clip_start=25.0, dfl_clip_end=10.0,
-)
-# Step 3: + tuned TAL assignment + cls weight + DIoU  (== full best-TAL)
-LOSS_FULL_TAL = dict(LOSS_SWA_BOOST_CLIP,
-    cls=1.2, tal_topk=13, tal_alpha=0.7, tal_beta=4.0,
-    center_loss_decay_epochs=35, iou_type="DIoU",
-)
+# default + ONLY alpha schedule ("SWA-alpha") + small-object boost
+LOSS_SWA_BOOST = dict(LOSS_DEFAULT,
+    alpha_start=0.7, alpha_end=0.3, alpha_min=0.2, alpha_max=0.8,
+    small_obj_px=40, small_obj_boost=2.5)
+# default + ONLY the IoU/DFL clip schedules
+LOSS_CLIP = dict(LOSS_DEFAULT,
+    iou_clip_start=50.0, iou_clip_end=20.0, dfl_clip_start=25.0, dfl_clip_end=10.0)
+# default + ONLY the tuned TAL assignment (topk/alpha/beta) + cls weight + DIoU
+LOSS_TALTUNE = dict(LOSS_DEFAULT,
+    cls=1.2, tal_topk=13, tal_alpha=0.7, tal_beta=4.0, iou_type="DIoU")
 
 RUNS = [
-    {"name": "stock_tal_abl_1_swaboost",     "loss": LOSS_SWA_BOOST,      "desc": "[1/3] + alpha schedule (SWA) + small-obj boost"},
-    {"name": "stock_tal_abl_2_clip",         "loss": LOSS_SWA_BOOST_CLIP, "desc": "[2/3] + IoU/DFL clip schedules"},
-    {"name": "stock_tal_abl_3_taltune",      "loss": LOSS_FULL_TAL,       "desc": "[3/3] + tuned TAL + cls + DIoU  (= full best-TAL)"},
+    {"name": "stock_talabl_swaboost", "loss": LOSS_SWA_BOOST, "desc": "[1/3] stock default + SWA + boost ONLY"},
+    {"name": "stock_talabl_clip",     "loss": LOSS_CLIP,      "desc": "[2/3] stock default + clip ONLY"},
+    {"name": "stock_talabl_taltune",  "loss": LOSS_TALTUNE,   "desc": "[3/3] stock default + TAL-tune ONLY"},
 ]
 
 
@@ -177,8 +179,8 @@ def run_experiment(run):
 def main():
     os.makedirs(YAML_DIR, exist_ok=True)
     t0 = time.time()
-    print(f"\n{'=' * 80}\n  CUMULATIVE TAL/LOSS ABLATION on STOCK YOLOv12s · FULL revised data")
-    print(f"  stock default -> swa+boost -> +clip -> full best-TAL  (no architecture changes)")
+    print(f"\n{'=' * 80}\n  ISOLATED TAL/LOSS COMPONENT ABLATION on STOCK YOLOv12s · FULL revised data")
+    print(f"  each run = stock default + ONE component (swa+boost | clip | tal-tune), not cumulative")
     print(f"{'=' * 80}")
     for r in RUNS:
         print(f"  {r['desc']}")
