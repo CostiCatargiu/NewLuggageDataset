@@ -1,0 +1,142 @@
+{
+  "size_thresholds": {
+    "small_lt": 48.0,
+    "medium_lt": 96.0
+  },
+  "size_metric": "sqrt(box_area_px)",
+  "splits": {
+    "train": {
+      "images": 18579,
+      "instances": 26614,
+      "boxes_per_image": 1.43,
+      "per_class": {
+        "knife": 4247,
+        "long_gun": 7375,
+        "other": 5692,
+        "pistol": 9300
+      },
+      "size_bins": {
+        "small": 2132,
+        "medium": 5845,
+        "large": 18637
+      },
+      "size_bins_pct": {
+        "small": 8.0,
+        "medium": 22.0,
+        "large": 70.0
+      },
+      "per_class_size": {
+        "knife": {
+          "small": 204,
+          "medium": 874,
+          "large": 3169
+        },
+        "long_gun": {
+          "small": 312,
+          "medium": 1312,
+          "large": 5751
+        },
+        "other": {
+          "small": 333,
+          "medium": 1220,
+          "large": 4139
+        },
+        "pistol": {
+          "small": 1283,
+          "medium": 2439,
+          "large": 5578
+        }
+      }
+    },
+    "val": {
+      "images": 3978,
+      "instances": 5665,
+      "boxes_per_image": 1.42,
+      "per_class": {
+        "knife": 950,
+        "long_gun": 1537,
+        "other": 1240,
+        "pistol": 1938
+      },
+      "size_bins": {
+        "small": 414,
+        "medium": 1179,
+        "large": 4072
+      },
+      "size_bins_pct": {
+        "small": 7.3,
+        "medium": 20.8,
+        "large": 71.9
+      },
+      "per_class_size": {
+        "knife": {
+          "small": 43,
+          "medium": 175,
+          "large": 732
+        },
+        "long_gun": {
+          "small": 60,
+          "medium": 253,
+          "large": 1224
+        },
+        "other": {
+          "small": 71,
+          "medium": 247,
+          "large": 922
+        },
+        "pistol": {
+          "small": 240,
+          "medium": 504,
+          "large": 1194
+        }
+      }
+    },
+    "test": {
+      "images": 3971,
+      "instances": 5888,
+      "boxes_per_image": 1.48,
+      "per_class": {
+        "knife": 966,
+        "long_gun": 1647,
+        "other": 1271,
+        "pistol": 2004
+      },
+      "size_bins": {
+        "small": 442,
+        "medium": 1355,
+        "large": 4091
+      },
+      "size_bins_pct": {
+        "small": 7.5,
+        "medium": 23.0,
+        "large": 69.5
+      },
+      "per_class_size": {
+        "knife": {
+          "small": 47,
+          "medium": 240,
+          "large": 679
+        },
+        "long_gun": {
+          "small": 57,
+          "medium": 278,
+          "large": 1312
+        },
+        "other": {
+          "small": 60,
+          "medium": 261,
+          "large": 950
+        },
+        "pistol": {
+          "small": 278,
+          "medium": 576,
+          "large": 1150
+        }
+      }
+    }
+  },
+  "overall": {
+    "images": 26528,
+    "instances": 38167
+  }
+}
