@@ -1,0 +1,5 @@
+nc: 4
+names: ['knife', 'long_gun', 'other', 'pistol']
+train: /home/constantin/Doctorat/GunDatasetNoAugSplit/regrouped_split/train.txt
+val: /home/constantin/Doctorat/GunDatasetNoAugSplit/regrouped_split/val.txt
+test: /home/constantin/Doctorat/GunDatasetNoAugSplit/regrouped_split/test.txt
