@@ -1,7 +1,7 @@
 <svg viewBox="0 0 1130 960" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif">
 <style>
 .h{font-size:15px;font-weight:600;fill:#1b1b1b}.ch{font-size:12px;font-weight:600;fill:#555}
-.tt{font-size:13.5px;font-weight:600}.t{font-size:11px;fill:#1b1b1b}.ts{font-size:10.5px;fill:#444}
+.tt{font-size:14.5px;font-weight:700}.t{font-size:11px;fill:#1b1b1b}.ts{font-size:11px;fill:#444}
 .bx{stroke-width:1}.cteal{fill:#E1F5EE;stroke:#0F6E56}.cpink{fill:#FBEAF0;stroke:#993556}
 .cpurple{fill:#EEEDFE;stroke:#534AB7}.ccoral{fill:#FAECE7;stroke:#993C1D}.cblue{fill:#E6F1FB;stroke:#185FA5}
 .cgray{fill:#F1EFE8;stroke:#5F5E5A}.camber{fill:#FAEEDA;stroke:#854F0B}
@@ -11,9 +11,10 @@
 .lteal{fill:#085041}.lpink{fill:#72243E}.lpurple{fill:#3C3489}.lcoral{fill:#712B13}.lgreen{fill:#27500A}.lgr{fill:#1D9E75}
 </style>
 <defs><marker id="m" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto"><path d="M1,1.5 L6.5,4 L1,6.5" fill="none" stroke="#5F5E5A" stroke-width="1.2"/></marker>
+<marker id="ms" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto"><path d="M1,1.5 L6.5,4 L1,6.5" fill="none" stroke="#888780" stroke-width="1.2"/></marker>
 <marker id="mg" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto"><path d="M1,1.5 L6.5,4 L1,6.5" fill="none" stroke="#1D9E75" stroke-width="1.2"/></marker></defs>
 
-<text class="h" x="20" y="28">How the new modules help — mechanism &amp; rationale</text>
+<rect x="20" y="40" width="1090" height="22" fill="#F1EFE8"/><text class="h" x="20" y="28">How the new modules help — mechanism &amp; rationale</text>
 <text class="ts" x="430" y="28">block internals are op-exact; problem/effect are interpretive</text>
 <text class="ch" x="150" y="52" text-anchor="middle">problem / finding</text>
 <text class="ch" x="600" y="52" text-anchor="middle">inside the block (exact)</text>
@@ -25,12 +26,12 @@
 <line class="div" x1="300" y1="62" x2="300" y2="938"/>
 <line class="div" x1="858" y1="62" x2="858" y2="938"/>
 
-<text class="tt lteal" x="28" y="88">ZGSmallDetail · P3</text>
-<text class="ts" x="28" y="112">Recall on small objects is high</text>
-<text class="ts" x="28" y="128">(AR50-small ≈ 88%) but AP is low —</text>
-<text class="ts" x="28" y="144">the model FINDS small objects but</text>
-<text class="ts" x="28" y="160">mis-scores them. The large-RF</text>
-<text class="ts" x="28" y="176">widefuse branches pull the backbone</text>
+<text class="tt lteal" x="52" y="88">ZGSmallDetail · P3</text>
+<text class="ts" x="28" y="112">Small objects are reliably found</text>
+<text class="ts" x="28" y="128">(high recall) but poorly scored (low</text>
+<text class="ts" x="28" y="144">AP): the model localises them yet</text>
+<text class="ts" x="28" y="160">mis-ranks them. Large-receptive-field</text>
+<text class="ts" x="28" y="176">fusion branches pull the backbone</text>
 <text class="ts" x="28" y="192">toward medium/large and erode the</text>
 <text class="ts" x="28" y="208">fine P3 detail small objects need.</text>
 <text class="t" x="332" y="176" text-anchor="middle" font-weight="600">x</text>
@@ -49,9 +50,9 @@
 <circle class="op" cx="648" cy="172" r="11"/><text class="t" x="648" y="176" text-anchor="middle">×γ</text>
 <path class="ar" d="M659,172 L672,172" marker-end="url(#m)"/>
 <circle class="op" cx="684" cy="172" r="11"/><text class="t" x="684" y="176" text-anchor="middle">+</text>
-<path class="sk" d="M332,160 C332,110 742,110 742,166 L742,172"/><path class="ar" d="M742,172 L696,172" marker-end="url(#m)"/>
+<path class="sk" d="M336,158 C336,108 684,104 684,158" marker-end="url(#ms)"/>
 <text class="ts" x="540" y="114" text-anchor="middle">residual skip (x), γ=0 at init</text>
-<text class="ts" x="706" y="176" text-anchor="start">→ y</text>
+<path class="ar" d="M695,172 L713,172" marker-end="url(#m)"/><text class="ts" x="719" y="176" text-anchor="start">y</text>
 <text class="ts" x="373" y="206" text-anchor="middle">pw1</text><text class="ts" x="609" y="206" text-anchor="middle">pw2</text>
 <rect class="bx eff" x="866" y="120" width="238" height="98" rx="6"/>
 <text class="ts" x="878" y="142">Two small depthwise kernels (no</text>
@@ -60,13 +61,13 @@
 <text class="ts" x="878" y="190">hurt. Counterbalances the large-RF</text>
 <text class="t lgreen" x="878" y="208" font-weight="600">bias → small-object AP ↑</text>
 
-<text class="tt lpink" x="28" y="306">ZGLSKAWideFuseV2 · P4</text>
-<text class="ts" x="28" y="330">r21's fusion used TWO large-RF</text>
-<text class="ts" x="28" y="346">branches (square k11 + strip k23).</text>
-<text class="ts" x="28" y="362">Both smooth small-object features</text>
-<text class="ts" x="28" y="378">at the fusion source, so small/"other"</text>
-<text class="ts" x="28" y="394">precision drops even while context</text>
-<text class="ts" x="28" y="410">for medium/large stays good.</text>
+<text class="tt lpink" x="52" y="306">ZGLSKAWideFuseV2 · P4</text>
+<text class="ts" x="28" y="330">An earlier fusion variant used TWO</text>
+<text class="ts" x="28" y="346">large-RF branches (square k11 + strip</text>
+<text class="ts" x="28" y="362">k23). Both smooth small-object</text>
+<text class="ts" x="28" y="378">features at the fusion source, so</text>
+<text class="ts" x="28" y="394">small/"other" precision drops while</text>
+<text class="ts" x="28" y="410">context for medium/large stays good.</text>
 <text class="t" x="330" y="392" text-anchor="middle" font-weight="600">x</text>
 <path class="ar" d="M340,389 L346,389" marker-end="url(#m)"/>
 <rect class="bx cblue" x="348" y="377" width="56" height="24" rx="4"/><text class="t" x="376" y="393" text-anchor="middle">1×1→2C</text>
@@ -86,9 +87,9 @@
 <path class="ar" d="M688,389 L694,389" marker-end="url(#m)"/>
 <circle class="op" cx="706" cy="389" r="11"/><text class="t" x="706" y="393" text-anchor="middle">×γ</text>
 <path class="ar" d="M717,389 L730,389" marker-end="url(#m)"/><circle class="op" cx="742" cy="389" r="11"/><text class="t" x="742" y="393" text-anchor="middle">+</text>
-<path class="sk" d="M330,377 C330,332 786,332 786,383 L786,389"/><path class="ar" d="M786,389 L754,389" marker-end="url(#m)"/>
+<path class="sk" d="M334,372 C380,308 700,308 742,377" marker-end="url(#ms)"/><text class="ts" x="520" y="302" text-anchor="middle">residual skip (γ=0)</text>
 <text class="ts" x="476" y="470" text-anchor="middle">hybrid branch-2: large-RF (strip) + small-RF (detail)</text>
-<text class="ts" x="762" y="393" text-anchor="start">→ y</text>
+<path class="ar" d="M753,389 L771,389" marker-end="url(#m)"/><text class="ts" x="777" y="393" text-anchor="start">y</text>
 <rect class="bx eff" x="866" y="338" width="238" height="98" rx="6"/>
 <text class="ts" x="878" y="360">Branch-1 keeps square context; the</text>
 <text class="ts" x="878" y="376">hybrid branch-2 adds a small-RF path</text>
@@ -96,12 +97,12 @@
 <text class="ts" x="878" y="408">now serves all scales —</text>
 <text class="t lgreen" x="878" y="426" font-weight="600">context + detail, no trade-off</text>
 
-<text class="tt lpurple" x="28" y="524">ZGGlobalContext · all scales</text>
-<text class="ts" x="28" y="548">The "other" class is a heterogeneous</text>
-<text class="ts" x="28" y="564">catch-all defined by what surrounds</text>
-<text class="ts" x="28" y="580">it. A local receptive field can't tell</text>
-<text class="ts" x="28" y="596">"weapon" from "other" — it lacks</text>
-<text class="ts" x="28" y="612">whole-scene information.</text>
+<text class="tt lpurple" x="52" y="524">ZGGlobalContext · all scales</text>
+<text class="ts" x="28" y="548">The "other" class is heterogeneous and</text>
+<text class="ts" x="28" y="564">defined largely by context. A purely</text>
+<text class="ts" x="28" y="580">local receptive field struggles to</text>
+<text class="ts" x="28" y="596">separate "weapon" from "other" without</text>
+<text class="ts" x="28" y="612">any image-wide signal.</text>
 <text class="t" x="330" y="612" text-anchor="middle" font-weight="600">x</text>
 <path class="ar" d="M340,609 L352,609" marker-end="url(#m)"/>
 <rect class="bx camber" x="354" y="597" width="92" height="24" rx="4"/><text class="t" x="400" y="613" text-anchor="middle">Global Avg Pool</text>
@@ -112,21 +113,21 @@
 <path class="ar" d="M650,609 L662,609" marker-end="url(#m)"/>
 <circle class="op" cx="674" cy="609" r="11"/><text class="t" x="674" y="613" text-anchor="middle">×γ</text>
 <path class="ar" d="M685,609 L706,609" marker-end="url(#m)"/><circle class="op" cx="718" cy="609" r="11"/><text class="t" x="718" y="613" text-anchor="middle">+</text>
-<path class="sk" d="M330,597 C330,552 760,552 760,603 L760,609"/><path class="ar" d="M760,609 L730,609" marker-end="url(#m)"/>
-<text class="ts" x="545" y="558" text-anchor="middle">broadcast scene descriptor to every location</text>
-<text class="ts" x="740" y="613" text-anchor="start">→ y</text>
+<path class="sk" d="M334,595 C362,570 690,566 718,597" marker-end="url(#ms)"/>
+<text class="ts" x="545" y="558" text-anchor="middle">broadcast a global channel-context vector to every location</text>
+<path class="ar" d="M729,609 L747,609" marker-end="url(#m)"/><text class="ts" x="753" y="613" text-anchor="start">y</text>
 <rect class="bx eff" x="866" y="556" width="238" height="98" rx="6"/>
-<text class="ts" x="878" y="578">A whole-image descriptor recalibrates</text>
-<text class="ts" x="878" y="594">every location with scene context.</text>
-<text class="ts" x="878" y="610">Gated, ~0 cost. Helps context-</text>
-<text class="t lgreen" x="878" y="630" font-weight="600">defined classes ("other")</text>
+<text class="ts" x="878" y="578">A global channel-context vector</text>
+<text class="ts" x="878" y="594">recalibrates every location. Gated,</text>
+<text class="ts" x="878" y="610">near-zero cost. Aids appearance-vs-</text>
+<text class="t lgreen" x="878" y="630" font-weight="600">context classes such as "other"</text>
 
-<text class="tt lcoral" x="28" y="744">DetectAuxDual · head</text>
-<text class="ts" x="28" y="768">A mirror aux head sees the SAME</text>
-<text class="ts" x="28" y="784">features as the main head, so its</text>
-<text class="ts" x="28" y="800">gradient teaches nothing new — yet</text>
-<text class="ts" x="28" y="816">the backbone still drifts toward</text>
-<text class="ts" x="28" y="832">context and loses fine detail.</text>
+<text class="tt lcoral" x="52" y="744">DetectAuxDual · head</text>
+<text class="ts" x="28" y="768">Training the head only through the</text>
+<text class="ts" x="28" y="784">ENHANCED features lets the backbone</text>
+<text class="ts" x="28" y="800">drift toward context and lose fine</text>
+<text class="ts" x="28" y="816">detail: nothing forces it to keep the</text>
+<text class="ts" x="28" y="832">raw high-resolution information.</text>
 <rect class="bx cgray" x="330" y="760" width="80" height="34" rx="5"/><text class="t" x="370" y="781" text-anchor="middle">backbone</text>
 <path class="ar" d="M410,768 L452,762 L486,762" marker-end="url(#m)"/>
 <path class="ar" d="M410,786 L452,832 L486,832" marker-end="url(#m)" style="stroke-dasharray:5 3"/>
@@ -145,4 +146,5 @@
 <text class="ts" x="878" y="806">the backbone must keep both context</text>
 <text class="ts" x="878" y="822">AND detail. Aux dropped at inference.</text>
 <text class="t lgreen" x="878" y="842" font-weight="600">detail preserved · 0 inference cost</text>
+<rect x="20" y="70" width="5" height="205" rx="2" fill="#0F6E56"/><circle cx="36" cy="83" r="11" fill="#0F6E56"/><text x="36" y="87" text-anchor="middle" font-size="12.5" font-weight="700" fill="#fff">1</text><rect x="20" y="292" width="5" height="200" rx="2" fill="#993556"/><circle cx="36" cy="301" r="11" fill="#993556"/><text x="36" y="305" text-anchor="middle" font-size="12.5" font-weight="700" fill="#fff">2</text><rect x="20" y="510" width="5" height="200" rx="2" fill="#534AB7"/><circle cx="36" cy="519" r="11" fill="#534AB7"/><text x="36" y="523" text-anchor="middle" font-size="12.5" font-weight="700" fill="#fff">3</text><rect x="20" y="730" width="5" height="200" rx="2" fill="#993C1D"/><circle cx="36" cy="739" r="11" fill="#993C1D"/><text x="36" y="743" text-anchor="middle" font-size="12.5" font-weight="700" fill="#fff">4</text>
 </svg>

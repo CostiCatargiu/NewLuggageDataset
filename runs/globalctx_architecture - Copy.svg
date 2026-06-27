@@ -31,11 +31,11 @@
 <rect class="frame" x="377" y="48" width="236" height="648" rx="14"/>
 <rect class="framenew" x="695" y="48" width="520" height="350" rx="14"/>
 
-<rect x="12" y="22" width="222" height="22" rx="5" fill="#ECEEF1"/><text class="th" x="123" y="40" text-anchor="middle">Backbone</text>
+<text class="th" x="123" y="40" text-anchor="middle">Backbone</text>
 <text class="ts" x="123" y="524" text-anchor="middle" font-weight="bold">stock YOLOv12s — unchanged</text>
-<rect x="377" y="22" width="236" height="22" rx="5" fill="#ECEEF1"/><text class="th" x="495" y="40" text-anchor="middle">Neck (PAN)</text>
+<text class="th" x="495" y="40" text-anchor="middle">Neck (PAN)</text>
 <text class="ts" x="495" y="688" text-anchor="middle" font-weight="bold">stock YOLOv12s — unchanged</text>
-<rect x="695" y="22" width="520" height="22" rx="5" fill="#EEEDFE"/><text class="th" x="955" y="40" text-anchor="middle">Head — globalctx</text>
+<text class="th" x="955" y="40" text-anchor="middle">Head — globalctx</text>
 <text class="ts" x="955" y="66" text-anchor="middle" fill="#3C3489" font-weight="bold">new modules (our contribution)</text>
 
 <g class="flow">
@@ -48,9 +48,9 @@
 <path d="M215,389 L268,389 L268,129 L393,129" marker-end="url(#ab)"/>
 <path d="M215,493 L244,493 L244,77 L393,77" marker-end="url(#ab)"/>
 </g>
-<rect x="259" y="268" width="82" height="15" rx="2" fill="#FFFFFF"/><text class="ts" x="300" y="279" text-anchor="middle" fill="#185FA5">P3 (stride 8)</text>
-<rect x="291" y="112" width="88" height="15" rx="2" fill="#FFFFFF"/><text class="ts" x="335" y="123" text-anchor="middle" fill="#185FA5">P4 (stride 16)</text>
-<rect x="291" y="60" width="88" height="15" rx="2" fill="#FFFFFF"/><text class="ts" x="335" y="71" text-anchor="middle" fill="#185FA5">P5 (stride 32)</text>
+<text class="ts" x="300" y="279" text-anchor="middle" fill="#185FA5">P3 (stride 8)</text>
+<text class="ts" x="335" y="123" text-anchor="middle" fill="#185FA5">P4 (stride 16)</text>
+<text class="ts" x="335" y="71" text-anchor="middle" fill="#185FA5">P5 (stride 32)</text>
 
 <g class="flow">
 <path d="M595,337 L650,337 L650,120 L703,120" marker-end="url(#a)"/>
@@ -64,14 +64,14 @@
 <path d="M1035,300 L1048,300" marker-end="url(#a)"/>
 <path d="M1130,322 L1130,352" marker-end="url(#a)"/>
 </g>
-<rect x="649" y="321" width="22" height="15" rx="2" fill="#FFFFFF"/><text class="ts" x="660" y="332" text-anchor="middle" fill="#185FA5">P3</text>
-<rect x="631" y="194" width="22" height="15" rx="2" fill="#FFFFFF"/><text class="ts" x="642" y="205" text-anchor="middle" fill="#185FA5">P4</text>
-<rect x="673" y="284" width="22" height="15" rx="2" fill="#FFFFFF"/><text class="ts" x="684" y="295" text-anchor="middle" fill="#185FA5">P5</text>
+<text class="ts" x="660" y="332" text-anchor="middle" fill="#185FA5">P3</text>
+<text class="ts" x="642" y="205" text-anchor="middle" fill="#185FA5">P4</text>
+<text class="ts" x="684" y="295" text-anchor="middle" fill="#185FA5">P5</text>
 
 <g class="aux">
 <path d="M595,505 L640,505 L640,360 L1075,360 L1075,322" marker-end="url(#ag)"/>
 </g>
-<rect x="675" y="343" width="330" height="15" rx="2" fill="#FFFFFF"/><text class="ts" x="840" y="354" text-anchor="middle" fill="#1D9E75">raw P3 / P4 / P5 → aux (training only, dropped at inference)</text>
+<text class="ts" x="840" y="354" text-anchor="middle" fill="#1D9E75">raw P3 / P4 / P5 → aux (training only, dropped at inference)</text>
 
 <text class="ts" x="34" y="58">L0 · P1/2 s2</text><rect class="box blue" x="30" y="60" width="185" height="34" rx="5"/><text class="t lbl-blue" x="122" y="82" text-anchor="middle">Conv [64,3,2]</text>
 <text class="ts" x="34" y="110">L1 · P2/4 s4</text><rect class="box blue" x="30" y="112" width="185" height="34" rx="5"/><text class="t lbl-blue" x="122" y="134" text-anchor="middle">Conv [128,3,2,1,2]</text>
