@@ -40,7 +40,7 @@ RATIOS = {"train": 0.70, "val": 0.15, "test": 0.15}
 
 
 def resolve_splits(data_yaml):
-    splits = {}
+    splits, root = {}, ""
     try:
         import yaml
         d = yaml.safe_load(open(data_yaml))
@@ -55,10 +55,10 @@ def resolve_splits(data_yaml):
             if os.path.isdir(os.path.join(p, "images")):
                 p = os.path.join(p, "images")
             splits[key] = p
-        return splits, names
+        return splits, names, root
     except Exception as e:
         print(f"  [warn] yaml parse failed ({e})")
-        return splits, None
+        return splits, None, root
 
 
 def list_images(d):
@@ -124,13 +124,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="/home/constantin/Doctorat/GunDatasetNoAugSplit/data.yaml")
     ap.add_argument("--thresh", type=int, default=5)
-    ap.add_argument("--out", default="regrouped_split")
+    ap.add_argument("--out", default=None, help="output dir (default: <dataset>/regrouped_split)")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
-    os.makedirs(args.out, exist_ok=True)
     rng = np.random.default_rng(args.seed)
 
-    splits, names = resolve_splits(args.data)
+    splits, names, root = resolve_splits(args.data)
+    dataset_dir = root if root and os.path.isdir(root) else os.path.dirname(os.path.abspath(args.data))
+    out = args.out if args.out else os.path.join(dataset_dir, "regrouped_split")
+    os.makedirs(out, exist_ok=True)
+    print(f"  dataset location: {dataset_dir}\n  writing outputs to: {out}")
     paths = []
     for d in splits.values():
         paths += list_images(d)
@@ -202,14 +205,14 @@ def main():
 
     # write lists + yaml
     for s in RATIOS:
-        with open(os.path.join(args.out, f"{s}.txt"), "w") as f:
+        with open(os.path.join(out, f"{s}.txt"), "w") as f:
             f.write("\n".join(sorted(split_imgs[s])) + "\n")
     yaml_txt = "nc: %d\n" % (len(names) if names else len(all_cls))
     if names:
         yaml_txt += "names: %s\n" % (list(names.values()) if isinstance(names, dict) else names)
     yaml_txt += "train: %s\nval: %s\ntest: %s\n" % tuple(
-        os.path.abspath(os.path.join(args.out, f"{s}.txt")) for s in ("train", "val", "test"))
-    open(os.path.join(args.out, "data_regrouped.yaml"), "w").write(yaml_txt)
+        os.path.abspath(os.path.join(out, f"{s}.txt")) for s in ("train", "val", "test"))
+    open(os.path.join(out, "data_regrouped.yaml"), "w").write(yaml_txt)
 
     # verify: no cross-split near-dups remain (by construction)
     comp_of = {}
@@ -234,14 +237,14 @@ def main():
         "per_class": {s: {int(k): cur[s][k] for k in all_cls} for s in RATIOS},
         "clusters_spanning_multiple_splits": leak,
     }
-    json.dump(report, open(os.path.join(args.out, "resplit_report.json"), "w"), indent=2)
+    json.dump(report, open(os.path.join(out, "resplit_report.json"), "w"), indent=2)
 
     print(f"\n  new split sizes: " + " | ".join(f"{s} {len(split_imgs[s])} ({report['split_pct'][s]}%)" for s in RATIOS))
     print(f"  per-class counts:")
     for s in RATIOS:
         print(f"    {s}: " + ", ".join(f"cls{k}={cur[s][k]}" for k in all_cls))
     print(f"  clusters spanning >1 split: {leak}  (0 = leakage-free)")
-    print(f"  wrote lists + data_regrouped.yaml + resplit_report.json -> {args.out}/")
+    print(f"  wrote lists + data_regrouped.yaml + resplit_report.json -> {out}/")
     print("\n  Next: retrain with data_regrouped.yaml; these are your leakage-free splits.")
 
 
