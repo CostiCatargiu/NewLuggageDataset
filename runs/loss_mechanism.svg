@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1330 770" font-family="Arial, Helvetica, sans-serif">
+<defs>
+<marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L7,3 L0,6 Z" fill="#5F5E5A"/></marker>
+</defs>
+<style>
+ .ttl{font-size:22px;font-weight:bold;fill:#1F3864}
+ .sub{font-size:13px;fill:#555}
+ .h{font-size:15px;font-weight:bold;fill:#1F3864}
+ .stg{font-size:13px;font-weight:bold;fill:#2E5496}
+ .t{font-size:12.5px;fill:#1b1b1b}.s{font-size:11px;fill:#555}
+ .flow{stroke:#5F5E5A;stroke-width:1.8;fill:none}
+ .box{fill:#F1EFE8;stroke:#8a877f;stroke-width:1.1}
+ .panel{fill:#F7F9FC;stroke:#DDE3EC;stroke-width:1.2}
+ .i1{fill:#E6F1FB;stroke:#2E5496;stroke-width:1.7}
+ .i2{fill:#E1F5EE;stroke:#0F6E56;stroke-width:1.7}
+ .i3{fill:#FAEEDA;stroke:#854F0B;stroke-width:1.7}
+ .ip{fill:#FBEAF0;stroke:#993556;stroke-width:1.7}
+ .c1{fill:#2E5496}.c2{fill:#0F6E56}.c3{fill:#854F0B}.cp{fill:#993556}
+ .tot{fill:#EAF3DE;stroke:#3B6D11;stroke-width:1.6}
+</style>
+
+<text x="26" y="34" class="ttl">Custom training objective — the full picture</text>
+<text x="26" y="54" class="sub">tuned task-aligned assignment feeds a classification loss and an improved localization loss; p = epoch / total_epochs</text>
+
+<!-- ===== TOP pipeline ===== -->
+<rect x="20" y="66" width="1290" height="262" rx="12" class="panel"/>
+<text x="40" y="92" class="stg">Stage 1 — Task-aligned label assignment (tuned)</text>
+<text x="690" y="92" class="stg">Stage 2 — Loss computation</text>
+
+<!-- stage 1 -->
+<rect class="box" x="40" y="150" width="140" height="50" rx="6"/><text class="t" x="110" y="170" text-anchor="middle">predictions</text><text class="t" x="110" y="188" text-anchor="middle">+ ground truth</text>
+<path class="flow" d="M180,175 L200,175" marker-end="url(#a)"/>
+<rect class="i1" x="202" y="146" width="224" height="58" rx="7"/>
+<text class="t" x="314" y="168" text-anchor="middle" font-weight="bold">Tuned TAL assignment</text>
+<text class="s" x="314" y="186" text-anchor="middle">align metric  t = s^α · u^β  ,  pick top-k / GT</text>
+<rect class="i1" x="202" y="104" width="224" height="34" rx="6"/>
+<text class="t c1" x="314" y="125" text-anchor="middle" font-weight="bold">top-k 13 · α 0.7 · β 4.0 · u = CIoU</text>
+<path class="flow" d="M314,138 L314,144" marker-end="url(#a)"/>
+<path class="flow" d="M426,175 L446,175" marker-end="url(#a)"/>
+<rect class="box" x="448" y="150" width="150" height="50" rx="6"/><text class="t" x="523" y="170" text-anchor="middle">assigned targets</text><text class="s" x="523" y="188" text-anchor="middle">scores, boxes, fg-mask</text>
+
+<!-- stage 2: split -->
+<path class="flow" d="M598,162 C628,162 636,120 666,120" marker-end="url(#a)"/>
+<path class="flow" d="M598,188 C628,188 636,232 666,232" marker-end="url(#a)"/>
+
+<!-- cls branch -->
+<rect class="ip" x="668" y="98" width="270" height="44" rx="6"/>
+<text class="t" x="803" y="115" text-anchor="middle" font-weight="bold">classification loss</text>
+<text class="s" x="803" y="131" text-anchor="middle">BCE(pred scores, target scores) × cls gain (1.2)</text>
+
+<!-- box branch -->
+<rect class="i2" x="668" y="206" width="270" height="52" rx="6"/>
+<text class="t" x="803" y="226" text-anchor="middle" font-weight="bold">localization loss (IoU + DFL)</text>
+<text class="s" x="803" y="243" text-anchor="middle">weight w = α·a + (1−α)·s , per-sample clamp</text>
+
+<!-- total -->
+<path class="flow" d="M938,120 C975,120 980,158 998,166" marker-end="url(#a)"/>
+<path class="flow" d="M938,232 C975,232 980,190 998,182" marker-end="url(#a)"/>
+<rect class="tot" x="1000" y="146" width="296" height="58" rx="8"/>
+<text class="t" x="1148" y="170" text-anchor="middle" font-weight="bold">L = g_box·L_box</text>
+<text class="t" x="1148" y="190" text-anchor="middle" font-weight="bold">+ g_cls·L_cls + g_dfl·L_dfl</text>
+
+  <text x="40" y="306" font-size="11.5" font-style="italic" fill="#777">Note: an optional small-object center-loss term is present in the code but disabled (weight = 0) in this recipe; the localization loss therefore reduces to weighted IoU + DFL. Overlap metric is CIoU (DIoU is not used).</text>
+  <!-- ===== BOTTOM: 4 improvement cards ===== -->
+<!-- card 1 : tuned TAL -->
+<rect x="20" y="344" width="312" height="406" rx="10" class="panel"/>
+<circle cx="46" cy="372" r="13" fill="#2E5496"/><text x="46" y="377" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">1</text>
+<text x="68" y="377" class="h">Tuned TAL assignment</text>
+<rect x="40" y="392" width="272" height="150" rx="6" fill="#fff" stroke="#ccc"/>
+<rect x="120" y="420" width="110" height="92" fill="none" stroke="#2E5496" stroke-width="1.6" stroke-dasharray="4 3"/>
+<text x="175" y="412" text-anchor="middle" class="s c1">ground-truth box</text>
+<circle cx="140" cy="445" r="4.5" fill="#2E5496"/><circle cx="175" cy="455" r="4.5" fill="#2E5496"/><circle cx="205" cy="448" r="4.5" fill="#2E5496"/>
+<circle cx="150" cy="485" r="3" fill="#bbb"/><circle cx="195" cy="490" r="3" fill="#bbb"/><circle cx="100" cy="470" r="3" fill="#bbb"/><circle cx="245" cy="470" r="3" fill="#bbb"/>
+<text x="175" y="532" text-anchor="middle" class="s">top-k anchors (blue) by t = s^α·u^β</text>
+<text x="40" y="566" class="s">Higher top-k and tuned α,β select more,</text>
+<text x="40" y="582" class="s">better-aligned positives — especially the</text>
+<text x="40" y="598" class="s">harder, smaller objects.</text>
+<text x="40" y="624" class="t c1" font-weight="bold">more / better positive matches</text>
+
+<!-- card 2 : alpha -->
+<rect x="341" y="344" width="312" height="406" rx="10" class="panel"/>
+<circle cx="367" cy="372" r="13" fill="#2E5496"/><text x="367" y="377" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">2</text>
+<text x="389" y="377" class="h">Dynamic α schedule (SWA)</text>
+<rect x="361" y="392" width="272" height="150" rx="6" fill="#fff" stroke="#ccc"/>
+<line x1="385" y1="524" x2="618" y2="524" stroke="#bbb"/><line x1="385" y1="408" x2="385" y2="524" stroke="#bbb"/>
+<text x="378" y="414" class="s" text-anchor="end">.8</text><text x="378" y="522" class="s" text-anchor="end">.2</text>
+<text x="392" y="538" class="s">epoch 0</text><text x="585" y="538" class="s">end</text>
+<polyline points="385,424 618,500" fill="none" stroke="#2E5496" stroke-width="2.5"/>
+<text x="500" y="446" class="s c1">α high → low</text>
+<text x="361" y="566" class="s">Early epochs weight by area (find small /</text>
+<text x="361" y="582" class="s">all objects); later epochs weight by</text>
+<text x="361" y="598" class="s">confidence (refine sure boxes).</text>
+<text x="361" y="624" class="t c1" font-weight="bold">recall early, precision late</text>
+
+<!-- card 3 : boost -->
+<rect x="662" y="344" width="312" height="406" rx="10" class="panel"/>
+<circle cx="688" cy="372" r="13" fill="#0F6E56"/><text x="688" y="377" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">3</text>
+<text x="710" y="377" class="h">Small-object boost</text>
+<rect x="682" y="392" width="272" height="150" rx="6" fill="#fff" stroke="#ccc"/>
+<line x1="706" y1="524" x2="950" y2="524" stroke="#bbb"/>
+<rect x="746" y="486" width="56" height="38" fill="#9fb8d6"/><text x="774" y="538" class="s" text-anchor="middle">large</text><text x="774" y="478" class="s" text-anchor="middle">w</text>
+<rect x="858" y="446" width="56" height="78" fill="#0F6E56"/><text x="886" y="538" class="s" text-anchor="middle">small</text><text x="886" y="440" class="s" text-anchor="middle">w × boost</text>
+<text x="682" y="566" class="s">Boxes below a pixel-area threshold have</text>
+<text x="682" y="582" class="s">their loss weight multiplied (≈ ×2.5), so</text>
+<text x="682" y="598" class="s">tiny objects are not drowned out.</text>
+<text x="682" y="624" class="t c2" font-weight="bold">raises small-object gradient share</text>
+
+<!-- card 4 : clip -->
+<rect x="983" y="344" width="327" height="406" rx="10" class="panel"/>
+<circle cx="1009" cy="372" r="13" fill="#854F0B"/><text x="1009" y="377" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">4</text>
+<text x="1031" y="377" class="h">Adaptive clipping</text>
+<rect x="1003" y="392" width="288" height="150" rx="6" fill="#fff" stroke="#ccc"/>
+<line x1="1027" y1="524" x2="1278" y2="524" stroke="#bbb"/><line x1="1027" y1="408" x2="1027" y2="524" stroke="#bbb"/>
+<text x="1035" y="538" class="s">epoch 0</text><text x="1250" y="538" class="s">end</text>
+<polyline points="1027,420 1278,468" fill="none" stroke="#854F0B" stroke-width="2.5"/>
+<polyline points="1027,450 1278,486" fill="none" stroke="#caa24a" stroke-width="2.5"/>
+<text x="1150" y="436" class="s c3">cap: loose → tight</text>
+<text x="1003" y="566" class="s">Each sample's IoU/DFL loss is capped; the</text>
+<text x="1003" y="582" class="s">cap starts loose and tightens over training,</text>
+<text x="1003" y="598" class="s">limiting spikes from hard / ambiguous boxes.</text>
+<text x="1003" y="624" class="t c3" font-weight="bold">stabilises training</text>
+</svg>
