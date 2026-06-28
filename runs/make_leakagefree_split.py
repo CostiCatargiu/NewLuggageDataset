@@ -1,33 +1,34 @@
 #!/usr/bin/env python3
 """
-Create a LEAKAGE-FREE 70/15/15 split for the weapon dataset (video frames).
+Build a LEAKAGE-FREE 70/15/15 weapon dataset (real images + labels on disk).
 
-Why: the frames contain many near-duplicates, so a random/per-frame split leaks
-almost-identical images across train/val/test and inflates the metrics. This script
-groups near-duplicate frames into clusters and assigns each WHOLE cluster to a single
-split, so no near-duplicate can straddle two subsets.
+The frames contain many near-duplicates, so a random / per-frame split leaks
+almost-identical images across train/val/test and inflates metrics. This script
+groups near-duplicate frames into clusters and assigns each WHOLE cluster to a
+single split, then MATERIALISES a ready-to-train dataset folder:
+
+    OUT/
+      train/images/*.jpg   train/labels/*.txt
+      val/images/*.jpg     val/labels/*.txt
+      test/images/*.jpg    test/labels/*.txt
+      data.yaml            (points at the three image folders)
+      resplit_report.json  (cluster stats, sizes, per-class, leak check)
 
 Method
-  1. Pool every image referenced by the source data.yaml (train + val + test).
-  2. Encode each image with a 64-bit perceptual hash (difference hash, dHash).
-  3. Link any two images within Hamming distance <= THRESH; take connected
-     components (union-find) = clusters of mutually near-identical frames.
-  4. Stratified-greedy assignment: place clusters (largest first) into the split
-     with the most remaining capacity, targeting 70/15/15 for the total image
-     count AND for every class simultaneously (per-class balance).
-  5. Verify: 0 clusters span more than one split  ->  leakage-free by construction.
+  1. Pool every image referenced by the source data.yaml (train+val+test).
+  2. 64-bit perceptual hash (dHash) per image.
+  3. Link images within Hamming <= THRESH; connected components (union-find) = clusters.
+  4. Stratified-greedy: place whole clusters to hit 70/15/15 for the image count
+     AND every class. No cluster is split -> no near-duplicate crosses a subset.
+  5. Copy (or link) each image + its label into the new split folders.
 
-Non-destructive: images/labels are NOT moved or modified. The script only writes
-train/val/test .txt path lists + a new data.yaml (labels resolve via the usual
-/images/ -> /labels/ rule).
-
-Run:  python make_leakagefree_split.py      (edit the CONFIG block if paths differ)
-
+Run:  python make_leakagefree_split.py     (edit CONFIG below if paths differ)
 Needs: numpy, pillow, pyyaml
 """
 
 import os
 import json
+import shutil
 from collections import defaultdict
 
 import numpy as np
@@ -36,8 +37,9 @@ from PIL import Image
 # =============================================================================
 # CONFIG  (edit here)
 # =============================================================================
-DATA_YAML = "/home/constantin/Doctorat/GunDatasetNoAugSplit/data.yaml"  # source split
-OUT_DIR   = None          # None -> <dataset>/regrouped_split
+DATA_YAML = "/home/constantin/Doctorat/GunDatasetNoAugSplit/data.yaml"     # source split
+OUT_DIR   = "/home/constantin/Doctorat/GunDatasetNoAugSplit/leakagefree"   # new dataset root
+MODE      = "copy"        # "copy" (portable) | "hardlink" (no extra disk) | "symlink"
 THRESH    = 5             # Hamming distance: <= THRESH links two images
 RATIOS    = {"train": 0.70, "val": 0.15, "test": 0.15}
 SEED      = 0
@@ -132,13 +134,27 @@ class UF:
         if ra != rb: self.p[ra] = rb
 
 
+# ----------------------------------------------------------------- place files
+def place(src, dst, mode):
+    if os.path.exists(dst):
+        return
+    if mode == "symlink":
+        os.symlink(os.path.abspath(src), dst)
+    elif mode == "hardlink":
+        try:
+            os.link(src, dst)
+        except OSError:
+            shutil.copy2(src, dst)
+    else:
+        shutil.copy2(src, dst)
+
+
 # ----------------------------------------------------------------- main
 def main():
     splits, names, root = resolve_splits(DATA_YAML)
-    dataset_dir = root if root and os.path.isdir(root) else os.path.dirname(os.path.abspath(DATA_YAML))
-    out = OUT_DIR or os.path.join(dataset_dir, "regrouped_split")
+    out = OUT_DIR
     os.makedirs(out, exist_ok=True)
-    print(f"  source yaml : {DATA_YAML}\n  output dir  : {out}")
+    print(f"  source yaml : {DATA_YAML}\n  output root : {out}\n  mode        : {MODE}")
 
     paths = []
     for kind, p in splits.values():
@@ -156,7 +172,7 @@ def main():
         hashes.append(h); kept.append(p); cls.append(class_ids(p))
     arr = np.array(hashes, dtype=np.uint64)
     n = len(kept)
-    print(f"  hashed {n} images; clustering near-duplicates (Hamming <= {THRESH})...")
+    print(f"  hashed {n} images; clustering (Hamming <= {THRESH})...")
 
     uf = UF(n)
     for i in range(n):
@@ -201,49 +217,74 @@ def main():
         for k in all_cls:
             cur[best][k] += vec[k]
 
-    split_imgs = {s: [] for s in RATIOS}
+    split_idx = {s: [] for s in RATIOS}
     for ci, s in assign.items():
-        for i in clusters[ci]:
-            split_imgs[s].append(kept[i])
+        split_idx[s].extend(clusters[ci])
 
-    # write lists + yaml
+    # ---- materialise images + labels ----
+    used_names = set()
+    counts = {s: 0 for s in RATIOS}
     for s in RATIOS:
-        open(os.path.join(out, f"{s}.txt"), "w").write("\n".join(sorted(split_imgs[s])) + "\n")
-    yaml_txt = "nc: %d\n" % (len(names) if names else len(all_cls))
-    if names:
-        yaml_txt += "names: %s\n" % (list(names.values()) if isinstance(names, dict) else names)
-    yaml_txt += "train: %s\nval: %s\ntest: %s\n" % tuple(
-        os.path.abspath(os.path.join(out, f"{s}.txt")) for s in ("train", "val", "test"))
-    open(os.path.join(out, "data_regrouped.yaml"), "w").write(yaml_txt)
+        img_dir = os.path.join(out, s, "images")
+        lbl_dir = os.path.join(out, s, "labels")
+        os.makedirs(img_dir, exist_ok=True)
+        os.makedirs(lbl_dir, exist_ok=True)
+        for i in split_idx[s]:
+            src_img = kept[i]
+            base = os.path.basename(src_img)
+            stem, ext = os.path.splitext(base)
+            # guarantee unique filename across the whole dataset
+            name = base
+            if name in used_names:
+                name = f"{stem}_{i}{ext}"
+            used_names.add(name)
+            place(src_img, os.path.join(img_dir, name), MODE)
+            src_lbl = label_path(src_img)
+            dst_lbl = os.path.join(lbl_dir, os.path.splitext(name)[0] + ".txt")
+            if os.path.isfile(src_lbl):
+                place(src_lbl, dst_lbl, MODE)
+            else:
+                open(dst_lbl, "w").close()   # empty = background (no objects)
+            counts[s] += 1
+        print(f"  [{s}] wrote {counts[s]} images + labels -> {os.path.join(out, s)}")
 
-    # verify: no cluster spans >1 split
+    # ---- data.yaml ----
+    name_list = (list(names.values()) if isinstance(names, dict) else names) if names else None
+    yaml_txt = "path: %s\n" % os.path.abspath(out)
+    yaml_txt += "train: train/images\nval: val/images\ntest: test/images\n"
+    yaml_txt += "nc: %d\n" % (len(name_list) if name_list else len(all_cls))
+    if name_list:
+        yaml_txt += "names: %s\n" % name_list
+    open(os.path.join(out, "data.yaml"), "w").write(yaml_txt)
+
+    # ---- leak verification + report ----
     cl_of = {}
     for ci, members in enumerate(clusters):
         for i in members:
-            cl_of[kept[i]] = ci
-    img_split = {p: s for s in RATIOS for p in split_imgs[s]}
+            cl_of[i] = ci
     cluster_splits = defaultdict(set)
-    for p, s in img_split.items():
-        cluster_splits[cl_of[p]].add(s)
+    for s in RATIOS:
+        for i in split_idx[s]:
+            cluster_splits[cl_of[i]].add(s)
     spanning = sum(1 for v in cluster_splits.values() if len(v) > 1)
 
     report = {
-        "source_yaml": DATA_YAML, "hamming_threshold": THRESH, "seed": SEED,
+        "source_yaml": DATA_YAML, "output_root": os.path.abspath(out), "mode": MODE,
+        "hamming_threshold": THRESH, "seed": SEED,
         "total_images": n, "clusters": len(clusters),
         "singletons": sum(1 for s in sizes if s == 1), "largest_cluster": sizes[0],
         "clusters_spanning_multiple_splits": spanning,
-        "split_images": {s: len(split_imgs[s]) for s in RATIOS},
-        "split_pct": {s: round(100 * len(split_imgs[s]) / max(n, 1), 2) for s in RATIOS},
-        "per_class_per_split": {
-            s: {("class%d" % k): cur[s][k] for k in all_cls} for s in RATIOS},
+        "split_images": {s: counts[s] for s in RATIOS},
+        "split_pct": {s: round(100 * counts[s] / max(n, 1), 2) for s in RATIOS},
+        "per_class_per_split": {s: {("class%d" % k): cur[s][k] for k in all_cls} for s in RATIOS},
     }
     json.dump(report, open(os.path.join(out, "resplit_report.json"), "w"), indent=2)
 
     print("\n  ==== RESULT ====")
     for s in RATIOS:
-        print(f"   {s:5} {len(split_imgs[s]):6d} imgs  ({report['split_pct'][s]}%)")
-    print(f"   clusters spanning >1 split: {spanning}  (0 = leakage-free)")
-    print(f"   wrote: {out}/train.txt, val.txt, test.txt, data_regrouped.yaml, resplit_report.json\n")
+        print(f"   {s:5} {counts[s]:6d} imgs  ({report['split_pct'][s]}%)")
+    print(f"   clusters spanning >1 split: {spanning}   (0 = leakage-free)")
+    print(f"   dataset ready: {out}  (train it with {os.path.join(out, 'data.yaml')})\n")
 
 
 if __name__ == "__main__":
