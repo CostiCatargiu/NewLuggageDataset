@@ -1,0 +1,182 @@
+[
+  {
+    "table_name": "Small objects (area less than 32x32 pixels)",
+    "metrics": [
+      {
+        "metric": "mAP@50",
+        "Baseline": 0.640,
+        "+A1 (SWA)": 0.6690,
+        "+A2 (excluded)": 0.6310,
+        "+A3": 0.6650,
+        "+A4 (TAL tuning)": 0.6740,
+        "+Custom loss (A1,A3,A4)": 0.681,
+        "+Architecture (B1-B5)": 0.664,
+        "New model": "0.708 (+10.63%)"
+      },
+      {
+        "metric": "mAP@50-95",
+        "Baseline": 0.324,
+        "+A1 (SWA)": 0.3360,
+        "+A2 (excluded)": 0.3190,
+        "+A3": 0.3410,
+        "+A4 (TAL tuning)": 0.3390,
+        "+Custom loss (A1,A3,A4)": 0.348,
+        "+Architecture (B1-B5)": 0.334,
+        "New model": "0.354 (+9.26%)"
+      },
+      {
+        "metric": "Precision",
+        "Baseline": 0.758,
+        "+A1 (SWA)": 0.7700,
+        "+A2 (excluded)": 0.7620,
+        "+A3": 0.7660,
+        "+A4 (TAL tuning)": 0.7780,
+        "+Custom loss (A1,A3,A4)": 0.783,
+        "+Architecture (B1-B5)": 0.769,
+        "New model": "0.790 (+4.22%)"
+      },
+      {
+        "metric": "Recall",
+        "Baseline": 0.585,
+        "+A1 (SWA)": 0.6220,
+        "+A2 (excluded)": 0.5720,
+        "+A3": 0.6280,
+        "+A4 (TAL tuning)": 0.6250,
+        "+Custom loss (A1,A3,A4)": 0.648,
+        "+Architecture (B1-B5)": 0.611,
+        "New model": "0.660 (+12.82%)"
+      },
+      {
+        "metric": "F1-score",
+        "Baseline": 0.662,
+        "+A1 (SWA)": 0.692,
+        "+A2 (excluded)": 0.6530,
+        "+A3": 0.694,
+        "+A4 (TAL tuning)": 0.697,
+        "+Custom loss (A1,A3,A4)": 0.708,
+        "+Architecture (B1-B5)": 0.682,
+        "New model": "0.719 (+8.61%)"
+      }
+    ]
+  },
+  {
+    "table_name": "Medium objects (area between 32x32 and 96x96 pixels)",
+    "metrics": [
+      {
+        "metric": "mAP@50",
+        "Baseline": 0.781,
+        "+A1 (SWA)": 0.8110,
+        "+A2 (excluded)": 0.7730,
+        "+A3": 0.8070,
+        "+A4 (TAL tuning)": 0.8140,
+        "+Custom loss (A1,A3,A4)": 0.818,
+        "+Architecture (B1-B5)": 0.797,
+        "New model": "0.826 (+5.76%)"
+      },
+      {
+        "metric": "mAP@50-95",
+        "Baseline": 0.445,
+        "+A1 (SWA)": 0.4640,
+        "+A2 (excluded)": 0.4390,
+        "+A3": 0.4670,
+        "+A4 (TAL tuning)": 0.4650,
+        "+Custom loss (A1,A3,A4)": 0.472,
+        "+Architecture (B1-B5)": 0.457,
+        "New model": "0.480 (+7.87%)"
+      },
+      {
+        "metric": "Precision",
+        "Baseline": 0.816,
+        "+A1 (SWA)": 0.8380,
+        "+A2 (excluded)": 0.8200,
+        "+A3": 0.8330,
+        "+A4 (TAL tuning)": 0.8450,
+        "+Custom loss (A1,A3,A4)": 0.851,
+        "+Architecture (B1-B5)": 0.832,
+        "New model": "0.860 (+5.39%)"
+      },
+      {
+        "metric": "Recall",
+        "Baseline": 0.723,
+        "+A1 (SWA)": 0.7510,
+        "+A2 (excluded)": 0.7140,
+        "+A3": 0.7540,
+        "+A4 (TAL tuning)": 0.7520,
+        "+Custom loss (A1,A3,A4)": 0.763,
+        "+Architecture (B1-B5)": 0.741,
+        "New model": "0.775 (+7.19%)"
+      },
+      {
+        "metric": "F1-score",
+        "Baseline": 0.767,
+        "+A1 (SWA)": 0.792,
+        "+A2 (excluded)": 0.7580,
+        "+A3": 0.791,
+        "+A4 (TAL tuning)": 0.796,
+        "+Custom loss (A1,A3,A4)": 0.805,
+        "+Architecture (B1-B5)": 0.784,
+        "New model": "0.815 (+6.26%)"
+      }
+    ]
+  },
+  {
+    "table_name": "Large objects (area greater than 96x96 pixels)",
+    "metrics": [
+      {
+        "metric": "mAP@50",
+        "Baseline": 0.848,
+        "+A1 (SWA)": 0.8580,
+        "+A2 (excluded)": 0.8530,
+        "+A3": 0.8540,
+        "+A4 (TAL tuning)": 0.8620,
+        "+Custom loss (A1,A3,A4)": 0.866,
+        "+Architecture (B1-B5)": 0.856,
+        "New model": "0.872 (+2.83%)"
+      },
+      {
+        "metric": "mAP@50-95",
+        "Baseline": 0.574,
+        "+A1 (SWA)": 0.5830,
+        "+A2 (excluded)": 0.5780,
+        "+A3": 0.5850,
+        "+A4 (TAL tuning)": 0.5820,
+        "+Custom loss (A1,A3,A4)": 0.591,
+        "+Architecture (B1-B5)": 0.582,
+        "New model": "0.595 (+3.66%)"
+      },
+      {
+        "metric": "Precision",
+        "Baseline": 0.844,
+        "+A1 (SWA)": 0.8670,
+        "+A2 (excluded)": 0.8510,
+        "+A3": 0.8620,
+        "+A4 (TAL tuning)": 0.8730,
+        "+Custom loss (A1,A3,A4)": 0.880,
+        "+Architecture (B1-B5)": 0.861,
+        "New model": "0.893 (+5.81%)"
+      },
+      {
+        "metric": "Recall",
+        "Baseline": 0.808,
+        "+A1 (SWA)": 0.8220,
+        "+A2 (excluded)": 0.8150,
+        "+A3": 0.8250,
+        "+A4 (TAL tuning)": 0.8230,
+        "+Custom loss (A1,A3,A4)": 0.831,
+        "+Architecture (B1-B5)": 0.818,
+        "New model": "0.838 (+3.71%)"
+      },
+      {
+        "metric": "F1-score",
+        "Baseline": 0.825,
+        "+A1 (SWA)": 0.843,
+        "+A2 (excluded)": 0.8320,
+        "+A3": 0.842,
+        "+A4 (TAL tuning)": 0.846,
+        "+Custom loss (A1,A3,A4)": 0.854,
+        "+Architecture (B1-B5)": 0.839,
+        "New model": "0.864 (+4.73%)"
+      }
+    ]
+  }
+]
