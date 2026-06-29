@@ -1,0 +1,38 @@
+{
+  "description": "Normalised confusion matrices (row-wise: each value = count / total GT of that class). Rows = Ground Truth, Columns = Predicted. IoU >= 0.5.",
+  "label": "my_run",
+  "iou_thresh": 0.5,
+  "normalized": true,
+  "columns": ["knife", "long_gun", "other", "pistol", "background"],
+  "rows": ["knife", "long_gun", "other", "pistol", "background"],
+  "matrices": {
+    "all": {
+      "knife":      {"knife": 0.84, "long_gun": 0.00, "other": 0.01, "pistol": 0.00, "background": 0.14},
+      "long_gun":   {"knife": 0.00, "long_gun": 0.88, "other": 0.00, "pistol": 0.02, "background": 0.10},
+      "other":      {"knife": 0.01, "long_gun": 0.01, "other": 0.62, "pistol": 0.02, "background": 0.34},
+      "pistol":     {"knife": 0.00, "long_gun": 0.02, "other": 0.00, "pistol": 0.88, "background": 0.10},
+      "background": {"knife": 0.01, "long_gun": 0.02, "other": 0.04, "pistol": 0.02, "background": 0.00}
+    },
+    "small": {
+      "knife":      {"knife": 0.68, "long_gun": 0.00, "other": 0.00, "pistol": 0.00, "background": 0.32},
+      "long_gun":   {"knife": 0.00, "long_gun": 0.76, "other": 0.00, "pistol": 0.03, "background": 0.22},
+      "other":      {"knife": 0.00, "long_gun": 0.00, "other": 0.50, "pistol": 0.04, "background": 0.46},
+      "pistol":     {"knife": 0.00, "long_gun": 0.01, "other": 0.00, "pistol": 0.76, "background": 0.22},
+      "background": {"knife": 0.02, "long_gun": 0.04, "other": 0.06, "pistol": 0.10, "background": 0.00}
+    },
+    "medium": {
+      "knife":      {"knife": 0.82, "long_gun": 0.00, "other": 0.02, "pistol": 0.01, "background": 0.15},
+      "long_gun":   {"knife": 0.00, "long_gun": 0.82, "other": 0.00, "pistol": 0.03, "background": 0.15},
+      "other":      {"knife": 0.01, "long_gun": 0.01, "other": 0.62, "pistol": 0.02, "background": 0.34},
+      "pistol":     {"knife": 0.00, "long_gun": 0.02, "other": 0.00, "pistol": 0.87, "background": 0.11},
+      "background": {"knife": 0.02, "long_gun": 0.05, "other": 0.07, "pistol": 0.05, "background": 0.00}
+    },
+    "large": {
+      "knife":      {"knife": 0.86, "long_gun": 0.00, "other": 0.02, "pistol": 0.00, "background": 0.12},
+      "long_gun":   {"knife": 0.00, "long_gun": 0.91, "other": 0.00, "pistol": 0.02, "background": 0.06},
+      "other":      {"knife": 0.02, "long_gun": 0.00, "other": 0.65, "pistol": 0.01, "background": 0.32},
+      "pistol":     {"knife": 0.00, "long_gun": 0.03, "other": 0.01, "pistol": 0.92, "background": 0.05},
+      "background": {"knife": 0.02, "long_gun": 0.03, "other": 0.03, "pistol": 0.02, "background": 0.00}
+    }
+  }
+}
