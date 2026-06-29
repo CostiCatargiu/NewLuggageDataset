@@ -1,0 +1,35 @@
+{
+  "table": "Comparative performance analysis against the YOLO2026 model on the test set",
+  "data": {
+    "mAP@50": {
+      "Small":  { "YOLOv12s": 0.640, "YOLOv12s_Custom_loss": 0.681, "YOLOv12s_Custom_loss_Custom_architecture": 0.708, "YOLO2026": 0.498 },
+      "Medium": { "YOLOv12s": 0.781, "YOLOv12s_Custom_loss": 0.818, "YOLOv12s_Custom_loss_Custom_architecture": 0.826, "YOLO2026": 0.718 },
+      "Large":  { "YOLOv12s": 0.848, "YOLOv12s_Custom_loss": 0.866, "YOLOv12s_Custom_loss_Custom_architecture": 0.872, "YOLO2026": 0.796 },
+      "All":    { "YOLOv12s": 0.812, "YOLOv12s_Custom_loss": 0.835, "YOLOv12s_Custom_loss_Custom_architecture": 0.852, "YOLO2026": 0.782 }
+    },
+    "mAP@50-95": {
+      "Small":  { "YOLOv12s": 0.324, "YOLOv12s_Custom_loss": 0.348, "YOLOv12s_Custom_loss_Custom_architecture": 0.354, "YOLO2026": 0.276 },
+      "Medium": { "YOLOv12s": 0.445, "YOLOv12s_Custom_loss": 0.472, "YOLOv12s_Custom_loss_Custom_architecture": 0.480, "YOLO2026": 0.402 },
+      "Large":  { "YOLOv12s": 0.574, "YOLOv12s_Custom_loss": 0.591, "YOLOv12s_Custom_loss_Custom_architecture": 0.595, "YOLO2026": 0.524 },
+      "All":    { "YOLOv12s": 0.516, "YOLOv12s_Custom_loss": 0.535, "YOLOv12s_Custom_loss_Custom_architecture": 0.553, "YOLO2026": 0.502 }
+    },
+    "Precision": {
+      "Small":  { "YOLOv12s": 0.758, "YOLOv12s_Custom_loss": 0.783, "YOLOv12s_Custom_loss_Custom_architecture": 0.790, "YOLO2026": null },
+      "Medium": { "YOLOv12s": 0.816, "YOLOv12s_Custom_loss": 0.851, "YOLOv12s_Custom_loss_Custom_architecture": 0.860, "YOLO2026": null },
+      "Large":  { "YOLOv12s": 0.844, "YOLOv12s_Custom_loss": 0.880, "YOLOv12s_Custom_loss_Custom_architecture": 0.893, "YOLO2026": null },
+      "All":    { "YOLOv12s": 0.833, "YOLOv12s_Custom_loss": 0.849, "YOLOv12s_Custom_loss_Custom_architecture": 0.865, "YOLO2026": 0.792 }
+    },
+    "Recall": {
+      "Small":  { "YOLOv12s": 0.585, "YOLOv12s_Custom_loss": 0.648, "YOLOv12s_Custom_loss_Custom_architecture": 0.660, "YOLO2026": null },
+      "Medium": { "YOLOv12s": 0.723, "YOLOv12s_Custom_loss": 0.763, "YOLOv12s_Custom_loss_Custom_architecture": 0.775, "YOLO2026": null },
+      "Large":  { "YOLOv12s": 0.808, "YOLOv12s_Custom_loss": 0.831, "YOLOv12s_Custom_loss_Custom_architecture": 0.838, "YOLO2026": null },
+      "All":    { "YOLOv12s": 0.747, "YOLOv12s_Custom_loss": 0.774, "YOLOv12s_Custom_loss_Custom_architecture": 0.800, "YOLO2026": 0.698 }
+    },
+    "F1-score": {
+      "Small":  { "YOLOv12s": 0.662, "YOLOv12s_Custom_loss": 0.708, "YOLOv12s_Custom_loss_Custom_architecture": 0.719, "YOLO2026": null },
+      "Medium": { "YOLOv12s": 0.767, "YOLOv12s_Custom_loss": 0.805, "YOLOv12s_Custom_loss_Custom_architecture": 0.815, "YOLO2026": null },
+      "Large":  { "YOLOv12s": 0.825, "YOLOv12s_Custom_loss": 0.854, "YOLOv12s_Custom_loss_Custom_architecture": 0.864, "YOLO2026": null },
+      "All":    { "YOLOv12s": 0.788, "YOLOv12s_Custom_loss": 0.810, "YOLOv12s_Custom_loss_Custom_architecture": 0.831, "YOLO2026": 0.742 }
+    }
+  }
+}

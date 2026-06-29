@@ -2,43 +2,43 @@
   "performance_comparison_table": [
     {
       "class": "knife",
-      "map_at_50": { "custom": 0.8996, "baseline": 0.8673 },
-      "map_at_50_95": { "custom": 0.6455, "baseline": 0.6087 },
-      "precision": { "custom": 0.8762, "baseline": 0.8483 },
-      "recall": { "custom": 0.8600, "baseline": 0.8187 },
-      "f1_score": { "custom": 0.8680, "baseline": 0.8332 }
+      "map_at_50": { "custom": 0.900, "baseline": 0.867 },
+      "map_at_50_95": { "custom": 0.646, "baseline": 0.609 },
+      "precision": { "custom": 0.876, "baseline": 0.848 },
+      "recall": { "custom": 0.841, "baseline": 0.807 },
+      "f1_score": { "custom": 0.859, "baseline": 0.828 }
     },
     {
       "class": "pistol",
-      "map_at_50": { "custom": 0.9159, "baseline": 0.8816 },
-      "map_at_50_95": { "custom": 0.6086, "baseline": 0.5688 },
-      "precision": { "custom": 0.8968, "baseline": 0.8620 },
-      "recall": { "custom": 0.8753, "baseline": 0.8273 },
-      "f1_score": { "custom": 0.8859, "baseline": 0.8443 }
+      "map_at_50": { "custom": 0.916, "baseline": 0.882 },
+      "map_at_50_95": { "custom": 0.609, "baseline": 0.569 },
+      "precision": { "custom": 0.897, "baseline": 0.862 },
+      "recall": { "custom": 0.879, "baseline": 0.840 },
+      "f1_score": { "custom": 0.888, "baseline": 0.851 }
     },
     {
       "class": "long-gun",
-      "map_at_50": { "custom": 0.9027, "baseline": 0.8811 },
-      "map_at_50_95": { "custom": 0.5750, "baseline": 0.5540 },
-      "precision": { "custom": 0.8801, "baseline": 0.8591 },
-      "recall": { "custom": 0.8819, "baseline": 0.8418 },
-      "f1_score": { "custom": 0.8810, "baseline": 0.8503 }
+      "map_at_50": { "custom": 0.903, "baseline": 0.881 },
+      "map_at_50_95": { "custom": 0.575, "baseline": 0.554 },
+      "precision": { "custom": 0.880, "baseline": 0.859 },
+      "recall": { "custom": 0.883, "baseline": 0.848 },
+      "f1_score": { "custom": 0.882, "baseline": 0.853 }
     },
     {
       "class": "other",
-      "map_at_50": { "custom": 0.6890, "baseline": 0.6168 },
-      "map_at_50_95": { "custom": 0.3847, "baseline": 0.3321 },
-      "precision": { "custom": 0.8073, "baseline": 0.7614 },
-      "recall": { "custom": 0.5822, "baseline": 0.5004 },
-      "f1_score": { "custom": 0.6775, "baseline": 0.6088 }
+      "map_at_50": { "custom": 0.689, "baseline": 0.617 },
+      "map_at_50_95": { "custom": 0.385, "baseline": 0.332 },
+      "precision": { "custom": 0.807, "baseline": 0.761 },
+      "recall": { "custom": 0.582, "baseline": 0.500 },
+      "f1_score": { "custom": 0.678, "baseline": 0.609 }
     },
     {
       "class": "All",
-      "map_at_50": { "custom": 0.8518, "baseline": 0.8117 },
-      "map_at_50_95": { "custom": 0.5534, "baseline": 0.5159 },
-      "precision": { "custom": 0.8651, "baseline": 0.8327 },
-      "recall": { "custom": 0.7998, "baseline": 0.7470 },
-      "f1_score": { "custom": 0.8312, "baseline": 0.7882 }
+      "map_at_50": { "custom": 0.852, "baseline": 0.812 },
+      "map_at_50_95": { "custom": 0.553, "baseline": 0.516 },
+      "precision": { "custom": 0.865, "baseline": 0.833 },
+      "recall": { "custom": 0.800, "baseline": 0.747 },
+      "f1_score": { "custom": 0.831, "baseline": 0.788 }
     }
   ],
   "table_5_relative_improvement": [
@@ -47,8 +47,8 @@
       "map_at_50": "+3.74%",
       "map_at_50_95": "+6.04%",
       "precision": "+3.28%",
-      "recall": "+5.05%",
-      "f1_score": "+4.18%",
+      "recall": "+4.23%",
+      "f1_score": "+3.74%",
       "comments": "Modest yet consistent improvement; augmentation and adaptive weighting improved visibility of small metallic edges"
     },
     {
@@ -56,8 +56,8 @@
       "map_at_50": "+3.90%",
       "map_at_50_95": "+6.99%",
       "precision": "+4.04%",
-      "recall": "+5.81%",
-      "f1_score": "+4.93%",
+      "recall": "+4.64%",
+      "f1_score": "+4.35%",
       "comments": "Highest-frequency class benefited from better feature fusion at P2, improving stability across viewing angles"
     },
     {
@@ -65,8 +65,8 @@
       "map_at_50": "+2.46%",
       "map_at_50_95": "+3.80%",
       "precision": "+2.45%",
-      "recall": "+4.77%",
-      "f1_score": "+3.61%",
+      "recall": "+4.23%",
+      "f1_score": "+3.34%",
       "comments": "Strong recall gains from improved multi-scale attention; fewer missed detections in clutter"
     },
     {
