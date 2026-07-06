@@ -1,0 +1,144 @@
+<svg viewBox="0 0 1520 900" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif">
+<defs>
+<marker id="ar" markerWidth="10" markerHeight="10" refX="7.5" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1.5 L8,4.5 L1,7.5 Z" fill="#45443F"/></marker>
+<marker id="arg" markerWidth="10" markerHeight="10" refX="7.5" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1.5 L8,4.5 L1,7.5 Z" fill="#1E7A46"/></marker>
+<marker id="arp" markerWidth="10" markerHeight="10" refX="7.5" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1.5 L8,4.5 L1,7.5 Z" fill="#534AB7"/></marker>
+<marker id="arr" markerWidth="10" markerHeight="10" refX="7.5" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1.5 L8,4.5 L1,7.5 Z" fill="#C0392B"/></marker></defs>
+<style>.ttl{font-size:24px;font-weight:700;fill:#1F3864}.sub{font-size:13.5px;fill:#555}.band{font-size:15px;font-weight:700;fill:#1F3864}.bt{font-size:13px;font-weight:700}.s{font-size:11.5px;fill:#222}.tiny{font-size:10.5px;fill:#444}.good{fill:#1E7A46}.bad{fill:#C0392B}</style>
+<text class="ttl" x="30" y="40">Why the proposed model detects small weapons better — architecture and loss working together</text>
+<text class="sub" x="30" y="62">a small object (~30 px, lives at the P3 / stride-8 scale) traced through the network (top) and the training signal that focuses on it (bottom)</text>
+<rect x="24" y="80" width="1472" height="372" rx="10" fill="#F7F9FC" stroke="#DDE3EC"/>
+<text class="band" x="40" y="104">A.  Architecture — globalctx feature enhancement  (inference path)</text>
+<rect x="44" y="200" width="120" height="92" rx="6" fill="#E9EEF4" stroke="#9AA8BF" stroke-width="1.4"/>
+<rect x="44" y="268" width="120" height="24" fill="#DCE3EC"/><rect x="107.0" y="233.5" width="24.0" height="7.0" rx="2" fill="#2B2B2B"/><rect x="111.0" y="239.0" width="7.0" height="11.0" rx="2" transform="rotate(18 115.0 244.0)" fill="#2B2B2B"/>
+<circle cx="120" cy="238" r="20" fill="none" stroke="#C0392B" stroke-width="1.5"/>
+<text class="tiny" x="104" y="308">input · small object</text>
+<path d="M164,246 L196,246" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="198" y="205" width="116" height="82" rx="6" fill="#CFE3F6" stroke="#134F86" stroke-width="1.5"/><text x="256.0" y="243.0" text-anchor="middle" font-size="13" font-weight="700" fill="#0A3C6E">Stock YOLOv12s</text><text x="256.0" y="259.0" text-anchor="middle" font-size="10.5" fill="#444">backbone + PAN neck (unchanged)</text>
+<path d="M314,246 L344,172" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="348" y="150" width="46" height="46" fill="#EAF0F7" stroke="#7E8CA6" stroke-width="1.3"/><line x1="359.5" y1="150" x2="359.5" y2="196" stroke="#D5DEEA"/><line x1="348" y1="161.5" x2="394" y2="161.5" stroke="#D5DEEA"/><line x1="371.0" y1="150" x2="371.0" y2="196" stroke="#D5DEEA"/><line x1="348" y1="173.0" x2="394" y2="173.0" stroke="#D5DEEA"/><line x1="382.5" y1="150" x2="382.5" y2="196" stroke="#D5DEEA"/><line x1="348" y1="184.5" x2="394" y2="184.5" stroke="#D5DEEA"/><rect x="359.5" y="161.5" width="11.5" height="11.5" fill="#C0392B" fill-opacity="0.35" stroke="#C0392B" stroke-width="1.2"/><text x="371.0" y="209" text-anchor="middle" class="tiny" font-weight="700">P3 /8 — small obj</text>
+<path d="M394,173 L428,173" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="432" y="150" width="170" height="46" rx="6" fill="#C6ECE0" stroke="#0A5F4C" stroke-width="1.5"/><text x="517.0" y="170.0" text-anchor="middle" font-size="12.5" font-weight="700" fill="#06463A">ZGSmallDetail</text><text x="517.0" y="186.0" text-anchor="middle" font-size="10.5" fill="#444">small 3×3/5×5 → detail</text>
+<path d="M602,173 L636,173" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="640" y="150" width="96" height="46" rx="6" fill="#DCD9FB" stroke="#463DA3" stroke-width="1.5"/><text x="688.0" y="177.0" text-anchor="middle" font-size="11.5" font-weight="700" fill="#342C7C">ZGGlobalContext</text>
+<path d="M736,173 L796,173" stroke="#1E7A46" stroke-width="1.8" fill="none" marker-end="url(#arg)"/>
+<path d="M371,196 L371,392" stroke="#45443F" stroke-width="1.8" fill="none" stroke-dasharray="5 3" marker-end="url(#ar)"/>
+<path d="M314,246 L344,255" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="348" y="233" width="46" height="46" fill="#EAF0F7" stroke="#7E8CA6" stroke-width="1.3"/><line x1="359.5" y1="233" x2="359.5" y2="279" stroke="#D5DEEA"/><line x1="348" y1="244.5" x2="394" y2="244.5" stroke="#D5DEEA"/><line x1="371.0" y1="233" x2="371.0" y2="279" stroke="#D5DEEA"/><line x1="348" y1="256.0" x2="394" y2="256.0" stroke="#D5DEEA"/><line x1="382.5" y1="233" x2="382.5" y2="279" stroke="#D5DEEA"/><line x1="348" y1="267.5" x2="394" y2="267.5" stroke="#D5DEEA"/><text x="371.0" y="292" text-anchor="middle" class="tiny" font-weight="700">P4 /16</text>
+<path d="M394,256 L428,256" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="432" y="233" width="170" height="46" rx="6" fill="#C6ECE0" stroke="#0A5F4C" stroke-width="1.5"/><text x="517.0" y="253.0" text-anchor="middle" font-size="12.5" font-weight="700" fill="#06463A">ZGLSKAWideFuseV2</text><text x="517.0" y="269.0" text-anchor="middle" font-size="10.5" fill="#444">LKA 11 + strip-23 + detail</text>
+<path d="M602,256 L636,256" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="640" y="233" width="96" height="46" rx="6" fill="#DCD9FB" stroke="#463DA3" stroke-width="1.5"/><text x="688.0" y="260.0" text-anchor="middle" font-size="11.5" font-weight="700" fill="#342C7C">ZGGlobalContext</text>
+<path d="M736,256 L796,256" stroke="#1E7A46" stroke-width="1.8" fill="none" marker-end="url(#arg)"/>
+<path d="M371,279 L371,392" stroke="#45443F" stroke-width="1.8" fill="none" stroke-dasharray="5 3" marker-end="url(#ar)"/>
+<path d="M314,246 L344,338" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="348" y="316" width="46" height="46" fill="#EAF0F7" stroke="#7E8CA6" stroke-width="1.3"/><line x1="359.5" y1="316" x2="359.5" y2="362" stroke="#D5DEEA"/><line x1="348" y1="327.5" x2="394" y2="327.5" stroke="#D5DEEA"/><line x1="371.0" y1="316" x2="371.0" y2="362" stroke="#D5DEEA"/><line x1="348" y1="339.0" x2="394" y2="339.0" stroke="#D5DEEA"/><line x1="382.5" y1="316" x2="382.5" y2="362" stroke="#D5DEEA"/><line x1="348" y1="350.5" x2="394" y2="350.5" stroke="#D5DEEA"/><text x="371.0" y="375" text-anchor="middle" class="tiny" font-weight="700">P5 /32</text>
+<path d="M394,339 L428,339" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="432" y="316" width="170" height="46" rx="6" fill="#C6ECE0" stroke="#0A5F4C" stroke-width="1.5"/><text x="517.0" y="336.0" text-anchor="middle" font-size="12.5" font-weight="700" fill="#06463A">ZGLSKAWideFuse</text><text x="517.0" y="352.0" text-anchor="middle" font-size="10.5" fill="#444">LKA 11 + strip-23 context</text>
+<path d="M602,339 L636,339" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="640" y="316" width="96" height="46" rx="6" fill="#DCD9FB" stroke="#463DA3" stroke-width="1.5"/><text x="688.0" y="343.0" text-anchor="middle" font-size="11.5" font-weight="700" fill="#342C7C">ZGGlobalContext</text>
+<path d="M736,339 L796,339" stroke="#1E7A46" stroke-width="1.8" fill="none" marker-end="url(#arg)"/>
+<path d="M371,362 L371,392" stroke="#45443F" stroke-width="1.8" fill="none" stroke-dasharray="5 3" marker-end="url(#ar)"/>
+<path d="M371,392 L800,392" stroke="#888780" stroke-width="1.6" stroke-dasharray="5 3" fill="none" marker-end="url(#ar)"/>
+<text class="tiny" x="430" y="386">raw P3/P4/P5 → auxiliary head (training only, dropped at inference)</text>
+<rect x="802" y="150" width="150" height="212" rx="7" fill="#F6D9CC" stroke="#883014" stroke-width="1.8"/>
+<text x="877" y="176" text-anchor="middle" class="bt" fill="#6A2811">DetectAuxDual</text>
+<text x="877" y="198" text-anchor="middle" class="tiny">main: 3 heads</text>
+<text x="877" y="213" text-anchor="middle" class="tiny">on enhanced P3/P4/P5</text>
+<text x="877" y="238" text-anchor="middle" class="tiny" fill="#1E7A46">aux: 3 heads (raw),</text>
+<text x="877" y="253" text-anchor="middle" class="tiny" fill="#1E7A46">train-only</text>
+<text x="877" y="300" text-anchor="middle" class="tiny">strides 8/16/32</text>
+<text x="877" y="318" text-anchor="middle" class="tiny">3 heads @ inference</text>
+<path d="M952,256 L992,256" stroke="#1E7A46" stroke-width="1.8" fill="none" marker-end="url(#arg)"/>
+<rect x="994" y="208" width="128" height="92" rx="6" fill="#E9EEF4" stroke="#9AA8BF" stroke-width="1.4"/>
+<rect x="994" y="276" width="128" height="24" fill="#DCE3EC"/><rect x="1053.0" y="241.5" width="24.0" height="7.0" rx="2" fill="#2B2B2B"/><rect x="1057.0" y="247.0" width="7.0" height="11.0" rx="2" transform="rotate(18 1061.0 252.0)" fill="#2B2B2B"/>
+<rect x="1042" y="229" width="46" height="34" fill="none" stroke="#1E7A46" stroke-width="2.4"/>
+<rect x="1042" y="216" width="54" height="13" fill="#1E7A46"/><text class="tiny" x="1046" y="226" fill="#fff" font-weight="700">pistol 0.88</text>
+<text class="tiny good" x="998" y="314" fill="#1E7A46">confident small-object detection</text>
+<rect x="1150" y="150" width="344" height="64" rx="6" fill="#EFF6E9" stroke="#9FBE74" stroke-width="1.5"/><text x="1322.0" y="179.0" text-anchor="middle" font-size="12.5" font-weight="700" fill="#3B6D11">Append-only · zero-gated (γ = 0 at init)</text><text x="1322.0" y="195.0" text-anchor="middle" font-size="10.5" fill="#444">every module starts as the identity → exact pretrained transfer; gates open only where they reduce loss, so they can only help.</text>
+<rect x="1150" y="228" width="344" height="60" rx="6" fill="#EEF3FB" stroke="#C5D3EA" stroke-width="1.5"/><text x="1322.0" y="255.0" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1F3864">Scale-specific enhancement + global context</text><text x="1322.0" y="271.0" text-anchor="middle" font-size="10.5" fill="#444">fine detail at P3 (small objects), wide context at P4/P5; a global cue at every level separates the heterogeneous ‘other’ class.</text>
+<rect x="1150" y="300" width="344" height="58" rx="6" fill="#FCF1EC" stroke="#E2B4AE" stroke-width="1.5"/><text x="1322.0" y="326.0" text-anchor="middle" font-size="12.5" font-weight="700" fill="#883014">Dual-head deep supervision</text><text x="1322.0" y="342.0" text-anchor="middle" font-size="10.5" fill="#444">the train-only aux head forces the backbone to keep high-resolution detail; removed at inference (zero cost).</text>
+<rect x="24" y="470" width="1472" height="372" rx="10" fill="#FBFAF6" stroke="#E6DFD0"/>
+<text class="band" x="40" y="494" fill="#7A5210">B.  Custom loss &amp; assignment — the training signal that focuses on the small object</text>
+<rect x="60" y="560" width="120" height="120" fill="#FFFFFF" stroke="#9AA8BF" stroke-width="1.2"/>
+<line x1="80" y1="560" x2="80" y2="680" stroke="#E2E7EE"/>
+<line x1="60" y1="580" x2="180" y2="580" stroke="#E2E7EE"/>
+<line x1="100" y1="560" x2="100" y2="680" stroke="#E2E7EE"/>
+<line x1="60" y1="600" x2="180" y2="600" stroke="#E2E7EE"/>
+<line x1="120" y1="560" x2="120" y2="680" stroke="#E2E7EE"/>
+<line x1="60" y1="620" x2="180" y2="620" stroke="#E2E7EE"/>
+<line x1="140" y1="560" x2="140" y2="680" stroke="#E2E7EE"/>
+<line x1="60" y1="640" x2="180" y2="640" stroke="#E2E7EE"/>
+<line x1="160" y1="560" x2="160" y2="680" stroke="#E2E7EE"/>
+<line x1="60" y1="660" x2="180" y2="660" stroke="#E2E7EE"/>
+<rect x="100" y="600" width="40" height="40" fill="#9FC08A" fill-opacity="0.8" stroke="#3B6D11" stroke-width="1.3"/>
+<circle cx="70.0" cy="570.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="70.0" cy="590.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="70.0" cy="610.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="70.0" cy="630.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="70.0" cy="650.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="70.0" cy="670.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="90.0" cy="570.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="90.0" cy="590.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="90.0" cy="610.0" r="4" fill="#1E7A46"/>
+<circle cx="90.0" cy="630.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="90.0" cy="650.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="90.0" cy="670.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="110.0" cy="570.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="110.0" cy="590.0" r="4" fill="#1E7A46"/>
+<circle cx="110.0" cy="610.0" r="4" fill="#1E7A46"/>
+<circle cx="110.0" cy="630.0" r="4" fill="#1E7A46"/>
+<circle cx="110.0" cy="650.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="110.0" cy="670.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="130.0" cy="570.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="130.0" cy="590.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="130.0" cy="610.0" r="4" fill="#1E7A46"/>
+<circle cx="130.0" cy="630.0" r="4" fill="#1E7A46"/>
+<circle cx="130.0" cy="650.0" r="4" fill="#1E7A46"/>
+<circle cx="130.0" cy="670.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="150.0" cy="570.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="150.0" cy="590.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="150.0" cy="610.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="150.0" cy="630.0" r="4" fill="#1E7A46"/>
+<circle cx="150.0" cy="650.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="150.0" cy="670.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="170.0" cy="570.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="170.0" cy="590.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="170.0" cy="610.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="170.0" cy="630.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="170.0" cy="650.0" r="2.2" fill="#B9C2CE"/>
+<circle cx="170.0" cy="670.0" r="2.2" fill="#B9C2CE"/>
+<text class="bt" x="60" y="552" fill="#1E5A2E">1 · Tuned TAL assignment</text>
+<text class="tiny" x="60" y="710">top-k 13 (vs 10); t = s^0.7 · u^4.0;</text>
+<text class="tiny" x="60" y="725">overlap = CIoU → more aligned positives</text>
+<path d="M192,620 L246,620" stroke="#1E7A46" stroke-width="1.8" fill="none" marker-end="url(#arg)"/>
+<rect x="250" y="554" width="232" height="150" rx="6" fill="#F7DFBB" stroke="#744309" stroke-width="1.5"/><text x="366.0" y="633.0" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111"></text>
+<text class="bt" x="262" y="574" fill="#7A5210">2 · Size-aware weighting</text>
+<rect x="266" y="590" width="120" height="70" fill="#fff" stroke="#CBB68A"/>
+<polyline points="266,602 386,648" fill="none" stroke="#744309" stroke-width="2.4"/>
+<text class="tiny" x="264" y="600" text-anchor="end">0.7</text><text class="tiny" x="264" y="654" text-anchor="end">0.3</text>
+<text class="tiny" x="266" y="673">epoch 0 → end   (α schedule)</text>
+<text class="tiny" x="394" y="608">w = α·(inv-area)</text>
+<text class="tiny" x="394" y="624">+ (1−α)·score</text>
+<text class="tiny" x="394" y="644" fill="#0F6E56" font-weight="700">small obj</text>
+<text class="tiny" x="394" y="658" fill="#0F6E56" font-weight="700">×2.5 boost</text>
+<path d="M482,620 L536,620" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="540" y="554" width="232" height="150" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.5"/><text x="656.0" y="633.0" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111"></text>
+<text class="bt" x="552" y="574" fill="#0A5F4C">3 · Localisation loss + clipping</text>
+<text class="tiny" x="552" y="594">per-sample  (1 − CIoU)·w  +  DFL·w</text>
+<rect x="556" y="604" width="120" height="56" fill="#fff" stroke="#9FC7BB"/>
+<polyline points="556,612 676,650" fill="none" stroke="#744309" stroke-width="2"/>
+<polyline points="556,626 676,658" fill="none" stroke="#B5862E" stroke-width="2"/>
+<text class="tiny" x="556" y="673">cap tightens over training</text>
+<text class="tiny" x="684" y="620" fill="#744309">IoU 50→20</text>
+<text class="tiny" x="684" y="638" fill="#B5862E">DFL 25→10</text>
+<text class="tiny" x="684" y="654">stabilises</text>
+<path d="M772,620 L826,620" stroke="#45443F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="830" y="580" width="250" height="70" rx="6" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.5"/><text x="955.0" y="612.0" text-anchor="middle" font-size="13" font-weight="700" fill="#27500A">L = box·L_IoU + cls·L_cls + dfl·L_DFL</text><text x="955.0" y="628.0" text-anchor="middle" font-size="10.5" fill="#444">cls = BCE (no VFL) · box gain, cls 1.2, dfl</text>
+<text class="bt" x="830" y="552" fill="#1E5A2E">4 · Total objective &amp; gradient</text>
+<path d="M955,580 C955,500 300,430 256,392" fill="none" stroke="#C0392B" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#arr)"/>
+<text class="tiny bad" x="600" y="470" fill="#C0392B">gradient (incl. aux deep supervision) updates the backbone to preserve small-object detail</text>
+<rect x="830" y="670" width="250" height="46" rx="6" fill="#F0F0F0" stroke="#9A9A9A" stroke-width="1.5"/><text x="955.0" y="690.0" text-anchor="middle" font-size="12" font-weight="700" fill="#6E6E6E">A2 center loss — disabled</text><text x="955.0" y="706.0" text-anchor="middle" font-size="10.5" fill="#444">explored (weight 0); no measurable gain</text>
+<rect x="24" y="856" width="1472" height="34" rx="6" fill="#1F3864"/>
+<text x="760.0" y="878" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Architecture preserves and contextualises the small object’s features; the loss assigns it more positives and up-weights them — together: missed → confident.</text>
+</svg>
