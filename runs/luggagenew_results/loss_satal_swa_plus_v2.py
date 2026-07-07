@@ -2,7 +2,7 @@
 # =============================================================================
 # SATAL-SWA-Plus-NWD: Combined Loss Function with Normalized Wasserstein Distance
 # =============================================================================
-# 
+#
 # Base: loss_satal_swa.py (SATAL + SWA)
 # Added from CustomLoss2:
 #   - Class Weighting (inverse-frequency weights for class imbalance)
@@ -31,7 +31,7 @@ from .tal import bbox2dist
 # =============================================================================
 # NWD (Normalized Wasserstein Distance) IMPLEMENTATION
 # =============================================================================
-# 
+#
 # Based on: "A Normalized Gaussian Wasserstein Distance for Tiny Object Detection"
 # Paper: https://arxiv.org/abs/2110.13389
 #
@@ -41,7 +41,7 @@ from .tal import bbox2dist
 #
 # Paper convention:
 # - Each bbox modeled as 2D Gaussian with Σ = diag((w/2)², (h/2)²)
-# - W2² = ||center_diff||² + ||sigma_diff||²  
+# - W2² = ||center_diff||² + ||sigma_diff||²
 # - NWD = exp(-W2 / C) where C is a constant (paper uses ~12.8 for AI-TOD)
 # - For YOLO at 640px input, C ≈ 12-16 works well
 # =============================================================================
@@ -50,16 +50,16 @@ from .tal import bbox2dist
 def bbox2gaussian(bboxes, eps=1e-7):
     """
     Convert bboxes (xyxy) to 2D Gaussian parameters.
-    
+
     Each bbox is modeled as a 2D Gaussian:
-    - Mean (μ) = center of bbox (cx, cy)  
+    - Mean (μ) = center of bbox (cx, cy)
     - Std (σ) = (w/2, h/2) following paper convention
       Σ = diag((w/2)², (h/2)²)
-    
+
     Args:
         bboxes: Bounding boxes in xyxy format (..., 4)
         eps: Small value for numerical stability
-    
+
     Returns:
         cx, cy, sigma_x, sigma_y: Gaussian parameters
     """
@@ -67,45 +67,45 @@ def bbox2gaussian(bboxes, eps=1e-7):
     cy = (bboxes[..., 1] + bboxes[..., 3]) / 2
     w = (bboxes[..., 2] - bboxes[..., 0]).clamp(min=eps)
     h = (bboxes[..., 3] - bboxes[..., 1]).clamp(min=eps)
-    
+
     # Paper convention: Σ = diag((w/2)², (h/2)²)
     # So σ_x = w/2, σ_y = h/2
     sigma_x = w / 2
     sigma_y = h / 2
-    
+
     return cx, cy, sigma_x, sigma_y
 
 
 def wasserstein2_squared(pred_bboxes, target_bboxes, eps=1e-7):
     """
     Compute squared Wasserstein-2 distance between bbox Gaussians.
-    
+
     For 2D Gaussians with diagonal covariance (Bures metric):
     W2² = ||μ₁ - μ₂||² + ||σ₁ - σ₂||²
-    
+
     Where ||σ₁ - σ₂||² = (σ_x1 - σ_x2)² + (σ_y1 - σ_y2)²
-    
+
     Args:
         pred_bboxes: Predicted boxes in xyxy format (N, 4)
         target_bboxes: Target boxes in xyxy format (N, 4)
         eps: Small value for numerical stability
-    
+
     Returns:
         Squared Wasserstein-2 distance (N,)
     """
     # Get Gaussian parameters
     pred_cx, pred_cy, pred_sx, pred_sy = bbox2gaussian(pred_bboxes, eps)
     tgt_cx, tgt_cy, tgt_sx, tgt_sy = bbox2gaussian(target_bboxes, eps)
-    
+
     # Squared distance between means (centers)
     center_dist_sq = (pred_cx - tgt_cx) ** 2 + (pred_cy - tgt_cy) ** 2
-    
-    # Squared distance between standard deviations  
+
+    # Squared distance between standard deviations
     sigma_dist_sq = (pred_sx - tgt_sx) ** 2 + (pred_sy - tgt_sy) ** 2
-    
+
     # Total W2²
     w2_squared = center_dist_sq + sigma_dist_sq
-    
+
     return w2_squared
 
 
@@ -121,20 +121,20 @@ def nwd_debug_print(w2, nwd, C):
     global _NWD_DEBUG_DONE
     if _NWD_DEBUG_DONE:
         return
-    
-    print(f"\n{'='*60}")
+
+    print(f"\n{'=' * 60}")
     print(f"[NWD DEBUG] First batch stats:")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  W2: mean={w2.mean().item():.3f}, median={w2.median().item():.3f}, max={w2.max().item():.3f}")
     print(f"  C={C}")
     print(f"  NWD: mean={nwd.mean().item():.4f}, min={nwd.min().item():.4f}, max={nwd.max().item():.4f}")
-    print(f"  Loss: mean={(1-nwd).mean().item():.4f}")
+    print(f"  Loss: mean={(1 - nwd).mean().item():.4f}")
     print(f"")
-    print(f"  → If NWD mean ≈ 1.0, C is too large (try C={C/2})")
-    print(f"  → If NWD mean ≈ 0.0, C is too small (try C={C*2})")
+    print(f"  → If NWD mean ≈ 1.0, C is too large (try C={C / 2})")
+    print(f"  → If NWD mean ≈ 0.0, C is too small (try C={C * 2})")
     print(f"  → Target: NWD mean ≈ 0.3-0.7 for useful gradients")
-    print(f"{'='*60}\n")
-    
+    print(f"{'=' * 60}\n")
+
     _NWD_DEBUG_DONE = True
 
 
@@ -151,10 +151,10 @@ def reset_nwd_debug():
 def nwd_loss(pred_bboxes, target_bboxes, C=4.0, eps=1e-7):
     """
     Compute Normalized Wasserstein Distance (NWD) loss.
-    
+
     NWD = exp(-sqrt(W2²) / C)
     Loss = 1 - NWD (in range [0, 1], like IoU loss)
-    
+
     Args:
         pred_bboxes: Predicted boxes in xyxy format (N, 4)
         target_bboxes: Target boxes in xyxy format (N, 4)
@@ -163,27 +163,27 @@ def nwd_loss(pred_bboxes, target_bboxes, C=4.0, eps=1e-7):
            - For YOLO stride-normalized coords, use C ≈ 2-6
            - Luggage dataset with 640px input: start with C=4
         eps: Small value for numerical stability
-    
+
     Returns:
         NWD loss in range [0, 1) where 0 = perfect match (N,)
     """
     # Compute squared Wasserstein distance
     w2_squared = wasserstein2_squared(pred_bboxes, target_bboxes, eps)
     w2 = torch.sqrt(w2_squared.clamp(min=eps))
-    
+
     # NWD = exp(-W2 / C) ∈ (0, 1]
     # C is a scalar constant (paper-faithful approach)
     # When pred == target: W2=0, NWD=1
     # When pred is far from target: W2 large, NWD→0
     nwd = torch.exp(-w2 / C)
-    
+
     # Debug: print stats once to help tune C (no recompute after first batch)
     if not _NWD_DEBUG_DONE:
         nwd_debug_print(w2, nwd, C)
-    
+
     # Loss = 1 - NWD ∈ [0, 1)
     loss = 1.0 - nwd
-    
+
     return loss
 
 
@@ -201,8 +201,10 @@ def _iou_geometry(pred, target, eps=1e-7):
     px1, py1, px2, py2 = pred[..., 0], pred[..., 1], pred[..., 2], pred[..., 3]
     tx1, ty1, tx2, ty2 = target[..., 0], target[..., 1], target[..., 2], target[..., 3]
 
-    pw = (px2 - px1).clamp(min=0); ph = (py2 - py1).clamp(min=0)
-    tw = (tx2 - tx1).clamp(min=0); th = (ty2 - ty1).clamp(min=0)
+    pw = (px2 - px1).clamp(min=0);
+    ph = (py2 - py1).clamp(min=0)
+    tw = (tx2 - tx1).clamp(min=0);
+    th = (ty2 - ty1).clamp(min=0)
 
     inter_w = (torch.min(px2, tx2) - torch.max(px1, tx1)).clamp(min=0)
     inter_h = (torch.min(py2, ty2) - torch.max(py1, ty1)).clamp(min=0)
@@ -210,13 +212,18 @@ def _iou_geometry(pred, target, eps=1e-7):
     union = pw * ph + tw * th - inter + eps
     iou = inter / union
 
-    cx1 = torch.min(px1, tx1); cy1 = torch.min(py1, ty1)
-    cx2 = torch.max(px2, tx2); cy2 = torch.max(py2, ty2)
-    cw = (cx2 - cx1); ch = (cy2 - cy1)
+    cx1 = torch.min(px1, tx1);
+    cy1 = torch.min(py1, ty1)
+    cx2 = torch.max(px2, tx2);
+    cy2 = torch.max(py2, ty2)
+    cw = (cx2 - cx1);
+    ch = (cy2 - cy1)
     c2 = cw * cw + ch * ch + eps
 
-    pcx = (px1 + px2) / 2; pcy = (py1 + py2) / 2
-    tcx = (tx1 + tx2) / 2; tcy = (ty1 + ty2) / 2
+    pcx = (px1 + px2) / 2;
+    pcy = (py1 + py2) / 2
+    tcx = (tx1 + tx2) / 2;
+    tcy = (ty1 + ty2) / 2
     rho2 = (pcx - tcx) ** 2 + (pcy - tcy) ** 2
 
     return iou, rho2, c2, (pw, ph, tw, th)
@@ -234,8 +241,10 @@ def mpdiou_loss(pred, target, eps=1e-7):
 def focaler_ciou_loss(pred, target, d_lo=0.0, u_hi=0.95, eps=1e-7):
     """Focaler-CIoU: CIoU with an IoU-range remap that focuses on hard samples."""
     iou, rho2, c2, (pw, ph, tw, th) = _iou_geometry(pred, target, eps)
-    pw = pw.clamp(min=eps); ph = ph.clamp(min=eps)
-    tw = tw.clamp(min=eps); th = th.clamp(min=eps)
+    pw = pw.clamp(min=eps);
+    ph = ph.clamp(min=eps)
+    tw = tw.clamp(min=eps);
+    th = th.clamp(min=eps)
     v = (4 / (math.pi ** 2)) * (torch.atan(tw / th) - torch.atan(pw / ph)) ** 2
     with torch.no_grad():
         a = v / (1 - iou + v + eps)
@@ -320,7 +329,7 @@ class DFLoss(nn.Module):
 class BboxLoss(nn.Module):
     """
     Bounding box loss with SWA (Size Weight Adaptive) and NWD (Normalized Wasserstein Distance).
-    
+
     NWD is especially beneficial for small objects where IoU degrades rapidly.
     Can use pure NWD, pure CIoU, or a blend of both.
     """
@@ -350,22 +359,22 @@ class BboxLoss(nn.Module):
 
         # Section H: NWD (Normalized Wasserstein Distance) defaults
         # NWD provides better gradient signal for small objects
-        self.use_nwd = False              # Enable NWD loss
-        self.nwd_mode = 'blend'           # 'pure', 'blend', 'small_only'
-        self.nwd_weight = 0.5             # Weight for NWD when blending (0-1)
-        self.nwd_C = 4.0                  # NWD normalization constant
-                                          # Paper uses ~12.8 for PIXEL coords
-                                          # For stride-normalized coords, use 2-6
-        self.nwd_small_threshold = 32.0   # Area threshold for 'small_only' mode (stride-normalized coords²)
+        self.use_nwd = False  # Enable NWD loss
+        self.nwd_mode = 'blend'  # 'pure', 'blend', 'small_only'
+        self.nwd_weight = 0.5  # Weight for NWD when blending (0-1)
+        self.nwd_C = 4.0  # NWD normalization constant
+        # Paper uses ~12.8 for PIXEL coords
+        # For stride-normalized coords, use 2-6
+        self.nwd_small_threshold = 32.0  # Area threshold for 'small_only' mode (stride-normalized coords²)
 
         # Section I: alternative regression losses (Round 4)
-        self.box_loss_type = 'ciou'       # 'ciou' | 'mpdiou' | 'wiou' | 'focaler'
-        self.wiou_alpha = 1.9             # WIoUv3 non-monotonic focusing
+        self.box_loss_type = 'ciou'  # 'ciou' | 'mpdiou' | 'wiou' | 'focaler'
+        self.wiou_alpha = 1.9  # WIoUv3 non-monotonic focusing
         self.wiou_delta = 3.0
-        self.wiou_momentum = 0.02         # EMA momentum for running IoU-loss mean
+        self.wiou_momentum = 0.02  # EMA momentum for running IoU-loss mean
         self._wiou_mean = None
-        self.focaler_d = 0.0              # Focaler-IoU lower bound
-        self.focaler_u = 0.95             # Focaler-IoU upper bound
+        self.focaler_d = 0.0  # Focaler-IoU lower bound
+        self.focaler_u = 0.95  # Focaler-IoU upper bound
 
         # SWA: optional smooth (continuous) small-object boost instead of hard step
         self.swa_smooth = False
@@ -444,11 +453,11 @@ class BboxLoss(nn.Module):
 
         # Apply small-object boost with PER-ANCHOR stride (fix vs. global stride.min())
         if stride is not None and area_weight.numel() > 0:
-            s_col = stride.reshape(-1)                       # (total_anchors,)
+            s_col = stride.reshape(-1)  # (total_anchors,)
             bs = fg_mask.shape[0]
-            s_full = s_col.unsqueeze(0).expand(bs, -1)       # (bs, total_anchors)
-            stride_fg = s_full[fg_mask].clamp_min(1.0)       # (M,)
-            fg_areas = target_areas[fg_mask]                 # (M,)
+            s_full = s_col.unsqueeze(0).expand(bs, -1)  # (bs, total_anchors)
+            stride_fg = s_full[fg_mask].clamp_min(1.0)  # (M,)
+            fg_areas = target_areas[fg_mask]  # (M,)
             small_threshold = (self.small_obj_px / stride_fg) ** 2  # per-anchor (M,)
 
             area_weight = area_weight.clone()
@@ -491,13 +500,13 @@ class BboxLoss(nn.Module):
         """Wise-IoU v3: non-monotonic dynamic focusing on ordinary-quality anchors."""
         iou, rho2, c2, _ = _iou_geometry(pred_fg, target_fg, eps)
         l_iou = 1.0 - iou
-        r_wiou = torch.exp(rho2 / c2.detach())               # distance attention, [1, e)
+        r_wiou = torch.exp(rho2 / c2.detach())  # distance attention, [1, e)
         m = l_iou.mean().detach()
         if self._wiou_mean is None:
             self._wiou_mean = m
         else:
             self._wiou_mean = (1.0 - self.wiou_momentum) * self._wiou_mean + self.wiou_momentum * m
-        beta = l_iou.detach() / (self._wiou_mean + eps)      # outlier degree
+        beta = l_iou.detach() / (self._wiou_mean + eps)  # outlier degree
         r = beta / (self.wiou_delta * self.wiou_alpha ** (beta - self.wiou_delta))
         return r * r_wiou * l_iou
 
@@ -622,7 +631,7 @@ class KeypointLoss(nn.Module):
 class v8DetectionLoss:
     """
     SATAL-SWA-Plus Detection Loss.
-    
+
     Base: loss_satal_swa.py (SATAL + SWA)
     Added from CustomLoss2:
       - Class Weighting (inverse-frequency weights)
@@ -732,7 +741,7 @@ class v8DetectionLoss:
         self.use_nwd = getattr(h, 'use_nwd', False)  # honest default; drives config print
         self.nwd_mode = getattr(h, 'nwd_mode', 'blend')
         self.nwd_weight = getattr(h, 'nwd_weight', 0.5)  # Weight for NWD in blend mode
-        self.nwd_C = getattr(h, 'nwd_C', 4.0)            # Start with 4, tune based on debug output
+        self.nwd_C = getattr(h, 'nwd_C', 4.0)  # Start with 4, tune based on debug output
         self.nwd_small_threshold = getattr(h, 'nwd_small_threshold', 32.0)  # For small_only mode
 
         # =====================================================================
@@ -889,15 +898,15 @@ class v8DetectionLoss:
                                    target_labels_for_fg, target_scores_sum):
         """
         Compute class-weighted BCE classification loss.
-        
+
         Uses standard BCE with per-anchor class weighting based on inverse
         class frequency. No Varifocal Loss - just simple weighted BCE.
-        
+
         Class weights: backpack≈1.08, bag≈1.19, trolley≈0.78
         """
         dtype = pred_scores.dtype
         bs, num_anchors, nc = pred_scores.shape
-        
+
         # Base BCE loss
         bce = self.bce(pred_scores, target_scores.to(dtype))  # (bs, num_anchors, nc)
 
@@ -906,18 +915,18 @@ class v8DetectionLoss:
             with torch.no_grad():
                 qfl_scale = (target_scores.to(dtype) - pred_scores.sigmoid()).abs().pow(self.qfl_beta)
             bce = bce * qfl_scale
-        
+
         # Build per-anchor weight tensor for class weighting
         weight = torch.ones(bs, num_anchors, 1, device=self.device, dtype=dtype)
-        
+
         if self.use_class_weighting and fg_mask.any() and target_labels_for_fg.numel() > 0:
             # Apply class weights to foreground anchors (toggleable -- OFF = clean baseline)
             fg_class_weights = self.class_weights.to(dtype)[target_labels_for_fg]
             weight[fg_mask] = fg_class_weights.unsqueeze(-1)
-        
+
         # Weighted sum, normalized by target_scores_sum
         loss = (bce * weight).sum() / target_scores_sum
-        
+
         return loss
 
     # =========================================================================
@@ -1199,7 +1208,8 @@ class v8PoseLoss(v8DetectionLoss):
         y[..., 1] += anchor_points[:, [1]] - 0.5
         return y
 
-    def calculate_keypoints_loss(self, masks, target_gt_idx, keypoints, batch_idx, stride_tensor, target_bboxes, pred_kpts):
+    def calculate_keypoints_loss(self, masks, target_gt_idx, keypoints, batch_idx, stride_tensor, target_bboxes,
+                                 pred_kpts):
         batch_idx = batch_idx.flatten()
         batch_size = len(masks)
 
@@ -1300,7 +1310,8 @@ class v8SegmentationLoss(v8DetectionLoss):
         return loss.sum() * batch_size, loss.detach()
 
     @staticmethod
-    def calculate_segmentation_loss(fg_mask, masks, target_gt_idx, target_bboxes, batch_idx, proto, pred_masks, imgsz, overlap):
+    def calculate_segmentation_loss(fg_mask, masks, target_gt_idx, target_bboxes, batch_idx, proto, pred_masks, imgsz,
+                                    overlap):
         mask_h, mask_w = masks.shape[1:]
         loss = 0
 
@@ -1310,7 +1321,7 @@ class v8SegmentationLoss(v8DetectionLoss):
         mxyxy = target_bboxes_normalized * torch.tensor([mask_w, mask_h, mask_w, mask_h], device=proto.device)
 
         for i, single_i in enumerate(
-            zip(fg_mask, target_gt_idx, pred_masks, proto, mxyxy, marea, target_bboxes_normalized)
+                zip(fg_mask, target_gt_idx, pred_masks, proto, mxyxy, marea, target_bboxes_normalized)
         ):
             fg_mask_i, target_gt_idx_i, pred_masks_i, proto_i, mxyxy_i, marea_i, target_bboxes_i = single_i
 
@@ -1331,6 +1342,7 @@ class v8SegmentationLoss(v8DetectionLoss):
         pred_mask = (pred @ proto.view(proto.shape[0], -1)).view(-1, proto.shape[1], proto.shape[2])
         loss = F.binary_cross_entropy_with_logits(pred_mask, gt_mask, reduction="none")
         return (crop_mask(loss, xyxy).mean(dim=(1, 2)) / area).sum()
+
 
 class E2EDetectLoss:
     """
@@ -1353,3 +1365,106 @@ class E2EDetectLoss:
         one2one = preds["one2one"]
         loss_one2one = self.one2one(one2one, batch)
         return loss_one2many[0] + loss_one2one[0], loss_one2many[1] + loss_one2one[1]
+
+
+class DetectAuxLoss:
+    """Train-only auxiliary-head deep-supervision loss.
+
+    Round 20 -- DetectAux adds a parallel detection head over the same feature
+    maps as the main head; it is supervised during training and DROPPED at
+    inference (zero deploy cost). The total loss is the main detection loss plus
+    a down-weighted auxiliary detection loss, giving the shared neck features an
+    extra gradient signal. Both heads share strides, so the same v8DetectionLoss
+    is reused for each. Mirrors E2EDetectLoss's two-loss structure.
+    """
+
+    def __init__(self, model, aux_weight=0.25):
+        """Initialize with a shared detection loss and the auxiliary weight.
+
+        Reads aux_weight from the DetectAux head (set via YAML) when present.
+        """
+        self.det = v8DetectionLoss(model, tal_topk=10)
+        self.aux_weight = getattr(model.model[-1], "aux_weight", aux_weight)
+
+    def __call__(self, preds, batch):
+        """Main loss + aux_weight * auxiliary loss; logs the main head's items.
+
+        Training: preds is {"main", "aux"} -> supervise both. Validation: the
+        model is in eval mode and returns only the main feats (no aux), so fall
+        back to the plain detection loss.
+        """
+        preds = preds[1] if isinstance(preds, tuple) else preds
+        if not isinstance(preds, dict):  # val/eval path: only main head present
+            return self.det(preds, batch)
+        loss_main = self.det(preds["main"], batch)
+        loss_aux = self.det(preds["aux"], batch)
+        return loss_main[0] + self.aux_weight * loss_aux[0], loss_main[1]
+
+
+class DetectObjLoss(v8DetectionLoss):
+    """v8 detection loss + an objectness (foreground/background) BCE term.
+
+    Round 24 -- supervises DetectObj's per-anchor objectness logit against the
+    TAL foreground mask (1 = assigned foreground, 0 = background), so the head
+    learns to suppress background-like anchors and improve precision/ranking on
+    the 'other' class. Mirrors v8DetectionLoss.__call__ with the extra term.
+    """
+
+    def __init__(self, model, obj_weight=1.0):
+        """Initialize the base detection loss plus an objectness BCE."""
+        super().__init__(model)
+        self.obj_weight = obj_weight
+        self.bce_obj = nn.BCEWithLogitsLoss(reduction="none")
+
+    def __call__(self, preds, batch):
+        """Detection loss on the main head + objectness BCE on the obj branch."""
+        preds = preds[1] if isinstance(preds, tuple) else preds
+        if not isinstance(preds, dict):  # val/eval: only main head present
+            return super().__call__(preds, batch)
+        feats, obj_feats = preds["main"], preds["obj"]
+        loss = torch.zeros(4, device=self.device)  # box, cls, dfl, obj
+        pred_distri, pred_scores = torch.cat(
+            [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2
+        ).split((self.reg_max * 4, self.nc), 1)
+        pred_scores = pred_scores.permute(0, 2, 1).contiguous()
+        pred_distri = pred_distri.permute(0, 2, 1).contiguous()
+        pred_obj = torch.cat(
+            [oi.view(feats[0].shape[0], 1, -1) for oi in obj_feats], 2
+        ).permute(0, 2, 1).contiguous()  # (b, A, 1)
+
+        dtype = pred_scores.dtype
+        batch_size = pred_scores.shape[0]
+        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
+        anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
+
+        targets = torch.cat((batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1)
+        targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
+        gt_labels, gt_bboxes = targets.split((1, 4), 2)
+        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0.0)
+
+        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)
+        _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
+            pred_scores.detach().sigmoid(),
+            (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
+            anchor_points * stride_tensor,
+            gt_labels,
+            gt_bboxes,
+            mask_gt,
+        )
+
+        target_scores_sum = max(target_scores.sum(), 1)
+        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # cls
+        if fg_mask.sum():
+            target_bboxes /= stride_tensor
+            loss[0], loss[2] = self.bbox_loss(
+                pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask
+            )
+        # objectness BCE: target = foreground mask
+        obj_target = fg_mask.unsqueeze(-1).to(dtype)  # (b, A, 1)
+        loss[3] = self.bce_obj(pred_obj, obj_target).mean()
+
+        loss[0] *= self.hyp.box
+        loss[1] *= self.hyp.cls
+        loss[2] *= self.hyp.dfl
+        loss[3] *= self.obj_weight
+        return loss.sum() * batch_size, loss[:3].detach()  # log box/cls/dfl

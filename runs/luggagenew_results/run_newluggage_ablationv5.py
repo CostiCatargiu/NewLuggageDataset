@@ -1,66 +1,53 @@
 #!/usr/bin/env python3
 """
-Round 4 — regression-loss & assignment upgrades (Section I).
+Round 5 — evidence-driven follow-up to Round 4 (uses loss_satal_swa_plus_v2.py).
 
-Motivated by Rounds 1-3 on the full test split:
-  - mAP50-95 was STUCK at ~0.565 across every TAL/CLIP tweak; tight
-    localization is the ceiling, small objects the weakest cell (~0.48-0.51).
-  - SATAL raised mAP50/recall but LOWERED mAP50-95 (looser positives, looser
-    boxes). Recall (~0.74) trailed precision (~0.82) everywhere.
+What Round 4 established (full test split):
+  - WIoU set a NEW study-best precision 0.8337 while holding mAP50-95 0.5643
+    -> the one genuine box-loss win. Chase it.
+  - The overall mAP50-95 ceiling (0.5684, v6_default2 = SWA-OFF default) was NOT
+    beaten by any box loss on the SWA-const06 base. Note: SWA-OFF is the best
+    mAP50-95 recipe (SWA trades tight-loc for recall), so the right base to try
+    to BEAT 0.5684 is SWA-OFF, not SWA-const06.
+  - SATAL+tight-box did NOT recover mAP50-95 (stayed ~0.54). The penalty scales
+    with how much SATAL loosens small-object assignment -> loosen LESS
+    (topk_factor 1.3 instead of 1.5) to keep its recall/mAP50 with a smaller hit.
+  - NWD small_only with C=4.0 HURT small objects (0.5015 vs CIoU 0.5096).
+    C=4 was too high -> bracket it (C=2 and C=6) off the debug printout.
 
-This round changes what Rounds 1-3 never touched: the box REGRESSION loss and
-its pairing with SATAL assignment. Everything is layered on the Round-2 winner
-(SWA constant 0.6, boost 1.75 @48px) so the box loss is the isolated variable.
-
-New loss levers (all in loss_satal_swa_plus_v2.py, Section I):
-  box_loss_type : 'ciou' | 'mpdiou' | 'wiou' | 'focaler'
-  use_nwd + nwd_mode='small_only'  : Wasserstein term for tiny boxes only
-  swa_smooth    : continuous small-object boost (no hard step; stride-fixed)
-  use_class_weighting : gate the (previously always-on) class weights
-  cls_mode      : 'bce' | 'qfl'
-
-Runs — ORDERED BY DESCENDING CONFIDENCE OF A MEANINGFUL GAIN.
-(each config PINS every toggle for reproducibility — no default drift)
-  1. r4_satal_mpdiou   — SATAL R3 assignment + MPDIoU. Highest expected value:
-                         attacks BOTH weaknesses (SATAL's recall/mAP50 + MPDIoU
-                         tight boxes), clear mechanism, MPDIoU is parameter-free.
-  2. r4_mpdiou         — SWA const06 + MPDIoU. Cleanest low-variance positive;
-                         isolates "does a tighter box loss lift mAP50-95".
-  3. r4_satal_wiou     — SATAL R3 + Wise-IoU v3. Same "have both" idea, higher
-                         ceiling but more variance (WIoU alpha/delta/EMA).
-  4. r4_nwd_small      — SWA const06 + NWD small_only. Targets the weakest cell
-                         (small mAP50-95) directly; upside high but nwd_C may
-                         need a second pass off the debug printout.
-  5. r4_wiou           — SWA const06 + Wise-IoU v3. Moderate, tuning-sensitive.
-  6. r4_focaler        — SWA const06 + Focaler-CIoU. Lower prob, moderate size.
-  7. r4_swa_smooth     — SWA const06 continuous boost (stride-fixed). High prob
-                         of a SMALL gain (it is basically the winner, debugged).
-  8. r4_baseline_clean — SWA const06, CIoU, class-weighting OFF. Reference/
-                         denominator, not an improvement bet — but you may want
-                         to run it FIRST anyway to lock the clean baseline number.
+Round-5 runs (ORDERED BY DESCENDING CONFIDENCE OF A GAIN):
+  1. r5_wiou_default    — WIoU on SWA-OFF default. Best shot to BEAT mAP50-95
+                          0.5684: proven box loss on the proven mAP50-95 base.
+  2. r5_mpdiou_default  — MPDIoU on SWA-OFF default. Same idea, tight-loc variant.
+  3. r5_wiou_swa        — WIoU on SWA-const06. Confirms the R4 precision record
+                          (reproducibility) and yields the high-precision model.
+  4. r5_satal13_mpdiou  — SATAL (topk_factor 1.3, softened) + MPDIoU. Keep the
+                          recall/mAP50 upside with a smaller mAP50-95 penalty.
+  5. r5_nwd_c2          — NWD small_only C=2.0 on CIoU/SWA-const06 (retune down).
+  6. r5_nwd_c6          — NWD small_only C=6.0 (bracket the other side).
+  7. r5_anchor_default  — SWA-OFF, CIoU, stock TAL. Cross-file reproducibility
+                          anchor; MUST land within +/-0.35 of v6_default2
+                          (82.54 / 56.84) or the loss file has drifted.
 
 PREFLIGHT — MANDATORY before launch:
   [ ] ultralytics loss module points at loss_satal_swa_plus_v2.py
-      (drop-in replacement; same relative imports .metrics / .tal)
-  [ ] the new hyp keys (box_loss_type, wiou_*, focaler_*, swa_smooth,
-      swa_boost_power, use_loss_clip, use_class_weighting, cls_mode, qfl_beta,
-      use_nwd, nwd_mode, nwd_C) are accepted by your cfg whitelist — the same
-      way alpha_start / satal_* are already passed through model.train()
-  [ ] epoch-0 config banner prints the intended [I] box_loss_type and [F] flag
-  [ ] ultralytics/utils/satal.py importable (runs 1 & 3)
-  [ ] per-anchor stride fix now lives in BboxLoss._compute_weights (this file)
+  [ ] new hyp keys whitelisted (box_loss_type, wiou_*, use_nwd, nwd_mode, nwd_C,
+      use_loss_clip, use_class_weighting, cls_mode, swa_*) — as in Round 4
+  [ ] ultralytics/utils/satal.py importable (run 4)
+  [ ] epoch-0 banner prints intended [I] box_loss_type and [A] alpha values
 
 Sanity checks on epoch 1 banner:
-  - run r4_satal_mpdiou / r4_satal_wiou: use_satal True, box mpdiou/wiou
-  - runs on SWA const06: [Alpha] flat 0.600
-  - run r4_nwd_small: use_nwd True, nwd_mode small_only
-  - run r4_baseline_clean: box ciou, Class Weighting OFF, use_satal False
+  - runs 1,2,7: [Alpha] flat 0.000 (SWA off), use_satal False
+  - run 3: [Alpha] flat 0.600, box wiou
+  - run 4: use_satal True, satal_topk_factor 1.5->(internally topk*1.3), box mpdiou
+  - runs 5,6: use_nwd True, nwd_mode small_only, nwd_C 2.0 / 6.0
 
 Reference numbers (70% subset, 70ep, seed 0, test):
-  default 82.54/56.84 | swa_const06 83.19/56.61 | noise floor +/-0.35
+  v6_default2 82.54/56.84 (best mAP50-95) | swa_const06 83.19/56.61
+  r4_wiou P=83.37 (best precision) | noise floor +/-0.35
 
 Usage:
-  python run_newluggage_ablationv4.py
+  python run_newluggage_ablationv5.py
 """
 
 import time
@@ -76,7 +63,7 @@ from ultralytics import YOLO
 # =============================================================================
 DATA_YAML = "/home/constantin/Doctorat/LuggageDataset.v4i.yolov12_70percentage/data.yaml"
 MODEL_WEIGHTS = "yolov12s.pt"
-PROJECT_DIR = "runs_luggage_round4"
+PROJECT_DIR = "runs_luggage_round5"
 
 EPOCHS = 70
 IMG_SIZE = 640
@@ -85,13 +72,13 @@ WORKERS = 8
 DEVICE = 0 if torch.cuda.is_available() else "cpu"
 
 # =============================================================================
-# Shared blocks (identical to Rounds 2-3)
+# Shared blocks
 # =============================================================================
 _SWA_OFF = dict(
     alpha_start=0.0, alpha_end=0.0, alpha_min=0.0, alpha_max=0.0,
     small_obj_px=0, small_obj_boost=1.0,
 )
-_SWA_CONST06 = dict(   # the Round-2 winning recipe
+_SWA_CONST06 = dict(   # Round-2 winner (constant alpha 0.6, no decay)
     alpha_start=0.6, alpha_end=0.6, alpha_min=0.6, alpha_max=0.8,
     small_obj_px=48, small_obj_boost=1.75,
 )
@@ -104,35 +91,36 @@ _CLIP_OFF = dict(
 )
 _TAL_STOCK = dict(tal_topk=10, tal_alpha=0.5, tal_beta=6.0)
 
-# --- SATAL R3 assignment (prior best; from Round 3) ---
-_SATAL_R3 = dict(
+# SATAL R3 assignment, SOFTENED: topk_factor 1.3 (was 1.5) -> less loosening
+_SATAL_R3_LOOSE13 = dict(
     use_satal=True,
     tal_topk=12, tal_alpha=0.6, tal_beta=5.0,
     satal_alpha_large=1.0, satal_beta_large=6.0,
     satal_alpha_small=1.2, satal_beta_small=5.0,
-    satal_topk_factor=1.5,
+    satal_topk_factor=1.3,               # softened from 1.5
     satal_small_area=0.0025, satal_large_area=0.0225,
 )
 
-# Common Section-I / toggle pins so nothing drifts on defaults.
-# Individual runs override only the lever under test.
+_WIOU = dict(wiou_alpha=1.9, wiou_delta=3.0, wiou_momentum=0.02)
+
+# Toggle pins so nothing drifts on defaults; each run overrides only its lever.
 _PINS = dict(
     use_satal=False,
     use_nwd=False, nwd_mode="small_only", nwd_C=4.0,
     box_loss_type="ciou",
     swa_smooth=False, swa_boost_power=0.5,
-    use_loss_clip=False,           # inert in Rounds 1-3; off for a clean signal
-    use_class_weighting=True,      # keep ON to match Rounds 1-3 (except clean ref)
+    use_loss_clip=False,
+    use_class_weighting=True,            # keep ON to match Rounds 1-4
     cls_mode="bce",
 )
 
 
-def _cfg(**overrides):
-    """Build a run config: pins -> center/clip off -> SWA-const06 -> stock TAL -> overrides."""
+def _cfg(swa=_SWA_CONST06, **overrides):
+    """pins -> center/clip off -> chosen SWA base -> stock TAL -> per-run overrides."""
     c = dict(_PINS)
     c.update(_CENTER_OFF)
     c.update(_CLIP_OFF)
-    c.update(_SWA_CONST06)
+    c.update(swa)
     c.update(_TAL_STOCK)
     c.update(overrides)
     return c
@@ -141,28 +129,22 @@ def _cfg(**overrides):
 # =============================================================================
 # RUN CONFIGS
 # =============================================================================
-R4_BASELINE_CLEAN = _cfg(box_loss_type="ciou", use_class_weighting=False)
-R4_MPDIOU         = _cfg(box_loss_type="mpdiou")
-R4_WIOU           = _cfg(box_loss_type="wiou", wiou_alpha=1.9, wiou_delta=3.0, wiou_momentum=0.02)
-R4_FOCALER        = _cfg(box_loss_type="focaler", focaler_d=0.0, focaler_u=0.95)
-R4_NWD_SMALL      = _cfg(box_loss_type="ciou", use_nwd=True, nwd_mode="small_only", nwd_C=4.0)
-R4_SWA_SMOOTH     = _cfg(box_loss_type="ciou", swa_smooth=True, swa_boost_power=0.5)
+R5_WIOU_DEFAULT   = _cfg(swa=_SWA_OFF,      box_loss_type="wiou", **_WIOU)
+R5_MPDIOU_DEFAULT = _cfg(swa=_SWA_OFF,      box_loss_type="mpdiou")
+R5_WIOU_SWA       = _cfg(swa=_SWA_CONST06,  box_loss_type="wiou", **_WIOU)
+R5_SATAL13_MPDIOU = _cfg(swa=_SWA_CONST06,  box_loss_type="mpdiou", **_SATAL_R3_LOOSE13)
+R5_NWD_C2         = _cfg(swa=_SWA_CONST06,  box_loss_type="ciou", use_nwd=True, nwd_mode="small_only", nwd_C=2.0)
+R5_NWD_C6         = _cfg(swa=_SWA_CONST06,  box_loss_type="ciou", use_nwd=True, nwd_mode="small_only", nwd_C=6.0)
+R5_ANCHOR_DEFAULT = _cfg(swa=_SWA_OFF,      box_loss_type="ciou")
 
-# SATAL R3 assignment paired with a tight box loss ("have both" experiments).
-# _SATAL_R3 overrides use_satal + TAL params; box loss overrides the pin.
-R4_SATAL_MPDIOU = _cfg(box_loss_type="mpdiou", **_SATAL_R3)
-R4_SATAL_WIOU   = _cfg(box_loss_type="wiou", wiou_alpha=1.9, wiou_delta=3.0, wiou_momentum=0.02, **_SATAL_R3)
-
-# Ordered by descending confidence of a meaningful improvement (see docstring).
 RUNS = [
-    {"name": "r4_satal_mpdiou",   "label": "[1/8] SATAL R3 assignment + MPDIoU -- recall AND tight boxes",          "params": R4_SATAL_MPDIOU,   "seed": 0},
-    {"name": "r4_mpdiou",         "label": "[2/8] SWA const06 + MPDIoU box loss (tight localization)",              "params": R4_MPDIOU,         "seed": 0},
-    {"name": "r4_satal_wiou",     "label": "[3/8] SATAL R3 assignment + Wise-IoU v3",                               "params": R4_SATAL_WIOU,     "seed": 0},
-    {"name": "r4_nwd_small",      "label": "[4/8] SWA const06 + NWD small_only (C=4.0) on CIoU base",               "params": R4_NWD_SMALL,      "seed": 0},
-    {"name": "r4_wiou",           "label": "[5/8] SWA const06 + Wise-IoU v3 (1.9/3.0, mom 0.02)",                   "params": R4_WIOU,           "seed": 0},
-    {"name": "r4_focaler",        "label": "[6/8] SWA const06 + Focaler-CIoU (d0.0/u0.95)",                         "params": R4_FOCALER,        "seed": 0},
-    {"name": "r4_swa_smooth",     "label": "[7/8] SWA const06 continuous boost (stride-fixed, power 0.5)",          "params": R4_SWA_SMOOTH,     "seed": 0},
-    {"name": "r4_baseline_clean", "label": "[8/8] SWA const06, CIoU, class-weighting OFF -- clean reference",       "params": R4_BASELINE_CLEAN, "seed": 0},
+    {"name": "r5_wiou_default",   "label": "[1/7] WIoU on SWA-OFF default -- best shot to beat mAP50-95 0.5684",   "params": R5_WIOU_DEFAULT,   "seed": 0},
+    {"name": "r5_mpdiou_default", "label": "[2/7] MPDIoU on SWA-OFF default -- tight-loc on the mAP50-95 base",    "params": R5_MPDIOU_DEFAULT, "seed": 0},
+    {"name": "r5_wiou_swa",       "label": "[3/7] WIoU on SWA-const06 -- confirm R4 precision record (0.8337)",    "params": R5_WIOU_SWA,       "seed": 0},
+    {"name": "r5_satal13_mpdiou", "label": "[4/7] SATAL topk 1.3 (softened) + MPDIoU -- recall with smaller hit",  "params": R5_SATAL13_MPDIOU, "seed": 0},
+    {"name": "r5_nwd_c2",         "label": "[5/7] NWD small_only C=2.0 -- retune down (C=4 hurt small objects)",   "params": R5_NWD_C2,         "seed": 0},
+    {"name": "r5_nwd_c6",         "label": "[6/7] NWD small_only C=6.0 -- bracket the other side",                 "params": R5_NWD_C6,         "seed": 0},
+    {"name": "r5_anchor_default", "label": "[7/7] SWA-OFF CIoU stock -- reproducibility anchor (~82.54/56.84)",    "params": R5_ANCHOR_DEFAULT, "seed": 0},
 ]
 
 
@@ -254,7 +236,6 @@ def run_one(run_cfg):
     except Exception as e:
         print(f"  [WARN] test eval failed: {e}")
 
-    # Free GPU memory before the next run
     del model, results
     gc.collect()
     if torch.cuda.is_available():
@@ -267,7 +248,7 @@ def run_one(run_cfg):
 
 def main():
     print(f"\n{'=' * 70}")
-    print(f"  ROUND 4 -- regression-loss & assignment upgrades ({len(RUNS)} runs)")
+    print(f"  ROUND 5 -- evidence-driven follow-up ({len(RUNS)} runs)")
     print(f"  Runs (confidence order): {', '.join(r['name'] for r in RUNS)}")
     print(f"{'=' * 70}")
 
@@ -286,7 +267,6 @@ def main():
                       "error": str(e)}
         summary.append(result)
 
-        # incremental summary dump -- survives a crash mid-study
         try:
             os.makedirs(PROJECT_DIR, exist_ok=True)
             with open(os.path.join(PROJECT_DIR, "summary.json"), "w") as f:
@@ -303,7 +283,7 @@ def main():
     print(f"  {'-' * 66}")
     for r in summary:
         def fmt(v, pct=True):
-            if v != v:  # NaN
+            if v != v:
                 return "n/a"
             return f"{v * 100:.2f}%" if pct else f"{v:.2f}"
         print(f"  {r['name']:<22}{fmt(r['elapsed_h'], pct=False):>9}"
