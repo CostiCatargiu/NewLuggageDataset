@@ -707,11 +707,19 @@ class v8DetectionLoss:
         # Section F: Class Weighting (from CustomLoss2) - ALWAYS ON
         # =====================================================================
         # Dataset: backpack=34901, bag=28628, trolley=66946
-        # Inverse frequency, sqrt-dampened, mean-normalized
+        # Inverse frequency, mean-normalized, with configurable dampening
         class_counts = torch.tensor([34901.0, 28628.0, 66946.0], device=device)
         inv_freq = 1.0 / class_counts
         inv_freq = inv_freq / inv_freq.mean()
-        self.class_weights = torch.sqrt(inv_freq)
+
+        # Round 6: class_weight_mode selects dampening strategy
+        #   'sqrt'  : Rounds 1-5 default — gentle: [1.08, 1.19, 0.78] (bag 1.53x trolley)
+        #   'linear': No dampening — aggressive: [0.92, 1.41, 0.67] (bag 2.10x trolley)
+        self.class_weight_mode = getattr(h, 'class_weight_mode', 'sqrt')
+        if self.class_weight_mode == 'linear':
+            self.class_weights = inv_freq.clone()  # no sqrt dampening
+        else:
+            self.class_weights = torch.sqrt(inv_freq)
         self.class_weights = self.class_weights / self.class_weights.mean()
 
         # Toggle class weighting (default ON to reproduce Rounds 1-3; OFF = clean baseline)
@@ -720,7 +728,8 @@ class v8DetectionLoss:
         # Section G: classification loss mode ('bce' | 'qfl')
         self.cls_mode = getattr(h, 'cls_mode', 'bce')
         self.qfl_beta = getattr(h, 'qfl_beta', 2.0)
-        # Result: backpack≈1.08, bag≈1.19, trolley≈0.78
+        # sqrt mode: backpack≈1.08, bag≈1.19, trolley≈0.78
+        # linear mode: backpack≈0.92, bag≈1.41, trolley≈0.67
 
         # =====================================================================
         # Section G: Classification Loss Mode
@@ -803,9 +812,9 @@ class v8DetectionLoss:
                 print(f"      satal_alpha_small: {self.satal_alpha_small}")
                 print(f"      satal_beta_small:  {self.satal_beta_small}")
                 print(f"      satal_topk_factor: {self.satal_topk_factor}")
-            print(f"  [F] Class Weighting: {'ON' if self.use_class_weighting else 'OFF'}")
+            print(f"  [F] Class Weighting: {'ON' if self.use_class_weighting else 'OFF'} (mode: {self.class_weight_mode})")
             print(f"      weights (bp/bg/tr): {self.class_weights.cpu().numpy().round(3)}")
-            print(f"  [G] Cls Loss: {self.cls_mode.upper()} (class weighting applied if ON)")
+            print(f"  [G] Cls Loss: {self.cls_mode.upper()}" + (f" (beta={self.qfl_beta})" if self.cls_mode == 'qfl' else "") + (" (class weighting applied)" if self.use_class_weighting else ""))
             print(f"  [H] use_nwd:         {self.use_nwd}")
             if self.use_nwd:
                 print(f"      nwd_mode:        {self.nwd_mode}")
