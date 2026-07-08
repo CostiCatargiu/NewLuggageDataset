@@ -728,6 +728,14 @@ class v8DetectionLoss:
         # Section G: classification loss mode ('bce' | 'qfl')
         self.cls_mode = getattr(h, 'cls_mode', 'bce')
         self.qfl_beta = getattr(h, 'qfl_beta', 2.0)
+
+        # =====================================================================
+        # Section J: Class-confusion repulsion (Round 7)
+        # Penalize a predicted box that overlaps a DIFFERENT-class GT box.
+        # Targets bag false positives (bag sitting on backpack/trolley).
+        # =====================================================================
+        self.use_repulsion = getattr(h, 'use_repulsion', False)
+        self.repulsion_weight = getattr(h, 'repulsion_weight', 0.3)
         # sqrt mode: backpack≈1.08, bag≈1.19, trolley≈0.78
         # linear mode: backpack≈0.92, bag≈1.41, trolley≈0.67
 
@@ -808,6 +816,7 @@ class v8DetectionLoss:
             print(f"  [D] tal_beta:        {self.tal_beta}")
             print(f"  [E] use_satal:       {self.use_satal}")
             print(f"  [I] box_loss_type:   {self.bbox_loss.box_loss_type}")
+            print(f"  [J] repulsion:       {self.use_repulsion}" + (f" (w={self.repulsion_weight})" if self.use_repulsion else ""))
             if self.use_satal:
                 print(f"      satal_alpha_small: {self.satal_alpha_small}")
                 print(f"      satal_beta_small:  {self.satal_beta_small}")
@@ -893,6 +902,49 @@ class v8DetectionLoss:
         weight = max(self.center_loss_weight_min, weight)
 
         return center_l1_loss * weight
+
+    @staticmethod
+    def _pairwise_iou(a, b, eps=1e-7):
+        """IoU between boxes a (n,4) and b (m,4), xyxy -> (n,m)."""
+        area_a = (a[:, 2] - a[:, 0]).clamp(min=0) * (a[:, 3] - a[:, 1]).clamp(min=0)
+        area_b = (b[:, 2] - b[:, 0]).clamp(min=0) * (b[:, 3] - b[:, 1]).clamp(min=0)
+        lt = torch.max(a[:, None, :2], b[None, :, :2])
+        rb = torch.min(a[:, None, 2:], b[None, :, 2:])
+        wh = (rb - lt).clamp(min=0)
+        inter = wh[..., 0] * wh[..., 1]
+        union = area_a[:, None] + area_b[None, :] - inter + eps
+        return inter / union
+
+    def _compute_repulsion(self, pred_bboxes, stride_tensor, fg_mask, target_scores,
+                           gt_bboxes, gt_labels, mask_gt):
+        """Mean IoU of each fg predicted box with its highest-overlap
+        DIFFERENT-class GT. Minimizing it pushes predictions off other-class
+        objects, reducing cross-class false positives (the bag problem)."""
+        if not fg_mask.any():
+            return pred_bboxes.new_tensor(0.0)
+        pred_px = pred_bboxes * stride_tensor            # feature -> pixel coords
+        cls_anchor = target_scores.argmax(dim=-1)        # (b, A) class per anchor
+        total = pred_bboxes.new_tensor(0.0)
+        count = 0
+        for i in range(pred_bboxes.shape[0]):
+            fg = fg_mask[i]
+            if fg.sum() == 0:
+                continue
+            gm = mask_gt[i].squeeze(-1) > 0
+            if gm.sum() == 0:
+                continue
+            P = pred_px[i][fg]                           # (n,4)
+            cP = cls_anchor[i][fg]                       # (n,)
+            G = gt_bboxes[i][gm]                         # (m,4)
+            cG = gt_labels[i][gm].squeeze(-1).long()     # (m,)
+            iou = self._pairwise_iou(P, G)               # (n,m)
+            diff = (cP[:, None] != cG[None, :]).to(iou.dtype)
+            max_iou = (iou * diff).max(dim=1).values     # (n,)
+            total = total + max_iou.sum()
+            count += P.shape[0]
+        if count == 0:
+            return pred_bboxes.new_tensor(0.0)
+        return total / count
 
     def _sync_bbox_loss_state(self):
         """Synchronize epoch information with bbox_loss module."""
@@ -1023,6 +1075,14 @@ class v8DetectionLoss:
                 pred_bboxes, target_bboxes, fg_mask, stride_tensor
             )
             loss[0] = loss[0] + center_loss
+
+            # Class-confusion repulsion (Section J) — uses raw pixel-coord GTs
+            if self.use_repulsion:
+                rep_term = self._compute_repulsion(
+                    pred_bboxes, stride_tensor, fg_mask, target_scores,
+                    gt_bboxes, gt_labels, mask_gt
+                )
+                loss[0] = loss[0] + self.repulsion_weight * rep_term
 
         # Apply loss gains
         loss[0] *= self.hyp.box
@@ -1336,44 +1396,6 @@ class v8SegmentationLoss(v8DetectionLoss):
 
             if fg_mask_i.any():
                 mask_idx = target_gt_idx_i[fg_mask_i]
-                if overlap:
-                    gt_mask = masks[batch_idx.view(-1) == i][mask_idx]
-                    gt_mask = gt_mask.float()
-                else:
-                    gt_mask = masks[batch_idx.view(-1) == i][mask_idx]
-                loss += v8SegmentationLoss.single_mask_loss(
-                    gt_mask, pred_masks_i[fg_mask_i], proto_i, mxyxy_i[fg_mask_i], marea_i[fg_mask_i]
-                )
-        return loss / fg_mask.sum()
-
-    @staticmethod
-    def single_mask_loss(gt_mask, pred, proto, xyxy, area):
-        pred_mask = (pred @ proto.view(proto.shape[0], -1)).view(-1, proto.shape[1], proto.shape[2])
-        loss = F.binary_cross_entropy_with_logits(pred_mask, gt_mask, reduction="none")
-        return (crop_mask(loss, xyxy).mean(dim=(1, 2)) / area).sum()
-
-
-class E2EDetectLoss:
-    """
-    End-to-end detection loss specialized for luggage datasets.
-
-    Uses v8DetectionLossLuggage for both one-to-many and one-to-one branches,
-    applying class weighting, size-aware IoU loss, and varifocal loss.
-    """
-
-    def __init__(self, model):
-        """Initialize with luggage-specialized losses for both branches."""
-        self.one2many = v8DetectionLossLuggage(model, tal_topk=10)
-        self.one2one = v8DetectionLossLuggage(model, tal_topk=1)
-
-    def __call__(self, preds, batch):
-        """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
-        preds = preds[1] if isinstance(preds, tuple) else preds
-        one2many = preds["one2many"]
-        loss_one2many = self.one2many(one2many, batch)
-        one2one = preds["one2one"]
-        loss_one2one = self.one2one(one2one, batch)
-        return loss_one2many[0] + loss_one2one[0], loss_one2many[1] + loss_one2one[1]
 
 
 class DetectAuxLoss:
@@ -1477,3 +1499,23 @@ class DetectObjLoss(v8DetectionLoss):
         loss[2] *= self.hyp.dfl
         loss[3] *= self.obj_weight
         return loss.sum() * batch_size, loss[:3].detach()  # log box/cls/dfl
+class E2EDetectLoss:
+    """End-to-end detection loss."""
+
+    def __init__(self, model):
+        self.one2many = v8DetectionLoss(model, tal_topk=10)
+        self.one2one = v8DetectionLoss(model, tal_topk=1)
+
+    def __call__(self, preds, batch):
+        preds = preds[1] if isinstance(preds, tuple) else preds
+
+        one2many = preds["one2many"]
+        loss_one2many = self.one2many(one2many, batch)
+
+        one2one = preds["one2one"]
+        loss_one2one = self.one2one(one2one, batch)
+
+        return (
+            loss_one2many[0] + loss_one2one[0],
+            loss_one2many[1] + loss_one2one[1]
+        )
