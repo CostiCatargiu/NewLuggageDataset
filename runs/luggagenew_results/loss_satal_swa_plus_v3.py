@@ -1614,3 +1614,109 @@ class v8SegmentationLoss(v8DetectionLoss):
                 target_scores, target_scores_sum, fg_mask
             )
             masks = batch["masks"].to(self.device).floa
+
+
+class DetectAuxLoss:
+    """Train-only auxiliary-head deep-supervision loss.
+    Round 20 -- DetectAux adds a parallel detection head over the same feature
+    maps as the main head; it is supervised during training and DROPPED at
+    inference (zero deploy cost). The total loss is the main detection loss plus
+    a down-weighted auxiliary detection loss, giving the shared neck features an
+    extra gradient signal. Both heads share strides, so the same v8DetectionLoss
+    is reused for each. Mirrors E2EDetectLoss's two-loss structure.
+    """
+
+    def __init__(self, model, aux_weight=0.25):
+        self.det = v8DetectionLoss(model, tal_topk=10)
+        self.aux_weight = getattr(model.model[-1], "aux_weight", aux_weight)
+
+    def __call__(self, preds, batch):
+        preds = preds[1] if isinstance(preds, tuple) else preds
+        if not isinstance(preds, dict):  # val/eval path: only main head present
+            return self.det(preds, batch)
+        loss_main = self.det(preds["main"], batch)
+        loss_aux = self.det(preds["aux"], batch)
+        return loss_main[0] + self.aux_weight * loss_aux[0], loss_main[1]
+
+
+class DetectObjLoss(v8DetectionLoss):
+    """v8 detection loss + an objectness (foreground/background) BCE term.
+    Round 24 -- supervises DetectObj's per-anchor objectness logit against the
+    TAL foreground mask (1 = assigned foreground, 0 = background), so the head
+    learns to suppress background-like anchors and improve precision/ranking on
+    the 'other' class. Mirrors v8DetectionLoss.__call__ with the extra term.
+    """
+
+    def __init__(self, model, obj_weight=1.0):
+        super().__init__(model)
+        self.obj_weight = obj_weight
+        self.bce_obj = nn.BCEWithLogitsLoss(reduction="none")
+
+    def __call__(self, preds, batch):
+        preds = preds[1] if isinstance(preds, tuple) else preds
+        if not isinstance(preds, dict):  # val/eval: only main head present
+            return super().__call__(preds, batch)
+        feats, obj_feats = preds["main"], preds["obj"]
+        loss = torch.zeros(4, device=self.device)  # box, cls, dfl, obj
+        pred_distri, pred_scores = torch.cat(
+            [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2
+        ).split((self.reg_max * 4, self.nc), 1)
+        pred_scores = pred_scores.permute(0, 2, 1).contiguous()
+        pred_distri = pred_distri.permute(0, 2, 1).contiguous()
+        pred_obj = torch.cat(
+            [oi.view(feats[0].shape[0], 1, -1) for oi in obj_feats], 2
+        ).permute(0, 2, 1).contiguous()  # (b, A, 1)
+        dtype = pred_scores.dtype
+        batch_size = pred_scores.shape[0]
+        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
+        anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
+        targets = torch.cat((batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1)
+        targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
+        gt_labels, gt_bboxes = targets.split((1, 4), 2)
+        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0.0)
+        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)
+        _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
+            pred_scores.detach().sigmoid(),
+            (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
+            anchor_points * stride_tensor,
+            gt_labels,
+            gt_bboxes,
+            mask_gt,
+        )
+        target_scores_sum = max(target_scores.sum(), 1)
+        bce_loss = self.bce(pred_scores, target_scores.to(dtype))
+        if self.class_weights is not None:
+            bce_loss = bce_loss * self.class_weights
+        loss[1] = bce_loss.sum() / target_scores_sum  # cls
+        if fg_mask.sum():
+            target_bboxes /= stride_tensor
+            loss[0], loss[2] = self.bbox_loss(
+                pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask,
+                stride_tensor
+            )
+        obj_target = fg_mask.unsqueeze(-1).to(dtype)  # (b, A, 1)
+        loss[3] = self.bce_obj(pred_obj, obj_target).mean()
+        loss[0] *= self.hyp.box
+        loss[1] *= self.hyp.cls
+        loss[2] *= self.hyp.dfl
+        loss[3] *= self.obj_weight
+        return loss.sum() * batch_size, loss[:3].detach()  # log box/cls/dfl
+
+
+class E2EDetectLoss:
+    """End-to-end detection loss."""
+
+    def __init__(self, model):
+        self.one2many = v8DetectionLoss(model, tal_topk=10)
+        self.one2one = v8DetectionLoss(model, tal_topk=1)
+
+    def __call__(self, preds, batch):
+        preds = preds[1] if isinstance(preds, tuple) else preds
+        one2many = preds["one2many"]
+        loss_one2many = self.one2many(one2many, batch)
+        one2one = preds["one2one"]
+        loss_one2one = self.one2one(one2one, batch)
+        return (
+            loss_one2many[0] + loss_one2one[0],
+            loss_one2many[1] + loss_one2one[1]
+        )
