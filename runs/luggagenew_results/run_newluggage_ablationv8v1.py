@@ -150,6 +150,7 @@ R8_BOOST_BAG    = _cfg(small_obj_boost_bag=2.5)  # backpack/trolley fall back to
 R8_CENTER_CROWD = _cfg(center=_CENTER_CROWD, **_WIOU)
 
 RUNS = [
+<<<<<<< HEAD
     # {"name": "r8_anchor",       "label": "[1/10] const06 CIoU, all v3 levers OFF -- cross-file anchor (~83.19/56.61)",  "params": R8_ANCHOR,       "seed": 0},
     # {"name": "r8_swa_wiou",     "label": "[2/10] const06 + WIoU -- the missing combo of both proven winners",           "params": R8_SWA_WIOU,     "seed": 0},
     # {"name": "r8_cls_swa",      "label": "[3/10] const06 + [K] small-obj cls boost 1.75 @48px -- ranking gap",          "params": R8_CLS_SWA,      "seed": 0},
@@ -160,6 +161,18 @@ RUNS = [
     {"name": "r8_center_crowd", "label": "[8/10] const06 + WIoU + [B2] FIXED center loss (crowd) -- r7 post-mortem",    "params": R8_CENTER_CROWD, "seed": 0},
     # {"name": "r8_anchor_s1",    "label": "[9/10] anchor, seed 1 -- noise floor",                                        "params": R8_ANCHOR,       "seed": 1},
     # {"name": "r8_anchor_s2",    "label": "[10/10] anchor, seed 2 -- noise floor",                                       "params": R8_ANCHOR,       "seed": 2},
+=======
+    {"name": "r8_anchor",       "label": "[1/10] const06 CIoU, all v3 levers OFF -- cross-file anchor (~83.19/56.61)",  "params": R8_ANCHOR,       "seed": 0},
+    {"name": "r8_swa_wiou",     "label": "[2/10] const06 + WIoU -- the missing combo of both proven winners",           "params": R8_SWA_WIOU,     "seed": 0},
+    {"name": "r8_cls_swa",      "label": "[3/10] const06 + [K] small-obj cls boost 1.75 @48px -- ranking gap",          "params": R8_CLS_SWA,      "seed": 0},
+    {"name": "r8_area_sqrt",    "label": "[4/10] const06 + [A2] sqrt area weight -- spread emphasis small+medium",      "params": R8_AREA_SQRT,    "seed": 0},
+    {"name": "r8_bag_penalty",  "label": "[5/10] const06 + [L] bag negative-term penalty w=2.0 -- bag precision",       "params": R8_BAG_PENALTY,  "seed": 0},
+    {"name": "r8_artal",        "label": "[6/10] const06 + [M] AR-aware TAL (2.0/2.0/2.0) -- tall-narrow assignment",   "params": R8_ARTAL,        "seed": 0},
+    {"name": "r8_boost_bag",    "label": "[7/10] const06 + [A2] per-class boost bag 2.5 / others 1.75",                 "params": R8_BOOST_BAG,    "seed": 0},
+    {"name": "r8_center_crowd", "label": "[8/10] const06 + WIoU + [B2] FIXED center loss (crowd) -- r7 post-mortem",    "params": R8_CENTER_CROWD, "seed": 0},
+    {"name": "r8_anchor_s1",    "label": "[9/10] anchor, seed 1 -- noise floor",                                        "params": R8_ANCHOR,       "seed": 1},
+    {"name": "r8_anchor_s2",    "label": "[10/10] anchor, seed 2 -- noise floor",                                       "params": R8_ANCHOR,       "seed": 2},
+>>>>>>> 65867c5c1c381541bfad2d0cc2c95a67f576af6a
 ]
 
 
@@ -320,4 +333,8 @@ def main():
 
 
 if __name__ == "__main__":
+<<<<<<< HEAD
     main()
+=======
+    main()
+>>>>>>> 65867c5c1c381541bfad2d0cc2c95a67f576af6a
