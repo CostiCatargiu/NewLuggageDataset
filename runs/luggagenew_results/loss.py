@@ -37,6 +37,13 @@
 #           r0a2_dflboost run was supposed to test (it silently no-op'd:
 #           identical metrics to r0_default2 confirmed the parameter was never
 #           read).
+#           [NEW-3b] IoU-GATED DFL BOOST. When dfl_iou_gated=1, the flat
+#           dfl_small_boost is modulated by (1-IoU) per anchor: only poorly-
+#           localized small objects get the full boost. Well-localized small
+#           objects (IoU~0.9) get nearly no boost. This focuses DFL sharpening
+#           exactly where the model still struggles, rather than wasting capacity
+#           on already-tight boxes. Off-switch: dfl_iou_gated=0 (default)
+#           preserves legacy flat-boost behavior.
 #   [NEW-4] VARIFOCAL CLASSIFICATION OPTION (cls_loss='vfl', default 'bce').
 #           IoU-aware classification: positives are weighted by their soft TAL
 #           target score (localization quality), negatives down-weighted by
@@ -54,6 +61,16 @@
 #           boxes. nwd_c should be near the dataset's typical absolute box size
 #           at training resolution (default 64; mean box at 640 here is ~41x90
 #           -> sqrt(w*h) ~ 61).
+#           [NEW-5b] ADAPTIVE NWD BLEND. When nwd_adaptive=1, the NWD ratio is
+#           modulated by object "smallness": objects right at the threshold get
+#           nearly pure CIoU, while the tiniest objects get the full nwd_ratio.
+#             effective_r = nwd_ratio * (px_threshold^2 - area_px) / px_threshold^2
+#           This avoids the hard on/off behavior of the original flat blend.
+#           [NEW-5c] NWD ANNEALING. When nwd_anneal=1, the effective NWD ratio
+#           is further scaled by a linear ramp: full ratio at epoch 0, decaying
+#           to nwd_anneal_min fraction by the end of training. NWD stabilizes
+#           the early loss landscape; CIoU's tighter optimum dominates late.
+#           Off-switch: nwd_anneal=0 (default) keeps the ratio constant.
 #   [NEW-6] E2E topk guard: E2EDetectLoss's one2one head now FORCES tal_topk=1
 #           (force_tal_topk); previously a tal_topk hyp silently overrode it.
 #   [NEW-7] DetectObjLoss now passes stride_tensor to bbox_loss (pixel-space
@@ -64,11 +81,21 @@
 #           so center_loss_weight_init means what it says (was silently
 #           multiplied by hyp.box=7.5). Decay now interpolates init -> min
 #           (was init -> 0 floored at min, which had a kink).
+#   [NEW-9] IoU-AWARE REGRESSION WEIGHTING (IARW, Section F).
+#           Per-anchor regression boost proportional to the localization deficit:
+#             reg_boost = 1 + iarw_gamma * (1 - IoU).detach()
+#           Applied to BOTH IoU loss and DFL loss. Predictions with high IoU
+#           (already tight) get minimal boost; those with low IoU (loose boxes)
+#           get amplified. Unlike area-based weighting (which assumes small=hard),
+#           IARW directly *measures* which predictions need more work and is
+#           self-correcting: as the box improves, the boost fades. This targets
+#           the core diagnosed deficit (high AR, low AP50-95) without assumptions
+#           about object size. Off-switch: iarw_gamma=0.0 (default).
 #
 # REPRODUCIBILITY NOTE: with all sections off (alpha=0, boost=1, dfl_small_boost=1,
-# nwd_ratio=0, cls_loss='bce', clips at 999) this file is numerically identical
-# to the previous version's anchor path. NEW-1/NEW-2 only alter behavior when
-# Section A weighting is actually active.
+# nwd_ratio=0, cls_loss='bce', clips at 999, iarw_gamma=0) this file is
+# numerically identical to the previous version's anchor path. NEW-1/NEW-2 only
+# alter behavior when Section A weighting is actually active.
 #
 # NOTE ON CUSTOM KEYS: all new params (incl. the STRING param cls_loss) must be
 # whitelisted in your cfg patch exactly like the existing custom keys, or
@@ -174,12 +201,19 @@ class BboxLoss(nn.Module):
             - weight_renorm: 1 (NEW-1, default) renormalizes the combined
               weight sum to the score-weight sum; 0 = legacy behavior
 
-        Section A' (targeted DFL, NEW-3):
+        Section A' (targeted DFL, NEW-3 / NEW-3b):
             - dfl_small_boost: DFL-only multiplier for small objects (1.0 off)
+            - dfl_iou_gated: 1 = modulate boost by (1-IoU), 0 = flat (default)
 
-        Section A'' (NWD blend, NEW-5):
+        Section A'' (NWD blend, NEW-5 / NEW-5b / NEW-5c):
             - nwd_ratio: blend ratio r for small objects (0.0 off)
             - nwd_c: NWD temperature in pixels (default 64)
+            - nwd_adaptive: 1 = continuous ramp by smallness, 0 = flat (default)
+            - nwd_anneal: 1 = fade NWD ratio over training, 0 = constant (default)
+            - nwd_anneal_min: fraction of nwd_ratio kept at end (default 0.1)
+
+        Section F (IARW, NEW-9):
+            - iarw_gamma: IoU-aware regression boost (0.0 off, recommended 2.0-3.0)
 
         Section C (Adaptive clipping):
             - iou_clip_start/end, dfl_clip_start/end
@@ -214,10 +248,20 @@ class BboxLoss(nn.Module):
 
         # [NEW-3] DFL-only small-object boost
         self.dfl_small_boost = 1.0
+        # [NEW-3b] IoU-gated DFL boost
+        self.dfl_iou_gated = 0
 
         # [NEW-5] NWD blend for small objects
         self.nwd_ratio = 0.0
         self.nwd_c = 64.0
+        # [NEW-5b] Adaptive NWD blend (continuous ramp by smallness)
+        self.nwd_adaptive = 0
+        # [NEW-5c] NWD annealing (fade NWD over training)
+        self.nwd_anneal = 0
+        self.nwd_anneal_min = 0.1  # fraction of nwd_ratio kept at end of training
+
+        # [NEW-9] IoU-Aware Regression Weighting (IARW, Section F)
+        self.iarw_gamma = 0.0  # 0.0 = off; recommended 2.0-3.0
 
         # Section C: Adaptive clipping defaults
         self.iou_clip_start = 20.0
@@ -248,12 +292,19 @@ class BboxLoss(nn.Module):
         self.area_gamma = float(getattr(hyp, 'area_gamma', self.area_gamma))
         self.area_w_cap = float(getattr(hyp, 'area_w_cap', self.area_w_cap))
 
-        # [NEW-3]
+        # [NEW-3] / [NEW-3b]
         self.dfl_small_boost = float(getattr(hyp, 'dfl_small_boost', self.dfl_small_boost))
+        self.dfl_iou_gated = int(getattr(hyp, 'dfl_iou_gated', self.dfl_iou_gated))
 
-        # [NEW-5]
+        # [NEW-5] / [NEW-5b] / [NEW-5c]
         self.nwd_ratio = float(getattr(hyp, 'nwd_ratio', self.nwd_ratio))
         self.nwd_c = float(getattr(hyp, 'nwd_c', self.nwd_c))
+        self.nwd_adaptive = int(getattr(hyp, 'nwd_adaptive', self.nwd_adaptive))
+        self.nwd_anneal = int(getattr(hyp, 'nwd_anneal', self.nwd_anneal))
+        self.nwd_anneal_min = float(getattr(hyp, 'nwd_anneal_min', self.nwd_anneal_min))
+
+        # [NEW-9] IARW
+        self.iarw_gamma = float(getattr(hyp, 'iarw_gamma', self.iarw_gamma))
 
         # Section C: Adaptive clipping
         self.iou_clip_start = getattr(hyp, 'iou_clip_start', self.iou_clip_start)
@@ -303,6 +354,7 @@ class BboxLoss(nn.Module):
                           small_obj_px <= 0 / no fg samples
             stride_fg:    (n_fg, 1) per-sample stride in pixels, or None if
                           no stride tensor was supplied (pose/seg fallback)
+            fg_areas_px:  (n_fg,) pixel areas per fg anchor (for adaptive NWD)
         """
         target_areas = self._compute_target_areas(target_bboxes, fg_mask)  # grid units
 
@@ -337,7 +389,7 @@ class BboxLoss(nn.Module):
             area_weight = area_weight.clone()
             area_weight[small_mask] *= self.small_obj_boost
 
-        return score_weight, area_weight, small_mask, stride_fg
+        return score_weight, area_weight, small_mask, stride_fg, fg_areas_px
 
     def _get_gradient_clip_values(self):
         """Get adaptive clipping values based on training progress."""
@@ -346,14 +398,29 @@ class BboxLoss(nn.Module):
         max_dfl = self.dfl_clip_end + (self.dfl_clip_start - self.dfl_clip_end) * (1 - progress)
         return max_iou, max_dfl
 
+    def _get_effective_nwd_ratio(self):
+        """[NEW-5c] NWD ratio with optional epoch annealing.
+
+        Returns the base nwd_ratio, optionally scaled down over training so
+        that NWD dominates early (smooth landscape) and CIoU dominates late
+        (tight optimum). Off-switch: nwd_anneal=0 returns nwd_ratio unchanged.
+        """
+        r = self.nwd_ratio
+        if self.nwd_anneal and self.total_epochs > 0:
+            progress = self.epoch / max(self.total_epochs, 1)
+            # Linear decay: 1.0 at epoch 0 -> nwd_anneal_min at final epoch
+            anneal_factor = 1.0 - (1.0 - self.nwd_anneal_min) * progress
+            r = r * anneal_factor
+        return r
+
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes,
                 target_scores, target_scores_sum, fg_mask, stride=None):
-        """Compute IoU(+NWD) and DFL losses with per-sample clipping + clip-rate log."""
+        """Compute IoU(+NWD) and DFL losses with IARW, adaptive NWD, IoU-gated
+        DFL boost, per-sample clipping, and clip-rate logging."""
 
         alpha = self._get_dynamic_alpha()
-        score_weight, area_weight, small_mask, stride_fg = self._compute_weights(
-            target_bboxes, target_scores, fg_mask, stride
-        )
+        score_weight, area_weight, small_mask, stride_fg, fg_areas_px = \
+            self._compute_weights(target_bboxes, target_scores, fg_mask, stride)
 
         # Combined weight
         weight = alpha * area_weight + (1 - alpha) * score_weight
@@ -371,7 +438,10 @@ class BboxLoss(nn.Module):
         loss_reg = 1.0 - iou  # (n_fg, 1)
 
         # [NEW-5] NWD blend for small objects (pixel space; needs stride_fg)
-        if (self.nwd_ratio > 0.0 and small_mask is not None and
+        # [NEW-5b] Adaptive: continuous ramp by smallness instead of flat ratio
+        # [NEW-5c] Annealing: fade NWD over training epochs
+        effective_nwd_ratio = self._get_effective_nwd_ratio()
+        if (effective_nwd_ratio > 0.0 and small_mask is not None and
                 stride_fg is not None and small_mask.any()):
             p_px = pred_fg * stride_fg
             t_px = targ_fg * stride_fg
@@ -382,9 +452,33 @@ class BboxLoss(nn.Module):
             # Gauss-Wasserstein^2 between N(c, diag((w/2)^2,(h/2)^2))
             w2 = (pc - tc).pow(2).sum(-1) + ((pwh - twh) / 2).pow(2).sum(-1)
             nwd = torch.exp(-w2.clamp(min=1e-7).sqrt() / self.nwd_c).unsqueeze(-1)
-            r = self.nwd_ratio
+
             loss_reg = loss_reg.clone()
-            loss_reg[small_mask] = (1.0 - r) * loss_reg[small_mask] + r * (1.0 - nwd[small_mask])
+
+            if self.nwd_adaptive and self.small_obj_px > 0:
+                # [NEW-5b] Per-anchor NWD ratio proportional to "smallness":
+                # objects at the threshold edge get ~0 NWD (pure CIoU);
+                # the tiniest objects get the full effective_nwd_ratio.
+                threshold_sq = float(self.small_obj_px) ** 2
+                smallness = ((threshold_sq - fg_areas_px) / threshold_sq).clamp(0, 1)
+                per_anchor_r = effective_nwd_ratio * smallness[small_mask].unsqueeze(-1)
+                loss_reg[small_mask] = ((1.0 - per_anchor_r) * loss_reg[small_mask]
+                                        + per_anchor_r * (1.0 - nwd[small_mask]))
+            else:
+                # Original flat blend for all small objects
+                r = effective_nwd_ratio
+                loss_reg[small_mask] = ((1.0 - r) * loss_reg[small_mask]
+                                        + r * (1.0 - nwd[small_mask]))
+
+        # [NEW-9] IARW: IoU-Aware Regression Weighting (Section F)
+        # Boost regression loss proportionally to the localization deficit.
+        # Self-correcting: as the box tightens (IoU rises), the boost fades.
+        # Off-switch: iarw_gamma=0.0 -> iarw_boost = 1.0 everywhere (identity).
+        if self.iarw_gamma > 0.0:
+            with torch.no_grad():
+                iou_deficit = (1.0 - iou).clamp(min=0.0)          # (n_fg, 1)
+                iarw_boost = 1.0 + self.iarw_gamma * iou_deficit   # >= 1.0
+            loss_reg = loss_reg * iarw_boost
 
         per_sample_iou_loss = loss_reg * weight
 
@@ -413,12 +507,24 @@ class BboxLoss(nn.Module):
                 target_ltrb[fg_mask]
             ) * weight
 
+            # [NEW-9] IARW on DFL too: same boost, consistent signal
+            if self.iarw_gamma > 0.0:
+                per_sample_dfl = per_sample_dfl * iarw_boost
+
             # [NEW-3] DFL-only boost for small objects, applied BEFORE the cap
             # (so a tight Section-C cap can absorb it -- watch the clip-rate log)
+            # [NEW-3b] IoU-gated: modulate by (1-IoU) so only loose boxes get
+            # the full boost; well-localized small objects are left alone.
             if (self.dfl_small_boost != 1.0 and small_mask is not None
                     and small_mask.any()):
                 per_sample_dfl = per_sample_dfl.clone()
-                per_sample_dfl[small_mask] *= self.dfl_small_boost
+                if self.dfl_iou_gated:
+                    with torch.no_grad():
+                        iou_gate = (1.0 - iou).clamp(0.0, 1.0)  # (n_fg, 1)
+                    effective_boost = 1.0 + (self.dfl_small_boost - 1.0) * iou_gate[small_mask]
+                    per_sample_dfl[small_mask] *= effective_boost
+                else:
+                    per_sample_dfl[small_mask] *= self.dfl_small_boost
 
             dfl_cap = max_dfl_clip / 10.0
 
@@ -498,8 +604,15 @@ class v8DetectionLoss:
             - small_obj_px, small_obj_boost
             - area_mode, area_ref_px, area_gamma, area_w_cap    [NEW-2]
             - weight_renorm                                      [NEW-1]
+
+        Section A' (DFL small boost):
             - dfl_small_boost                                    [NEW-3]
+            - dfl_iou_gated                                      [NEW-3b]
+
+        Section A'' (NWD blend):
             - nwd_ratio, nwd_c                                   [NEW-5]
+            - nwd_adaptive                                       [NEW-5b]
+            - nwd_anneal, nwd_anneal_min                         [NEW-5c]
 
         Section B (Center loss):
             - center_loss_weight_init / center_loss_weight_min
@@ -519,6 +632,9 @@ class v8DetectionLoss:
         Section E (Classification, NEW-4):
             - cls_loss: 'bce' (default) or 'vfl'
             - vfl_alpha (default 0.75), vfl_gamma (default 2.0)
+
+        Section F (IARW, NEW-9):
+            - iarw_gamma (0.0 off, recommended 2.0-3.0)
     """
 
     def __init__(self, model, tal_topk=10, force_tal_topk=False):
@@ -568,8 +684,13 @@ class v8DetectionLoss:
         self.area_gamma = float(getattr(h, 'area_gamma', 0.5))
         self.area_w_cap = float(getattr(h, 'area_w_cap', 3.0))
         self.dfl_small_boost = float(getattr(h, 'dfl_small_boost', 1.0))
+        self.dfl_iou_gated = int(getattr(h, 'dfl_iou_gated', 0))
         self.nwd_ratio = float(getattr(h, 'nwd_ratio', 0.0))
         self.nwd_c = float(getattr(h, 'nwd_c', 64.0))
+        self.nwd_adaptive = int(getattr(h, 'nwd_adaptive', 0))
+        self.nwd_anneal = int(getattr(h, 'nwd_anneal', 0))
+        self.nwd_anneal_min = float(getattr(h, 'nwd_anneal_min', 0.1))
+        self.iarw_gamma = float(getattr(h, 'iarw_gamma', 0.0))
 
         # Section B: Center loss
         self.center_loss_weight_init = getattr(h, 'center_loss_weight_init', 0.0)
@@ -630,8 +751,12 @@ class v8DetectionLoss:
             print(f"  [A] weight_renorm:   {self.weight_renorm}  (NEW-1)")
             print(f"  [A] area_mode:       {self.area_mode}  (NEW-2)"
                   f"{'' if self.area_mode == 'legacy' else f'  ref={self.area_ref_px}px gamma={self.area_gamma} cap={self.area_w_cap}'}")
-            print(f"  [A] dfl_small_boost: {self.dfl_small_boost}  (NEW-3)")
-            print(f"  [A] nwd_ratio/c:     {self.nwd_ratio} / {self.nwd_c}px  (NEW-5)")
+            print(f"  [A'] dfl_small_boost: {self.dfl_small_boost}  (NEW-3)"
+                  f"{'  IoU-gated (NEW-3b)' if self.dfl_iou_gated else ''}")
+            print(f"  [A''] nwd_ratio/c:   {self.nwd_ratio} / {self.nwd_c}px  (NEW-5)"
+                  f"{'  adaptive (NEW-5b)' if self.nwd_adaptive else ''}"
+                  f"{'  anneal->%.2f (NEW-5c)' % self.nwd_anneal_min if self.nwd_anneal else ''}")
+            print(f"  [F] iarw_gamma:      {self.iarw_gamma}  (NEW-9, 0=off)")
             print(f"  [B] center_loss_init:  {self.center_loss_weight_init}  (applied AFTER box gain, NEW-8)")
             print(f"  [B] center_loss_min:   {self.center_loss_weight_min}")
             print(f"  [B] center_loss_decay: {self.center_loss_decay_epochs} epochs")
