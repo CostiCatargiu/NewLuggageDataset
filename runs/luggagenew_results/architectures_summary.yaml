@@ -1,0 +1,565 @@
+# Weapon-detection architecture experiments — summary
+# Dataset: GunDatasetNoAugSplitAblation70 (nc=4)  |  Base: YOLOv12s (yolov12s.pt)
+# Baseline reference: v5_tal07_full = 83.12% mAP50 (stock YOLOv12s)
+# Auto-extracted from 56 training scripts — 166 architecture/experiment variants
+# Generated: 2026-07-20
+
+total_scripts: 56
+total_variants: 166
+
+experiment_groups:
+  - script: run_ablation_overnight_all.py
+    theme: "70% Ablation — 6 runs overnight"
+    variants:
+      - name: "arch_p3_attn_70"
+        description: "P3 attention enabled (simplest change)"
+      - name: "arch_ld_70"
+        description: "LD-Redistribute: P5->P3 capacity shift"
+      - name: "arch_p3_attn_ld_70"
+        description: "P3 attention + LD-Redistribute combined"
+      - name: "arch_deep_p3_bidi_70"
+        description: "Deep P3 + Bidirectional P4 (most complex)"
+      - name: "v5_tal07_swa09_04_70"
+        description: "best TAL + SWA 0.9/0.4"
+      - name: "v5_tal07_swa09_05_70"
+        description: "best TAL + SWA 0.9/0.5"
+
+  - script: run_ablation_swa.py
+    theme: "70% Ablation — SWA exploration with best TAL config."
+    variants:
+      - name: "v5_tal07_swa09_04_70"
+        description: "best TAL + SWA 0.9/0.4 — stronger averaging"
+      - name: "v5_tal07_swa09_05_70"
+        description: "best TAL + SWA 0.9/0.5 — moderate averaging"
+
+  - script: run_arch_exploration_ablation.py
+    theme: "70% Ablation — 6 Novel Architecture Explorations"
+    variants:
+      - name: "arch_spp_p3_70"
+        description: "[1/6] SPP at P3 head — multi-scale pooling (HIGHEST CONFIDENCE)"
+      - name: "arch_deeper_p3_backbone_70"
+        description: "[2/6] Deeper P3 backbone (4 reps) — more feature capacity"
+      - name: "arch_se_p3_70"
+        description: "[3/6] SE at P3 head — channel attention filtering"
+      - name: "arch_aspp_p3_70"
+        description: "[4/6] ASPP at P3 head — atrous pyramid"
+      - name: "arch_dense_p3p4_70"
+        description: "[5/6] Dense skip P3↔P4 — bidirectional flow"
+      - name: "arch_dual_p3_70"
+        description: "[6/6] Dual-path P3 — lightweight + heavy merged (HIGHEST RISK)"
+
+  - script: run_arch_gated_ablation.py
+    theme: "70% Ablation — Round 2: Zero-Init Gated (ZG) architectures."
+    variants:
+      - name: "arch_zg_p45_70"
+        description: "[1/6] ZG LSKA@P4 + GC@P5 — zero-init gates, P3 untouched"
+      - name: "arch_zg_p4_70"
+        description: "[2/6] ZG LSKA@P4 only — proven block, right scale, gated"
+      - name: "arch_zg_gc_p5_70"
+        description: "[3/6] ZG GC@P5 only — global context for large objects"
+      - name: "arch_zg_se_p45_70"
+        description: "[4/6] ZG SE@P4+P5 — cheapest gated control"
+      - name: "arch_zg_all_70"
+        description: "[5/6] ZG P3(k5)+P4(k7)+P5(GC) — gated everywhere"
+      - name: "arch_zg_mhsa_p5_70"
+        description: "[6/6] ZG MHSA@P5 — gated global self-attention"
+
+  - script: run_arch_p2_aux_ablation.py
+    theme: "70% Ablation — P2 Auxiliary architecture (Arch-6, marked BEST from luggage)."
+    variants:
+      - name: "arch_p2_aux_70"
+        description: "70% Ablation — P2 Auxiliary architecture (Arch-6, marked BEST from luggage)."
+
+  - script: run_arch_p5_ablation.py
+    theme: "70% Ablation — 3 Architecture proposals targeting overall improvement."
+    variants:
+      - name: "arch_p5_attn_70"
+        description: "P5 head: C3k2 → A2C2f attention (consistency fix)"
+      - name: "arch_ska_70"
+        description: "SKA: LSKA at P3 head (large kernel context)"
+      - name: "arch_ska_p5_70"
+        description: "SKA at P3 + P5 A2C2f attention (both improvements)"
+      - name: "arch_deeper_p3_70"
+        description: "Backbone P3: 2→3 reps (no P5 reduction)"
+      - name: "arch_p5_attn_deeper_p3_70"
+        description: "Both: P5 A2C2f + deeper P3"
+
+  - script: run_arch_proposals.py
+    theme: "Full Dataset — 4 Architecture proposals for weapon detection."
+    variants:
+      - name: "arch_p3_attn_70"
+        description: "P3 attention enabled (simplest change)"
+      - name: "arch_ld_70"
+        description: "LD-Redistribute: P5→P3 capacity shift"
+      - name: "arch_p3_attn_ld_70"
+        description: "P3 attention + LD-Redistribute combined"
+      - name: "arch_deep_p3_bidi_70"
+        description: "Deep P3 + Bidirectional P4 (most complex)"
+
+  - script: run_arch_ska_variants_ablation.py
+    theme: "70% Ablation — 3 SKA variants derived from the winning architecture."
+    variants:
+      - name: "arch_ska_residual_70"
+        description: "[1/6] SKA Residual — gate preserves small features"
+      - name: "arch_ska_k5_70"
+        description: "[2/6] SKA at P3 with 5x5 kernel (smaller, gentler)"
+      - name: "arch_ska_multiscale_70"
+        description: "[3/6] SKA MultiScale — 5x5+9x9 adapts to weapon shape"
+      - name: "arch_ska_p4_70"
+        description: "[4/6] SKA at P4 bottom-up — protect P3/small objects"
+      - name: "arch_ska_weapon_70"
+        description: "[5/6] SKA Weapon — multi-scale + residual (full)"
+      - name: "arch_ska_p4td_70"
+        description: "[6/6] SKA at P4 top-down — enrich features before P3"
+
+  - script: run_arch_small_obj_round3.py
+    theme: "70% Ablation — Round 3: SMALL OBJECTS (mAP50_small recovery)."
+    variants:
+      - name: "base_960_70"
+        description: "[1/4] Baseline @ 960 — resolution is the small-object lever"
+      - name: "zg_p4_960_70"
+        description: "[2/4] ZG LSKA@P4 @ 960 + detect-remap"
+      - name: "zg_p4_fixdet_70"
+        description: "[3/4] ZG LSKA@P4 @ 640 + detect-remap — confound check"
+      - name: "zg_p2fuse_70"
+        description: "[4/4] ZG P2->P3 fusion @ 640 + detect-remap"
+
+  - script: run_p5context_besttal.py
+    theme: "p5context + BEST-TAL -- the candidate final model."
+    variants:
+      - name: "p5context_besttal_70"
+        description: "p5context + BEST-TAL -- the candidate final model."
+
+  - script: run_round10_k11_variants.py
+    theme: "70% Ablation — Round 10: THREE VARIATIONS ON THE k11 WINNER."
+    variants:
+      - name: "r10_k11_p4td_70"
+        description: "[1/3] k11 relocated to P4 top-down (layer 11, pre-fusion) -- ~40% confidence"
+      - name: "r10_lskastripfuse_70"
+        description: "[2/3] ZGLSKAStripFuse: k11+strip23 channel-split fusion @ P4 -- ~30% confidence"
+      - name: "r10_lskamultidil_70"
+        description: "[3/3] ZGLSKAMultiDil: k7/dil2 + k11/dil3 fused @ P4 -- ~25% confidence"
+
+  - script: run_round11_arch_ideas.py
+    theme: "70% Ablation — Round 11: FOUR NEW ARCHITECTURE IDEAS, each targeting a"
+    variants:
+      - name: "r11_dual_p3p4_70"
+        description: "[1/4] keep r6 k11@P4-BU + ADD independent k7 @ P3 head -- ~35-40% confidence"
+      - name: "r11_widefuse_70"
+        description: "[2/4] ZGLSKAWideFuse: k11+strip23, full-width streams (fixes stripfuse) -- ~30-35% confidence"
+      - name: "r11_refine_70"
+        description: "[3/4] ZGLSKARefine: k11 + depthwise k3 local refinement, same gamma -- ~25-30% confidence"
+      - name: "r11_expand_70"
+        description: "[4/4] ZGLSKAExpand: k11 with 2x channel-expanded branch -- ~25% confidence"
+
+  - script: run_round12_small_obj.py
+    theme: "70% Ablation — Round 12: SMALL-OBJECT RECOVERY on top of the new best"
+    variants:
+      - name: "r12_widefuse_ksmall_70"
+        description: "[1/3] widefuse @ P4-BU, strip23 -> strip3 (multi-scale fusion) -- ~30-35% confidence"
+      - name: "r12_widefuse_p3gc_70"
+        description: "[2/3] widefuse@P4 (unchanged) + ZGGC global-context @ P3 head -- ~25-30% confidence"
+      - name: "r12_dualwidefuse_70"
+        description: "[3/3] widefuse@P4 (unchanged) + widefuse[256,7,3] @ P3 head -- ~20-25% confidence"
+
+  - script: run_round13_cgc.py
+    theme: "70% Ablation — Round 13: HEAD-LEVEL CLS-BRANCH GATING."
+    variants:
+      - name: "r13_widefuse_lkacls_70"
+        description: "[1/3] r11_widefuse_70 (79.40, unchanged) + DetectLKACls[k=11] head -- ~35-40% confidence"
+      - name: "r13_r6_lkacls_70"
+        description: "[2/3] r6_zgp4_k11_70 (79.19, unchanged) + DetectLKACls[k=11] head -- consistency check vs run 1 -- ~35-40% confidence"
+      - name: "r13_widefuse_cgc_70"
+        description: "[3/3] r11_widefuse_70 (79.40, unchanged) + DetectCGC head -- mechanism comparison vs run 1 -- ~20-25% confidence"
+
+  - script: run_round14_overnight.py
+    theme: "70% Ablation — Round 14: OVERNIGHT BATCH (4 runs)."
+    variants:
+      - name: "r14_widefuse_gcfuse_70"
+        description: "[1/4] NEW ZGLSKAGCFuse: k11 LKA + global-context (SHARED feature) @ P4-BU -- ~25-30% confidence"
+      - name: "r13_widefuse_cgc_70"
+        description: "[2/4] CARRIED OVER from round 13: widefuse@P4 (unchanged) + DetectCGC (global context, CLS-ONLY) -- paired with run 1 -- ~20-25% confidence"
+      - name: "r14_widefuse_p2fuse_70"
+        description: "[3/4] widefuse@P4 (unchanged) + ZGP2Fuse (P2 detail -> Detect P3) -- ~30-35% confidence"
+      - name: "r12_dualwidefuse_70"
+        description: "[4/4] CARRIED OVER from round 12: widefuse@P4 (unchanged) + widefuse[256,7,3]@P3 -- ~20-25% confidence"
+
+  - script: run_round15_widefuse3.py
+    theme: "70% Ablation — Round 15: WideFuse3 (3-branch fuse) + r11 seed-check."
+    variants:
+      - name: "r15_widefuse3_70"
+        description: "[1/2] NEW ZGLSKAWideFuse3: WideFuse (k11 LKA + strip23) + NEW k3 small-RF detail branch, 3-way fuse, ONE gamma @ P4-BU -- strict generalization of r11_widefuse_70 -- ~30-35% confidence"
+      - name: "r11_widefuse_70_seed1"
+        description: "[2/2] r11_widefuse_70 EXACT architecture (ZGLSKAWideFuse[512,11,23]@P4-BU), seed=1 -- variance probe (r11 had the largest test-vs-val gap of rounds 11-14, concentrated in "
+
+  - script: run_round16_new_archs.py
+    theme: "70% Ablation — Round 16: two NEW, independent architecture ideas targeting"
+    variants:
+      - name: "r16_widefuse_smallcls_70"
+        description: "[1/2] r11_widefuse_70 backbone UNCHANGED + NEW DetectSmallCls head: zero-gated k3 small-detail refinement on cls branch only (opposite regime from round-13"
+      - name: "r16_compactfuse_70"
+        description: "[2/2] NEW ZGLSKACompactFuse @ P4-BU: k11 ZGLKA + compact k3/dilation1+k5/dilation2 multiscale branch, REPLACES WideFuse"
+
+  - script: run_round17_selectfuse.py
+    theme: "70% Ablation — Round 17: SPATIALLY-ROUTED receptive-field fusion (the one"
+    variants:
+      - name: "r17_selectfuse_70"
+        description: "[1/2] INNOVATION ZGLSKASelectFuse: per-location softmax router over k11 LKA + strip23 + k3 (same branches as WideFuse3, spatial routing instead of static concat) @ P4-BU -- ~25-30% confidence"
+      - name: "r17_widefuse3_70"
+        description: "[2/2] CONTROL ZGLSKAWideFuse3: IDENTICAL branches/args, STATIC concat fusion -- isolates spatial-routing as the mechanism (= r15_widefuse3, same env)"
+
+  - script: run_round18_overnight.py
+    theme: "70% Ablation — Round 18: OVERNIGHT BATCH (5 archs) aimed at the DIAGNOSED"
+    variants:
+      - name: "r18_p2head_70"
+        description: "[1/5] stock + P2 (stride-4) head, plain Detect, lightweight C3k2 @ P2 -- scale-only control: does small-object resolution alone help?"
+      - name: "r18_p2deepcls_70"
+        description: "[2/5] stock + P2 head + DetectDeepCls -- THE smart one: small-object RESOLUTION + cls CAPACITY together (small-"
+      - name: "r18_deepcls_70"
+        description: "[3/5] stock + DetectDeepCls (cls tower 2->4 blocks) -- cls capacity at normal scales; decomposes run 2 (scale vs cls vs interaction)"
+      - name: "r18_widecls_70"
+        description: "[4/5] stock + DetectWideCls (cls tower 2x width) -- depth-vs-width ablation vs run 3"
+      - name: "r18_widefuse_deepcls_70"
+        description: "[5/5] r11_widefuse backbone + DetectDeepCls -- does cls capacity stack on the best backbone?"
+
+  - script: run_round19_bifpn.py
+    theme: "70% Ablation — Round 19: NECK TOPOLOGY (the last untouched frontier at"
+    variants:
+      - name: "r19_bifpn_70"
+        description: "[1/3] BiFPN-lite neck: WeightedConcat fusion + 3-way edge @ P4 -- learnable multi-scale fusion, yolov12s/640"
+      - name: "r19_bifpn_widefuse_70"
+        description: "[2/3] BiFPN neck + r11_widefuse @ P4 -- does the best module stack on the new fusion topology?"
+      - name: "r19_doubleneck_70"
+        description: "[3/3] CONTROL: stock PAN iterated twice (plain Concat) -- isolates "
+
+  - script: run_round20_aux.py
+    theme: "70% Ablation — Round 20: TRAIN-ONLY AUXILIARY HEAD (deep supervision)."
+    variants:
+      - name: "r20_aux_70"
+        description: "[1/1] DetectAux: train-only auxiliary detection head (deep supervision), dropped at inference -- aux_weight=0.25"
+
+  - script: run_round21_aux_sweep.py
+    theme: "70% Ablation — Round 21: EXPLOIT THE AUX HEAD (4 runs overnight)."
+    variants:
+      - name: "r21_aux_w50_70"
+        description: "[1/4] stock + DetectAux aux_weight=0.50 -- weight sweep point"
+      - name: "r21_aux_w100_70"
+        description: "[2/4] stock + DetectAux aux_weight=1.00 -- weight sweep point (max)"
+      - name: "r21_widefuse_aux_70"
+        description: "[3/4] widefuse @ P4 + DetectAux aux_weight=0.25 -- stack best backbone + aux"
+      - name: "r21_widefuse_aux_w50_70"
+        description: "[4/4] widefuse @ P4 + DetectAux aux_weight=0.50 -- stack + stronger aux"
+
+  - script: run_round22_widefuse_aux_sweep.py
+    theme: "70% Ablation — Round 22: widefuse + aux dose-response, HIGH weights (2 runs)."
+    variants:
+      - name: "r22_widefuse_aux_w75_70"
+        description: "[1/2] widefuse @ P4 + DetectAux aux_weight=0.75"
+      - name: "r22_widefuse_aux_w100_70"
+        description: "[2/2] widefuse @ P4 + DetectAux aux_weight=1.00"
+
+  - script: run_round23_aux_besttal.py
+    theme: "70% Ablation — Round 23: BEST ARCH x BEST TAL (the combination never tried)."
+    variants:
+      - name: "r23_waux_topk15b3_70"
+        description: "[1/2] widefuse+aux@0.5  x  TAL topk15/a0.5/b3.0 + cls1.2 (= v5_topk15_beta3 TAL, best 80.45)"
+      - name: "r23_waux_tal07_70"
+        description: "[2/2] widefuse+aux@0.5  x  TAL topk13/a0.7/b4.0 + cls1.2 (= v5_tal07 TAL, robust 80.02)"
+
+  - script: run_round24_ranking.py
+    theme: "70% Ablation — Round 24: ATTACK RANKING, NOT FINDING (2 new archs)."
+    variants:
+      - name: "r24_decoupled_70"
+        description: "[1/2] DetectDecoupled — box uses main neck, cls uses dedicated cls pathway"
+      - name: "r24_obj_70"
+        description: "[2/2] DetectObj — explicit objectness branch, score=sigmoid(cls+obj) (precision/FP suppression)"
+
+  - script: run_round25_widefuse_ranking.py
+    theme: "70% Ablation — Round 25: ranking-targeted heads ON THE BEST BACKBONE (widefuse)."
+    variants:
+      - name: "r25_widefuse_obj_70"
+        description: "[1/2] widefuse + DetectObj (objectness/FP suppression on the best backbone)"
+      - name: "r25_widefuse_decoupled_70"
+        description: "[2/2] widefuse + DetectDecoupled (dedicated cls pathway on the best backbone)"
+
+  - script: run_round26_softobj.py
+    theme: "70% Ablation — Round 26: softened objectness + the decoupled/objectness synthesis."
+    variants:
+      - name: "r26_widefuse_obj_b50_70"
+        description: "[1/4] widefuse + DetectObj beta=0.50 (softened objectness)"
+      - name: "r26_widefuse_obj_b30_70"
+        description: "[2/4] widefuse + DetectObj beta=0.30 (milder)"
+      - name: "r26_widefuse_decoupledobj_70"
+        description: "[3/4] widefuse + DetectDecoupledObj beta=0.50 -- SYNTHESIS (decoupled cls + softened obj)"
+      - name: "r26_stock_obj_b50_70"
+        description: "[4/4] stock + DetectObj beta=0.50 -- gate/isolation for softened objectness"
+
+  - script: run_round27_dualneck.py
+    theme: "70% Ablation — Round 27: DUAL-NECK DECOUPLED (escalate the one signal)."
+    variants:
+      - name: "r27_dualneck_stock_70"
+        description: "[1/2] stock backbone + dual neck (separate box & cls feature pyramids)"
+      - name: "r27_dualneck_widefuse_70"
+        description: "[2/2] widefuse backbone + dual neck (best backbone + full cls decoupling)"
+
+  - script: run_round28_cosine.py
+    theme: "70% Ablation — Round 28: COSINE / PROTOTYPE classifier (change the scoring)."
+    variants:
+      - name: "r28_cosine_stock_70"
+        description: "[1/3] stock + DetectCosine (cosine/prototype cls -- isolate the scoring change)"
+      - name: "r28_cosine_widefuse_70"
+        description: "[2/3] widefuse + DetectCosine (best backbone + cosine scoring)"
+      - name: "r28_decoupled_cosine_70"
+        description: "[3/3] widefuse + DetectDecoupledCosine -- COMBO: decoupled cls features + cosine scoring"
+
+  - script: run_round29_r21_extensions.py
+    theme: "70% Ablation — Round 29: extend the project-best architecture (r21)."
+    variants:
+      - name: "r29_r21_control"
+        description: "[1/4] CONTROL: widefuse[11,23] + DetectAux@0.5 (= r21, this batch/seed)"
+      - name: "r29_kernelfix"
+        description: "[2/4] B: widefuse[11,3] (multi-scale fix) + DetectAux@0.5"
+      - name: "r29_decoupled_aux"
+        description: "[3/4] A: widefuse[11,23] + DetectDecoupledAux@0.5 (decoupled cls + aux)"
+      - name: "r29_kernelfix_decoupled"
+        description: "[4/4] A+B: widefuse[11,3] + DetectDecoupledAux@0.5"
+
+  - script: run_round30_p3detail.py
+    theme: "70% Ablation -- Round 30: P3 DETAIL GUARD (small-object recovery for r21)."
+    variants:
+      - name: "r30_p3detail_70"
+        description: "[1/3] widefuse@P4 + ZGSmallDetail@P3 + DetectAux(0.5) -- full stack, direct r21 comparison"
+      - name: "r30_p3detail_noaux_70"
+        description: "[2/3] widefuse@P4 + ZGSmallDetail@P3 + stock Detect -- P3-guard effect without aux head"
+      - name: "r30_p3detail_only_70"
+        description: "[3/3] stock P4 + ZGSmallDetail@P3 + stock Detect -- P3-guard effect alone (no widefuse)"
+
+  - script: run_round31_ablation.py
+    theme: "70% Ablation -- Round 31: WIDEFUSE-V2 ABLATION"
+    variants:
+      - name: "r31_widefuse_v2_arch_only_70"
+        description: "[1/2] Arch-only test: WideFuseV2 with DEFAULT TAL params"
+      - name: "r31_widefuse_v2_besttal_70"
+        description: "[2/2] Best-of-both: WideFuseV2 with BEST TAL params"
+
+  - script: run_round31_widefuse_v2.py
+    theme: "70% Ablation -- Round 31: WIDEFUSE-V2 (THE HYBRID BRANCH) + BEST TAL"
+    variants:
+      - name: "r31_widefuse_v2_besttal_70"
+        description: "[1/1] ZGLSKAWideFuseV2 arch + v5_topk15_beta3 TAL params"
+
+  - script: run_round32b_auxdual.py
+    theme: "70% Ablation -- Round 32B: DUAL-PATH AUX SUPERVISION (detail teacher)"
+    variants:
+      - name: "r32b_auxdual_arch_only_70"
+        description: "[1/3] Arch-only: WideFuseV2 + DetectAuxDual with DEFAULT TAL"
+      - name: "r32b_auxdual_besttal70_70"
+        description: "[2/3] Best-of-both: WideFuseV2 + DetectAuxDual + 70% best TAL (topk15/b3)"
+      - name: "r32b_auxdual_reviewtal_70"
+        description: "[3/3] Best-of-both: WideFuseV2 + DetectAuxDual + review TAL (topk13/a07/b4)"
+
+  - script: run_round33_auxdual_p3detail.py
+    theme: "70% Ablation -- Round 33: R32B + DETAIL-ENHANCED AUX P3"
+    variants:
+      - name: "r33_auxdual_p3d_arch_only_70"
+        description: "[1/3] Arch-only: R33 (AuxDual + P3 detail) with DEFAULT TAL"
+      - name: "r33_auxdual_p3d_besttal70_70"
+        description: "[2/3] R33 + 70% best TAL (topk15/b3)"
+      - name: "r33_auxdual_p3d_reviewtal_70"
+        description: "[3/3] R33 + review TAL (topk13/a07/b4)"
+
+  - script: run_round34_auxdual_p3main.py
+    theme: "70% Ablation -- Round 34: R32B + DETAIL-ENHANCED P3 ON THE *MAIN* HEAD"
+    variants:
+      - name: "r34_auxdual_p3main_arch_only_70"
+        description: "R34 (AuxDual + P3 detail on MAIN) with DEFAULT TAL — arch only"
+
+  - script: run_round34_auxdual_proj.py
+    theme: "70% Ablation -- Round 34: LEARNED AUX P3 PROJECTION"
+    variants:
+      - name: "r34_proj1x1_arch_only_70"
+        description: "[1/2] Conv 1x1 aux P3 + default TAL (highest confidence)"
+      - name: "r34_proj3x3_arch_only_70"
+        description: "[2/2] Conv 3x3 aux P3 + default TAL"
+
+  - script: run_round35_best4.py
+    theme: "70% Ablation -- Round 35 BEST-4: the strongest cells merged from both proposals."
+    variants:
+      - name: "r35_wfv2_p3_70"
+        description: "[1/4] WideFuseV2 @ P3 (context+detail) + WideFuseV2 @ P4  -- highest conf"
+      - name: "r35_p5context_70"
+        description: "[2/4] complete symmetric dual-path: + ZGLSKAWideFuse(context) @ P5"
+      - name: "r35_multiproto_70"
+        description: "[3/4] DetectMultiProto[nc,3] main head -- attack "
+      - name: "r35_r34_aux075_70"
+        description: "[4/4] exact r34, aux_weight 0.75 -- cheap control"
+
+  - script: run_round35_overnight.py
+    theme: "70% Ablation -- Round 35: FOUR OVERNIGHT ARCHS, all built on R34."
+    variants:
+      - name: "r35_p5context_70"
+        description: "D [1/4]. complete symmetric dual-path: + ZGLSKAWideFuse @ P5 (recover other med/large)"
+      - name: "r35_p3widefuse_70"
+        description: "A [2/4]. P3 enhancement = ZGLSKAWideFuse[256,7,15] (detail+strip; knife/long_gun small)"
+      - name: "r35_multiproto_70"
+        description: "C [3/4]. r34 neck + DetectMultiProto[nc,3] main head (attack "
+      - name: "r35_dysample_70"
+        description: "B [4/4]. r34 + DySample content-aware upsampling (UNTESTED module; last on purpose)"
+
+  - script: run_round35_overnight_arch_search.py
+    theme: "70% Ablation -- Round 35: OVERNIGHT ARCHITECTURE SEARCH (4 runs)"
+    variants:
+      - name: "r35_wfv2_p3_arch_only_70"
+        description: "[1/4] WideFuseV2@P3 (k7/k15) + WideFuseV2@P4 — 75% confidence"
+      - name: "r35_r34_p5detail_arch_only_70"
+        description: "[2/4] R34main + ZGSmallDetail@P5 (enhance all 3 scales) — 70% confidence"
+      - name: "r35_r34_aux075_arch_only_70"
+        description: "[3/4] R34main + aux_weight=0.75 — 65% confidence"
+      - name: "r35_r32b_aux075_arch_only_70"
+        description: "[4/4] R32B + aux_weight=0.75 (control) — 60% confidence"
+
+  - script: run_round36_best.py
+    theme: "70% Ablation -- Round 36 BEST: merged, de-duplicated, ordered by confidence."
+    variants:
+      - name: "r36_r32b_p5ctx_70"
+        description: "[1/4] R32B + P5 context (best-of-both; P3-raw vs P3-detail under P5)"
+      - name: "r36_p5ctx_seed1_70"
+        description: "[2/4] p5context SEED CHECK (seed 1) -- confirm 52.82 is real"
+      - name: "r36_p5big_70"
+        description: "[3/4] p5context, WIDER P5 context [1024,15,31] -- field sweep"
+      - name: "r36_dysample_p3_70"
+        description: "[4/4] p5context + DySample upsampling (UNTESTED module) -- last"
+
+  - script: run_round36_combo.py
+    theme: "70% Ablation -- Round 36: BEST COMBINATIONS (2 runs)"
+    variants:
+      - name: "r36_full_symmetric_arch_only_70"
+        description: "[1/2] Full symmetric: detail@P3 + widefuse@P4 + context@P5 — 80% confidence"
+      - name: "r36_r32b_p5ctx_arch_only_70"
+        description: "[2/2] R32B + P5 context only — 70% confidence"
+
+  - script: run_round36_p5context_refine.py
+    theme: "70% Ablation -- Round 36: refine the round-35 WINNER (p5context)."
+    variants:
+      - name: "r36_p5big_70"
+        description: "[1/2] p5context, WIDER P5 context ZGLSKAWideFuse[1024,15,31]"
+      - name: "r36_dysample_p3_70"
+        description: "[2/2] p5context + DySample upsampling (feeds P3 detail; UNTESTED module)"
+
+  - script: run_round37_overnight.py
+    theme: "70% Ablation -- Round 37: NEW STRUCTURAL AXES (4 overnight archs, arch-only)."
+    variants:
+      - name: "r37_selectfuse_p4_70"
+        description: "[1/4] P4 = SelectFuse (per-pixel adaptive RF) -- escape static-fuse limit"
+      - name: "r37_deepaux_70"
+        description: "[2/4] aux anchors BACKBONE [4,6,8] -- dual-path supervision into backbone"
+      - name: "r37_selectfuse_p3_70"
+        description: "[3/4] P3 = SelectFuse (adaptive) -- detail without context-smoothing"
+      - name: "r37_p4stack_70"
+        description: "[4/4] 2x WideFuseV2 @ P4 -- capacity test (lowest conf)"
+
+  - script: run_round38_paradigms.py
+    theme: "70% Ablation -- Round 38: FOUR DIFFERENT NECK PARADIGMS (arch-only, overnight)."
+    variants:
+      - name: "r38_bifpn_70"
+        description: "[1/4] AXIS A: WeightedConcat fusion (BiFPN-style; existing op)"
+      - name: "r38_dysample_70"
+        description: "[2/4] AXIS B: DySample content-aware upsampling (registered, untested)"
+      - name: "r38_globalctx_70"
+        description: "[3/4] AXIS C: ZGGlobalContext per level (NEW module; attacks "
+      - name: "r38_gather_70"
+        description: "[4/4] AXIS D: ZGGatherContext global cross-scale ctx -> P3 (NEW multi-input)"
+
+  - script: run_round39_combo.py
+    theme: "70% Ablation -- Round 39: stack the two round-38 winners (globalctx + dysample)."
+    variants:
+      - name: "r39_combo_70"
+        description: "globalctx + DySample (stack the two round-38 winners) -- pure arch, seed 0"
+
+  - script: run_round40_deep_p3.py
+    theme: "70% Ablation -- Round 40: DEEPER P3 HEAD TOWERS"
+    variants:
+      - name: "r40_deep_p3_globalctx_70"
+        description: "[1/3] DeepP3 + globalctx neck (best small-obj scoring) -- 80% confidence"
+      - name: "r40_deep_p3_p5ctx_70"
+        description: "[2/3] DeepP3 + p5context neck (best overall mAP50) -- 75% confidence"
+      - name: "r40_deep_p3_r32b_70"
+        description: "[3/3] DeepP3 + R32B neck (clean ablation) -- 70% confidence"
+
+  - script: run_round41_lastarch.py
+    theme: "70% Ablation -- Round 41: THE LAST ARCH TRY (avg+max global context)."
+    variants:
+      - name: "r41_globalctx2_70"
+        description: "70% Ablation -- Round 41: THE LAST ARCH TRY (avg+max global context)."
+
+  - script: run_round41_single_dysample.py
+    theme: "70% Ablation -- Round 41: SINGLE DySample (P3-feeding only)"
+    variants:
+      - name: "r41_singledy_globalctx_70"
+        description: "[1/2] Single DySample (P3 only) + globalctx neck -- 80% confidence"
+      - name: "r41_singledy_p5ctx_70"
+        description: "[2/2] Single DySample (P3 only) + p5context neck -- 70% confidence"
+
+  - script: run_round4_other_class.py
+    theme: "70% Ablation — Round 4: THE 'other' CLASS (the real bottleneck)."
+    variants:
+      - name: "r4_cls15_70"
+        description: "[1/4] cls loss weight 0.5 -> 1.5 on best TAL recipe"
+      - name: "r4_vfl_70"
+        description: "[2/4] VariFocal loss on best TAL recipe"
+      - name: "r4_long_cos_70"
+        description: "[3/4] 140 epochs + cosine LR on best TAL recipe"
+      - name: "r4_satal_70"
+        description: "[4/4] SATAL (size-adaptive assignment) on best TAL recipe"
+
+  - script: run_round5_cgc_head.py
+    theme: "70% Ablation — Round 5: HEAD ARCHITECTURE (DetectCGC)."
+    variants:
+      - name: "r5_cgc_70"
+        description: "[1/2] DetectCGC, default TAL — pure head-arch effect"
+      - name: "r5_zgp4_cgc_70"
+        description: "[2/2] ZGLSKA@P4 + DetectCGC, default TAL — arch combo"
+
+  - script: run_round6_lska_family.py
+    theme: "70% Ablation — Round 6: THE LSKA FAMILY (focused search of the one winner)."
+    variants:
+      - name: "r6_zgp4_k11_70"
+        description: "[1/2] gated LSKA @ P4, kernel 11 — more context"
+      - name: "r6_ska_p4_70"
+        description: "[2/2] C2fLSKA replacement @ P4 — replace-vs-gate ablation"
+      - name: "r6_zgp4_ms_70"
+        description: "stacked gated LSKA k5+k9 @ P4 — multi-scale"
+      - name: "r6_zgp4_p5_70"
+        description: "gated LSKA @ P4 + P5 — pure-LSKA pair"
+
+  - script: run_round7_context_family.py
+    theme: "70% Ablation — Round 7: CONTEXT FAMILY @ P4 (extending the proven winner)."
+    variants:
+      - name: "r7_k15_70"
+        description: "[1/4] gated LSKA @ P4, k=15 — dose-response completion"
+      - name: "r7_k11_gc4_70"
+        description: "[2/4] LSKA k11 + GC stacked @ P4 — local+global, same scale"
+      - name: "r7_strip23_70"
+        description: "[3/4] strip kernels 1x23+23x1 @ P4 — elongated-shape hypothesis"
+      - name: "r7_dcn_70"
+        description: "[4/4] gated deformable conv @ P4 — ADAPTIVE context (torchvision op, run last/separately)"
+
+  - script: run_round8_new_mechanisms.py
+    theme: "70% Ablation — Round 8: NEW MECHANISM FAMILIES @ P4 (non-SKA)."
+    variants:
+      - name: "r8_star_p4_70"
+        description: "[1/2] ZGStar: multiplicative feature mixing (StarNet) @ P4 — non-attention"
+      - name: "r8_dsconv_p4_70"
+        description: "[2/2] ZGDSConv: dynamic snake conv @ P4 — elongated-shape prior"
+
+  - script: run_round9_spatial_gate.py
+    theme: "70% Ablation — Round 9: SPATIAL GATING on top of the k11 dose-response winner."
+    variants:
+      - name: "r9_lskasg_p4_70"
+        description: "[1/1] ZGLSKASG: spatially-gated k11 LSKA @ P4 (per-pixel mask on the k11 winner)"
+
+  - script: run_zgp4_tal_combo.py
+    theme: "THE HEADLINE RUN — best architecture x best training recipe (never combined)."
+    variants:
+      - name: "zgp4k11_tal_70"
+        description: "THE HEADLINE RUN — best architecture x best training recipe (never combined)."

@@ -1,0 +1,179 @@
+# Architectures / experimental configs tried across the NewLuggage ablation scripts
+# Note: every run uses the SAME base network -> YOLOv12s (MODEL_WEIGHTS = "yolov12s.pt").
+# What varies between "archs" below is the loss function, box-regression metric, and
+# label-assignment (TAL/SATAL) mechanism — not the backbone. Each entry = one named RUN_CONFIG.
+
+base_model: yolov12s.pt
+loss_backends:
+  - losscustomoriginal.py
+  - loss_satal_swa_plus.py
+  - loss_satal_swa_plus_v2.py
+  - loss_satal_swa_plus_v3.py
+  - loss_v1updated.py
+  - loss_v2updated.py
+
+rounds:
+
+  r1_baseline_swa_clip_tal:            # run_newluggage_ablation.py
+    focus: Stock TAL baseline, SWA small-object boosting, gradient clipping, TAL tuning
+    configs:
+      - name: v6_default
+        desc: Baseline — all levers off, stock TAL (topk 10 / alpha 0.5 / beta 6.0)
+      - name: v6_swa_moderate
+        desc: Small-Weighted-Assignment 0.5->0.25 (min 0.2/max 0.8), boost 1.75 at 48px
+      - name: v6_swa_proven
+        desc: SWA 0.7->0.3 (min 0.2/max 0.8), boost 2.0 at 48px
+      - name: v6_swa_high
+        desc: SWA 0.9->0.4 (min 0.3/max 0.95), boost 2.0 at 48px — aggressive small-obj push
+      - name: v6_clip_loose
+        desc: Gradient clip loose — iou 40->30, dfl 50->40
+      - name: v6_clip_medium
+        desc: Gradient clip medium — iou 30->20, dfl 40->30
+      - name: v6_clip_tight
+        desc: Gradient clip tight — iou 20->10, dfl 10->5
+      - name: v6_tal_best
+        desc: TAL 13/0.7/4.0 — prior ablation winner assignment
+      - name: v6_tal_beta
+        desc: TAL 13/0.5/4.0 — beta isolation with stock alpha
+      - name: v6_tal_probe
+        desc: TAL 15/0.7/3.0 — aggressive overshoot probe
+
+  r2_swa_boost_tal_direction:          # run_newluggage_ablationv2.py
+    focus: SWA boost strength/placement + strict TAL directions
+    configs:
+      - name: r2_swa_boost25
+        desc: SWA 0.5->0.25, boost 2.5 at 48px — boost-strength sweep
+      - name: r2_swa_const06
+        desc: SWA constant 0.6 (no decay, min 0.6/max 0.8), boost 1.75 at 48px
+      - name: r2_swa_px32
+        desc: SWA 0.5->0.25, boost 2.0 at 32px — concentrated (smaller) boost band
+      - name: r2_tal_strict
+        desc: TAL 8/0.5/8.0 — strict assignment direction
+      - name: r2_tal_beta7
+        desc: TAL 10/0.5/7.0 — beta-only strictening
+      - name: r2_swahigh_clip
+        desc: SWA 0.9->0.4 boost 2.0 at 48px + loose gradient clips (40->30 / 50->40)
+
+  r3_satal_revival:                    # run_newluggage_ablationv3.py
+    focus: Size-Aware TAL (SATAL) assignment, alone and combined with SWA
+    configs:
+      - name: r3_satal_r3
+        desc: SATAL R3 revival — base 12/0.6/5.0, alpha_s 1.2/beta_s 5.0, factor 1.5, thresh 0.0025/0.0225
+      - name: r3_satal_r4
+        desc: SATAL R4 balanced — alpha_s 1.3/beta_s 5.0, factor 1.5, thresh 0.0035/0.0225
+      - name: r3_satal_r3_swa
+        desc: SATAL R3 + SWA const 0.6 boost 1.75 at 48px — combined candidate
+      - name: r3_swa_anchor
+        desc: SWA const 0.6 boost 1.75 at 48px, stock TAL, SATAL off — cross-file anchor
+
+  r4_box_regression_metrics:           # run_newluggage_ablationv4.py
+    focus: Alternative IoU/box-regression losses on SATAL and SWA bases
+    configs:
+      - name: r4_satal_mpdiou
+        desc: SATAL R3 assignment + MPDIoU — recall plus tight boxes
+      - name: r4_mpdiou
+        desc: SWA const06 + MPDIoU box loss — tight localization
+      - name: r4_satal_wiou
+        desc: SATAL R3 assignment + Wise-IoU v3
+      - name: r4_nwd_small
+        desc: SWA const06 + Normalized Wasserstein Distance (small-only, C=4.0) on CIoU base
+      - name: r4_wiou
+        desc: SWA const06 + Wise-IoU v3 (1.9/3.0, momentum 0.02)
+      - name: r4_focaler
+        desc: SWA const06 + Focaler-CIoU (d0.0/u0.95)
+      - name: r4_swa_smooth
+        desc: SWA const06 continuous boost (stride-fixed, power 0.5)
+      - name: r4_baseline_clean
+        desc: SWA const06, CIoU, class-weighting off — clean reference
+
+  r5_metric_retune:                    # run_newluggage_ablationv5.py
+    focus: WIoU/MPDIoU/NWD retuning against the mAP50-95 base
+    configs:
+      - name: r5_wiou_default
+        desc: WIoU on SWA-off default — best shot to beat mAP50-95 0.5684
+      - name: r5_mpdiou_default
+        desc: MPDIoU on SWA-off default — tight localization on the mAP50-95 base
+      - name: r5_wiou_swa
+        desc: WIoU on SWA-const06 — confirm R4 precision record (0.8337)
+      - name: r5_satal13_mpdiou
+        desc: SATAL topk 1.3 (softened) + MPDIoU — recall with smaller hit
+      - name: r5_nwd_c2
+        desc: NWD small-only C=2.0 — retune down (C=4 hurt small objects)
+      - name: r5_nwd_c6
+        desc: NWD small-only C=6.0 — bracket the other side
+      - name: r5_anchor_default
+        desc: SWA-off CIoU stock — reproducibility anchor (~82.54 / 56.84)
+
+  r7_term_stacking:                    # run_newluggage_ablationv6.py
+    focus: Stacking WIoU with center loss, repulsion loss, and bag weighting
+    configs:
+      - name: r7_stack
+        desc: WIoU + center loss + repulsion on const06 — stack the winners
+      - name: r7_wiou_rep
+        desc: WIoU + repulsion only — isolate the new term vs r4_wiou
+      - name: r7_stack_bag
+        desc: Stack + aggressive bag weighting (linear) — max bag pressure
+      - name: r7_wiou_center
+        desc: WIoU + center loss (const06) — isolate center-loss effect
+
+  r8_lever_isolation:                  # run_newluggage_ablationv8v1.py
+    focus: Isolating individual v3 levers + fixed center loss + seed noise floor
+    configs:
+      - name: r8_anchor
+        desc: const06 CIoU, all v3 levers off — cross-file anchor (~83.19 / 56.61)
+      - name: r8_swa_wiou
+        desc: const06 + WIoU — the missing combo of both proven winners
+      - name: r8_cls_swa
+        desc: const06 + [K] small-object cls boost 1.75 at 48px — ranking gap
+      - name: r8_area_sqrt
+        desc: const06 + [A2] sqrt area weighting — spread emphasis small+medium
+      - name: r8_bag_penalty
+        desc: const06 + [L] bag negative-term penalty w=2.0 — bag precision
+      - name: r8_artal
+        desc: const06 + [M] aspect-ratio-aware TAL (2.0/2.0/2.0) — tall-narrow assignment
+      - name: r8_boost_bag
+        desc: const06 + [A2] per-class boost bag 2.5 / others 1.75
+      - name: r8_center_crowd
+        desc: const06 + WIoU + [B2] fixed center loss (crowd) — r7 post-mortem
+      - name: r8_anchor_s1
+        desc: Anchor, seed 1 — noise floor
+      - name: r8_anchor_s2
+        desc: Anchor, seed 2 — noise floor
+
+  r10_gradient_shaping_v1:             # run_newluggage_ablation10_v1updated.py
+    focus: Gradient-reshaping IoU variants, pixel/DFL aux losses, adaptive NWD
+    configs:
+      - name: r10_anchor
+        desc: Fresh anchor — all NEW-10..14 levers inert
+      - name: r10_alpha_iou
+        desc: alpha-IoU 3.0 — power-IoU, high-IoU gradient focus
+      - name: r10_l1_smooth
+        desc: Smooth-L1 pixel aux 0.05 (small) — sub-pixel signal
+      - name: r10_dfl_entropy
+        desc: DFL entropy sharpen 0.05 (small) — crisper edges
+      - name: r10_nwd_fixedc
+        desc: Adaptive NWD 0.3 + size-adaptive C — corrected NWD
+      - name: r10_tightness
+        desc: Asymmetric tightness 0.5 (small) — anti-spillover
+      - name: r10_combo
+        desc: alpha-IoU 2.0 + L1 0.05 + DFL-ent 0.03 — orthogonal combination
+
+  r10_gradient_shaping_v2:             # run_newluggage_ablation10_v2updated.py
+    focus: Focal-IoU / Wise-IoU gradient gain + box jitter, and their compositions
+    configs:
+      - name: r10_anchor
+        desc: Fresh anchor — all NEW paths inert
+      - name: r10_focal_iou
+        desc: Focal-IoU gamma=1.0 — amplify high-IoU gradients (phase G)
+      - name: r10_focal_iou_lo
+        desc: Focal-IoU gamma=0.5 — conservative variant (phase G)
+      - name: r10_wise_iou
+        desc: Wise-IoU — outlier-aware gradient gain (phase H)
+      - name: r10_jitter
+        desc: Box jitter 3% annealed — regression label smoothing (phase I)
+      - name: r10_focal_wise
+        desc: Focal-IoU 1.0 + Wise-IoU — shape + outlier awareness (phase G+H)
+      - name: r10_focal_jitter
+        desc: Focal-IoU 1.0 + jitter 3% — shape + target regularization (phase G+I)
+      - name: r10_all3
+        desc: Focal-IoU + Wise-IoU + jitter — full composition (phase GHI)

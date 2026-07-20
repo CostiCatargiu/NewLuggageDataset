@@ -116,6 +116,105 @@ from .metrics import bbox_iou, probiou
 from .tal import bbox2dist
 
 
+# =============================================================================
+# ROUND 11 — geometry + assignment (change WHAT is optimized, not the weight)
+# =============================================================================
+def _bbox_eiou_loss(pred, target, eps=1e-7):
+    """[R11] Efficient-IoU loss (Zhang et al. 2022). xyxy, both (n,4) -> (n,1).
+    Replaces CIoU's degenerate aspect-ratio v-term with DIRECT width/height
+    penalties -> clean gradient on w,h (the dimension small/tall boxes get
+    wrong). loss = 1 - IoU + rho_center^2/c^2 + (w-wg)^2/cw^2 + (h-hg)^2/ch^2."""
+    px1, py1, px2, py2 = pred[:, 0], pred[:, 1], pred[:, 2], pred[:, 3]
+    tx1, ty1, tx2, ty2 = target[:, 0], target[:, 1], target[:, 2], target[:, 3]
+    pw = (px2 - px1).clamp(min=0); ph = (py2 - py1).clamp(min=0)
+    tw = (tx2 - tx1).clamp(min=0); th = (ty2 - ty1).clamp(min=0)
+    inter = (torch.min(px2, tx2) - torch.max(px1, tx1)).clamp(min=0) * \
+            (torch.min(py2, ty2) - torch.max(py1, ty1)).clamp(min=0)
+    union = pw * ph + tw * th - inter + eps
+    iou = inter / union
+    pcx = (px1 + px2) / 2; pcy = (py1 + py2) / 2
+    tcx = (tx1 + tx2) / 2; tcy = (ty1 + ty2) / 2
+    cw = torch.max(px2, tx2) - torch.min(px1, tx1)
+    ch = torch.max(py2, ty2) - torch.min(py1, ty1)
+    c2 = cw ** 2 + ch ** 2 + eps
+    rho2 = (pcx - tcx) ** 2 + (pcy - tcy) ** 2
+    rw = (pw - tw) ** 2 / (cw ** 2 + eps)
+    rh = (ph - th) ** 2 / (ch ** 2 + eps)
+    loss = 1.0 - iou + rho2 / c2 + rw + rh
+    return loss.unsqueeze(-1)
+
+
+def _bbox_siou_loss(pred, target, eps=1e-7):
+    """[R11] SCYLLA-IoU loss (Gevorgyan 2022). xyxy, both (n,4) -> (n,1).
+    Adds an ANGLE cost that first aligns the prediction along the shorter
+    center-offset axis, then applies distance + shape costs. Well-suited to
+    tall/narrow objects. loss = 1 - IoU + (Delta + Omega)/2."""
+    px1, py1, px2, py2 = pred[:, 0], pred[:, 1], pred[:, 2], pred[:, 3]
+    tx1, ty1, tx2, ty2 = target[:, 0], target[:, 1], target[:, 2], target[:, 3]
+    pw = (px2 - px1).clamp(min=0); ph = (py2 - py1).clamp(min=0)
+    tw = (tx2 - tx1).clamp(min=0); th = (ty2 - ty1).clamp(min=0)
+    inter = (torch.min(px2, tx2) - torch.max(px1, tx1)).clamp(min=0) * \
+            (torch.min(py2, ty2) - torch.max(py1, ty1)).clamp(min=0)
+    union = pw * ph + tw * th - inter + eps
+    iou = inter / union
+    pcx = (px1 + px2) / 2; pcy = (py1 + py2) / 2
+    tcx = (tx1 + tx2) / 2; tcy = (ty1 + ty2) / 2
+    cw = torch.max(px2, tx2) - torch.min(px1, tx1)
+    ch = torch.max(py2, ty2) - torch.min(py1, ty1)
+    sigma = ((tcx - pcx) ** 2 + (tcy - pcy) ** 2).clamp(min=eps).sqrt()
+    sin_a = (torch.abs(tcy - pcy) / sigma).clamp(-1.0, 1.0)
+    angle = torch.arcsin(sin_a)
+    lam = 1.0 - 2.0 * torch.sin(angle - math.pi / 4) ** 2       # angle cost
+    gamma = 2.0 - lam
+    rho_x = ((tcx - pcx) / (cw + eps)) ** 2
+    rho_y = ((tcy - pcy) / (ch + eps)) ** 2
+    delta = (1.0 - torch.exp(-gamma * rho_x)) + (1.0 - torch.exp(-gamma * rho_y))
+    ww = torch.abs(pw - tw) / torch.max(pw, tw).clamp(min=eps)
+    wh = torch.abs(ph - th) / torch.max(ph, th).clamp(min=eps)
+    omega = (1.0 - torch.exp(-ww)) ** 4 + (1.0 - torch.exp(-wh)) ** 4
+    loss = 1.0 - iou + (delta + omega) / 2.0
+    return loss.unsqueeze(-1)
+
+
+class NWDTaskAlignedAssigner(TaskAlignedAssigner):
+    """[R11] Scale-aware Task-Aligned assignment.
+
+    Standard TAL ranks anchors for each GT by IoU^beta, which is cliff-like for
+    tiny/tall boxes -> small GTs get poorly-aligned anchors (bad supervision
+    BEFORE any loss weighting). This blends NWD into the alignment overlap,
+    size-gated: tiny GTs lean on NWD, large GTs stay pure IoU.
+
+    Requires an ultralytics version that exposes iou_calculation() (8.1+). If
+    the method is never called (older API), assignment == stock (safe no-op);
+    the loss config banner prints whether the hook is present.
+    """
+
+    def set_nwd(self, c=8.0, area_ref=2304.0, ratio=1.0):
+        self.nwd_c = float(c)
+        self.nwd_area_ref = float(area_ref)   # px^2; 2304 = 48px box
+        self.nwd_ratio = float(ratio)
+        return self
+
+    def iou_calculation(self, gt_bboxes, pd_bboxes):
+        iou = bbox_iou(gt_bboxes, pd_bboxes, xywh=False, CIoU=True).squeeze(-1).clamp_(min=0)
+        c = getattr(self, "nwd_c", 8.0)
+        area_ref = getattr(self, "nwd_area_ref", 2304.0)
+        ratio = getattr(self, "nwd_ratio", 1.0)
+        gcx = (gt_bboxes[..., 0] + gt_bboxes[..., 2]) / 2
+        gcy = (gt_bboxes[..., 1] + gt_bboxes[..., 3]) / 2
+        pcx = (pd_bboxes[..., 0] + pd_bboxes[..., 2]) / 2
+        pcy = (pd_bboxes[..., 1] + pd_bboxes[..., 3]) / 2
+        gw = (gt_bboxes[..., 2] - gt_bboxes[..., 0]).clamp(min=0)
+        gh = (gt_bboxes[..., 3] - gt_bboxes[..., 1]).clamp(min=0)
+        pw = (pd_bboxes[..., 2] - pd_bboxes[..., 0]).clamp(min=0)
+        ph = (pd_bboxes[..., 3] - pd_bboxes[..., 1]).clamp(min=0)
+        w2 = (pcx - gcx) ** 2 + (pcy - gcy) ** 2 + ((pw - gw) / 2) ** 2 + ((ph - gh) / 2) ** 2
+        nwd = torch.exp(-w2.clamp(min=1e-7).sqrt() / c)
+        smallness = ((area_ref - gw * gh) / area_ref).clamp(0.0, 1.0)
+        blend = (1.0 - ratio * smallness) * iou + ratio * smallness * nwd
+        return blend.clamp_(min=0)
+
+
 class VarifocalLoss(nn.Module):
     """Varifocal loss by Zhang et al."""
 
@@ -306,6 +405,17 @@ class BboxLoss(nn.Module):
         self.tightness_gamma = 0.0
         self.tightness_small_only = 1
 
+        # =====================================================================
+        # ROUND 11 — geometry + target
+        # =====================================================================
+        # [NEW-15] base box regression metric: 'ciou' (default) | 'eiou' | 'siou'
+        self.box_metric = 'ciou'
+        # [NEW-16] scale-normalized residual aux: |pred-gt|/gt_dim, so small
+        #   boxes get proportionally larger gradient (scale-invariant, unlike
+        #   the absolute Smooth-L1). 0 = off.
+        self.rel_l1_weight = 0.0
+        self.rel_l1_small_only = 1
+
         # Section C: Adaptive clipping defaults
         self.iou_clip_start = 20.0
         self.iou_clip_end = 10.0
@@ -363,6 +473,11 @@ class BboxLoss(nn.Module):
         self.nwd_c_k = float(getattr(hyp, 'nwd_c_k', self.nwd_c_k))
         self.tightness_gamma = float(getattr(hyp, 'tightness_gamma', self.tightness_gamma))
         self.tightness_small_only = int(getattr(hyp, 'tightness_small_only', self.tightness_small_only))
+
+        # [NEW-15/16] R11 geometry + relative residual
+        self.box_metric = str(getattr(hyp, 'box_metric', self.box_metric)).lower()
+        self.rel_l1_weight = float(getattr(hyp, 'rel_l1_weight', self.rel_l1_weight))
+        self.rel_l1_small_only = int(getattr(hyp, 'rel_l1_small_only', self.rel_l1_small_only))
 
         # Section C: Adaptive clipping
         self.iou_clip_start = getattr(hyp, 'iou_clip_start', self.iou_clip_start)
@@ -492,14 +607,24 @@ class BboxLoss(nn.Module):
         # IoU loss per sample
         pred_fg = pred_bboxes[fg_mask]
         targ_fg = target_bboxes[fg_mask]
+        # `iou` (CIoU value) is always computed: it feeds the downstream quality
+        # gates (IARW, IoU-gated DFL). The regression loss shape is selected by
+        # box_metric so gates and target stay decoupled.
         iou = bbox_iou(pred_fg, targ_fg, xywh=False, CIoU=True)
-        loss_reg = 1.0 - iou  # (n_fg, 1)
+        # [NEW-15] base regression metric
+        if self.box_metric == 'eiou':
+            loss_reg = _bbox_eiou_loss(pred_fg, targ_fg)      # (n_fg, 1)
+        elif self.box_metric == 'siou':
+            loss_reg = _bbox_siou_loss(pred_fg, targ_fg)      # (n_fg, 1)
+        else:
+            loss_reg = 1.0 - iou  # (n_fg, 1)  stock CIoU
 
         # [NEW-10] alpha-IoU (power-IoU): power ONLY the overlap term, keep the
         # CIoU distance+aspect penalty intact. Concentrates gradient at high
         # IoU -> directly targets strict-threshold (AP75/AP90) localization.
+        # Only applies to the CIoU path (EIoU/SIoU define their own shape).
         # Off-switch: alpha_iou == 1.0 -> loss_reg unchanged.
-        if self.alpha_iou != 1.0:
+        if self.alpha_iou != 1.0 and self.box_metric == 'ciou':
             raw_iou = bbox_iou(pred_fg, targ_fg, xywh=False).clamp(1e-7, 1.0)  # plain IoU
             ciou_penalty = (raw_iou - iou).clamp(min=0.0)  # distance+aspect part of CIoU
             loss_reg = (1.0 - raw_iou.pow(self.alpha_iou)) + ciou_penalty
@@ -595,6 +720,21 @@ class BboxLoss(nn.Module):
             if self.l1_aux_small_only and small_mask is not None:
                 l1 = l1 * small_mask.unsqueeze(-1)
             loss_iou = loss_iou + self.l1_aux_weight * (l1 * weight).sum() / target_scores_sum
+
+        # [NEW-16] Scale-normalized residual: |pred-gt| / gt_dimension per edge.
+        # Unlike the absolute Smooth-L1, error is relative to object size, so a
+        # 3px slip on a 26px box weighs far more than on a 300px box -> small
+        # objects get proportionally larger gradient (scale-invariant).
+        if self.rel_l1_weight > 0.0:
+            pf_px = pred_fg * stride_fg if stride_fg is not None else pred_fg
+            tf_px = targ_fg * stride_fg if stride_fg is not None else targ_fg
+            tw = (tf_px[:, 2] - tf_px[:, 0]).clamp(min=1.0)
+            th = (tf_px[:, 3] - tf_px[:, 1]).clamp(min=1.0)
+            dim = torch.stack([tw, th, tw, th], dim=-1)          # (n_fg, 4)
+            rel = ((pf_px - tf_px).abs() / dim).mean(dim=1, keepdim=True)  # (n_fg, 1)
+            if self.rel_l1_small_only and small_mask is not None:
+                rel = rel * small_mask.unsqueeze(-1)
+            loss_iou = loss_iou + self.rel_l1_weight * (rel * weight).sum() / target_scores_sum
 
         # [NEW-14] Asymmetric tightness penalty: charge the sides where the
         # prediction SPILLS OVER the GT (loose boxes overshoot), normalized by
@@ -824,6 +964,9 @@ class v8DetectionLoss:
         self.dfl_entropy_weight = float(getattr(h, 'dfl_entropy_weight', 0.0))
         self.nwd_c_adaptive = int(getattr(h, 'nwd_c_adaptive', 0))
         self.tightness_gamma = float(getattr(h, 'tightness_gamma', 0.0))
+        # Round-11 geometry + target (banner only; used in BboxLoss)
+        self.box_metric = str(getattr(h, 'box_metric', 'ciou')).lower()
+        self.rel_l1_weight = float(getattr(h, 'rel_l1_weight', 0.0))
 
         # Section B: Center loss
         self.center_loss_weight_init = getattr(h, 'center_loss_weight_init', 0.0)
@@ -841,6 +984,12 @@ class v8DetectionLoss:
         self.tal_alpha = getattr(h, 'tal_alpha', 0.5)
         self.tal_beta = getattr(h, 'tal_beta', 6.0)
 
+        # Section D': [NEW-17] scale-aware NWD assignment
+        self.tal_nwd = int(getattr(h, 'tal_nwd', 0))
+        self.tal_nwd_c = float(getattr(h, 'tal_nwd_c', 8.0))
+        self.tal_nwd_area = float(getattr(h, 'tal_nwd_area', 2304.0))
+        self.tal_nwd_ratio = float(getattr(h, 'tal_nwd_ratio', 1.0))
+
         # Section E: Classification  [NEW-4]
         self.cls_loss = str(getattr(h, 'cls_loss', 'bce')).lower()
         self.vfl_alpha = float(getattr(h, 'vfl_alpha', 0.75))
@@ -857,12 +1006,28 @@ class v8DetectionLoss:
         self.bbox_loss.set_params(h)
 
         # Task Aligned Assigner with configurable parameters
-        self.assigner = TaskAlignedAssigner(
-            topk=self.tal_topk,
-            num_classes=self.nc,
-            alpha=self.tal_alpha,
-            beta=self.tal_beta
-        )
+        # [NEW-17] optionally scale-aware (NWD-blended) assignment for small GTs.
+        if self.tal_nwd:
+            self.assigner = NWDTaskAlignedAssigner(
+                topk=self.tal_topk,
+                num_classes=self.nc,
+                alpha=self.tal_alpha,
+                beta=self.tal_beta,
+            ).set_nwd(self.tal_nwd_c, self.tal_nwd_area, self.tal_nwd_ratio)
+            # iou_calculation() is the hook we override; warn if this ultralytics
+            # version doesn't call it (then assignment would silently be stock).
+            if type(self.assigner).iou_calculation is TaskAlignedAssigner.__dict__.get('iou_calculation', None):
+                pass  # our override is in place
+            if not hasattr(TaskAlignedAssigner, 'iou_calculation'):
+                print("  [WARN] TaskAlignedAssigner has no iou_calculation hook; "
+                      "tal_nwd will be INERT on this ultralytics version.")
+        else:
+            self.assigner = TaskAlignedAssigner(
+                topk=self.tal_topk,
+                num_classes=self.nc,
+                alpha=self.tal_alpha,
+                beta=self.tal_beta
+            )
 
         # Projection for DFL
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
@@ -896,6 +1061,10 @@ class v8DetectionLoss:
             print(f"  [R10] dfl_entropy:   {self.dfl_entropy_weight}  (NEW-12, 0=off)")
             print(f"  [R10] nwd_c_adaptive:{self.nwd_c_adaptive}  (NEW-13)")
             print(f"  [R10] tightness_gamma:{self.tightness_gamma}  (NEW-14, 0=off)")
+            print(f"  [R11] box_metric:    {self.box_metric}  (NEW-15: ciou|eiou|siou)")
+            print(f"  [R11] rel_l1_weight: {self.rel_l1_weight}  (NEW-16, 0=off)")
+            print(f"  [R11] tal_nwd:       {self.tal_nwd}  (NEW-17, 0=off"
+                  f"{'' if not self.tal_nwd else f', c={self.tal_nwd_c} area={self.tal_nwd_area} r={self.tal_nwd_ratio}'})")
             print(f"  [B] center_loss_init:  {self.center_loss_weight_init}  (applied AFTER box gain, NEW-8)")
             print(f"  [B] center_loss_min:   {self.center_loss_weight_min}")
             print(f"  [B] center_loss_decay: {self.center_loss_decay_epochs} epochs")

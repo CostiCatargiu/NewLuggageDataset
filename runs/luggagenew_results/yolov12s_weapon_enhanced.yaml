@@ -1,0 +1,97 @@
+# =============================================================================
+# Enhanced YOLOv12s — Weapon Detection (proposed model)
+# Paper: "Real-Time Weapon Detection Using Enhanced YOLOv12 Models and a
+#         Custom Dataset" — Catargiu & Ciocoiu, IEEE Access.
+#
+# This is the "Custom architecture (B1-B5)" model of the manuscript: the stock
+# YOLOv12s backbone + neck are left UNCHANGED, and a set of lightweight,
+# append-only, zero-gated enhancement modules is attached to the detection head.
+# Every added module is initialised as an exact identity (zero-gate), so at the
+# start of training the network reproduces the baseline exactly; the pretrained
+# detection weights transfer after a one-time remap of the detect-head index,
+# and each gate opens only where the added branch lowers the training loss.
+#
+# The loss-side contributions (A1-A4: size-aware curriculum weighting, tight
+# IoU/DFL clipping, TAL tuning) are training-time only and do not change this
+# graph. Baseline = stock YOLOv12s (this file with layers 21-27 removed and a
+# plain Detect on [14, 17, 20]).
+#
+# Classes (nc: 4): 0 knife, 1 pistol, 2 long_gun, 3 no_weapon
+# =============================================================================
+
+nc: 4
+names:
+  0: knife
+  1: pistol
+  2: long_gun
+  3: no_weapon
+
+scales:
+  # [depth, width, max_channels]
+  s: [0.50, 0.50, 1024]
+
+# ---------------------------------------------------------------------------
+# Backbone — identical to the stock YOLOv12s baseline (unchanged)
+# ---------------------------------------------------------------------------
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]              # 0  P1/2
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]       # 1  P2/4
+  - [-1, 2, C3k2,  [256, False, 0.25]]      # 2
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]       # 3  P3/8
+  - [-1, 2, C3k2,  [512, False, 0.25]]      # 4  backbone P3
+  - [-1, 1, Conv,  [512, 3, 2]]             # 5  P4/16
+  - [-1, 4, A2C2f, [512, True, 4]]          # 6  backbone P4
+  - [-1, 1, Conv,  [1024, 3, 2]]            # 7  P5/32
+  - [-1, 4, A2C2f, [1024, True, 1]]         # 8  backbone P5
+
+# ---------------------------------------------------------------------------
+# Head
+# ---------------------------------------------------------------------------
+head:
+  # --- Baseline PAN-FPN neck (unchanged; standard nearest-neighbour upsample) ---
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]        # 14  P3 neck  (raw features; aux anchor)
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]        # 17  P4 neck  (raw features; aux anchor)
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]             # 20  P5 neck  (raw features; aux anchor)
+
+  # --- B2: Scale-specific feature enhancement (append-only, zero-gated) --------
+  # P4 (stride 16): square 11x11 LKA + hybrid 23-tap strip attention + 3x5
+  #                 small-kernel detail, expand-then-fuse (ZGLSKAWideFuseV2).
+  - [17, 1, ZGLSKAWideFuseV2, [512, 11, 23, 3, 5]]   # 21  P4 enhanced
+  # P3 (stride 8):  parallel depth-wise 3x3 + 5x5, summed, GN, gated residual;
+  #                 reinforces fine high-frequency detail for small weapons.
+  - [14, 1, ZGSmallDetail, [256, 3, 5]]              # 22  P3 enhanced
+  # P5 (stride 32): fuse square 11x11 + 23-tap strip large-kernel paths for
+  #                 broad spatial context (ZGLSKAWideFuse).
+  - [20, 1, ZGLSKAWideFuse, [1024, 11, 23]]          # 23  P5 enhanced
+
+  # --- B3: Global-context recalibration (ZGGlobalContext, zero-gated) ----------
+  # Global avg-pool -> 2-layer channel bottleneck (reduction 8, SiLU) ->
+  # zero-initialised additive broadcast. Separates the no_weapon class from
+  # genuine weapons using an image-wide signal.
+  - [22, 1, ZGGlobalContext, [256]]                  # 24  P3 + global context
+  - [21, 1, ZGGlobalContext, [512]]                  # 25  P4 + global context
+  - [23, 1, ZGGlobalContext, [1024]]                 # 26  P5 + global context
+
+  # --- B4: Dual-head auxiliary supervision (DetectAuxDual, aux_weight = 0.5) ----
+  # Main head : context-enhanced maps [24, 25, 26]  (B2-B3 outputs).
+  # Aux  head : raw pre-enhancement neck maps [14, 17, 20]  (training only,
+  #             dropped at inference -> no added latency).
+  - [[24, 25, 26, 14, 17, 20], 1, DetectAuxDual, [nc, 0.5]]   # 27
+
+# -----------------------------------------------------------------------------
+# B5: module hyperparameters (fixed by ablation, not hand-tuned)
+#   - square large-kernel size k = 11        (swept over {7, 11, 15})
+#   - strip kernel               = 23-tap    (elongated knives / long guns)
+#   - small-detail kernels       = 3x3 + 5x5
+#   - ZGGlobalContext reduction  = 8
+#   - DetectAuxDual aux_weight   = 0.5        (auxiliary head, train-time only)
+# -----------------------------------------------------------------------------
