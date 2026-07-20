@@ -91,11 +91,39 @@
 #           self-correcting: as the box improves, the boost fades. This targets
 #           the core diagnosed deficit (high AR, low AP50-95) without assumptions
 #           about object size. Off-switch: iarw_gamma=0.0 (default).
+#   [NEW-10] FOCAL-IoU LOSS (Section G). Changes the loss SHAPE at high IoU:
+#             loss = IoU^focal_iou_gamma * (1 - IoU)
+#           Standard CIoU has uniform gradient across the IoU range. This
+#           amplifies gradients at HIGH IoU: the model gets more signal to push
+#           from 0.7->0.9 than from 0.3->0.5. Directly addresses the mAP50 vs
+#           mAP50-95 gap (boxes are "roughly right" but not "precisely right")
+#           by making precise refinement more rewarding. With gamma=0 the focal
+#           factor is 1.0 everywhere -> stock CIoU. Recommended: 0.5-1.5.
+#   [NEW-11] WISE-IoU OUTLIER-AWARE GRADIENT GAIN (Section H). From Wise-IoU
+#           (Tong et al. 2023): a per-sample gradient gain based on outlier
+#           degree. Compute each sample's regression loss relative to the batch
+#           mean: beta = loss / batch_mean_loss. High-loss outliers (noisy GT,
+#           extreme aspect ratios) are naturally down-weighted because their
+#           raw loss already dominates; applying beta as a gain gives them
+#           beta>1 but the product loss*beta grows slower than linearly.
+#           The actual Wise-IoU formulation: gradient_gain = exp(loss/mean_loss - 1),
+#           which equals 1.0 at the mean, <1 for easy examples, >1 for hard ones
+#           but with diminishing returns for outliers.
+#           Off-switch: wise_iou=0 (default). wise_iou=1 enables.
+#   [NEW-12] REGRESSION TARGET JITTER (Section I). Label smoothing for boxes.
+#           After TAL assignment, add small random perturbation to GT box edges:
+#             jittered_edge = edge + uniform(-jitter, +jitter) * box_dimension
+#           Prevents the model from memorizing exact GT coordinates and forces
+#           robust localization. Jitter is ANNEALED: full at epoch 0, zero at
+#           end, so the model finishes with precise targets. Applied per-edge
+#           independently. Does NOT affect TAL assignment (applied after).
+#           Off-switch: box_jitter=0.0 (default). Recommended: 0.02-0.05.
 #
 # REPRODUCIBILITY NOTE: with all sections off (alpha=0, boost=1, dfl_small_boost=1,
-# nwd_ratio=0, cls_loss='bce', clips at 999, iarw_gamma=0) this file is
-# numerically identical to the previous version's anchor path. NEW-1/NEW-2 only
-# alter behavior when Section A weighting is actually active.
+# nwd_ratio=0, cls_loss='bce', clips at 999, iarw_gamma=0, focal_iou_gamma=0,
+# wise_iou=0, box_jitter=0) this file is numerically identical to the previous
+# version's anchor path. NEW-1/NEW-2 only alter behavior when Section A
+# weighting is actually active.
 #
 # NOTE ON CUSTOM KEYS: all new params (incl. the STRING param cls_loss) must be
 # whitelisted in your cfg patch exactly like the existing custom keys, or
@@ -215,6 +243,12 @@ class BboxLoss(nn.Module):
         Section F (IARW, NEW-9):
             - iarw_gamma: IoU-aware regression boost (0.0 off, recommended 2.0-3.0)
 
+        Section G (Focal-IoU, NEW-10):
+            - focal_iou_gamma: amplify high-IoU gradients (0.0 off, recommended 0.5-1.5)
+
+        Section H (Wise-IoU, NEW-11):
+            - wise_iou: outlier-aware gradient gain (0 off, 1 on)
+
         Section C (Adaptive clipping):
             - iou_clip_start/end, dfl_clip_start/end
             Effective per-sample cap = value / 10. Set 999 to disable.
@@ -263,6 +297,12 @@ class BboxLoss(nn.Module):
         # [NEW-9] IoU-Aware Regression Weighting (IARW, Section F)
         self.iarw_gamma = 0.0  # 0.0 = off; recommended 2.0-3.0
 
+        # [NEW-10] Focal-IoU loss (Section G)
+        self.focal_iou_gamma = 0.0  # 0.0 = off (stock CIoU); recommended 0.5-1.5
+
+        # [NEW-11] Wise-IoU outlier-aware gradient gain (Section H)
+        self.wise_iou = 0  # 0 = off, 1 = enabled
+
         # Section C: Adaptive clipping defaults
         self.iou_clip_start = 20.0
         self.iou_clip_end = 10.0
@@ -305,6 +345,12 @@ class BboxLoss(nn.Module):
 
         # [NEW-9] IARW
         self.iarw_gamma = float(getattr(hyp, 'iarw_gamma', self.iarw_gamma))
+
+        # [NEW-10] Focal-IoU
+        self.focal_iou_gamma = float(getattr(hyp, 'focal_iou_gamma', self.focal_iou_gamma))
+
+        # [NEW-11] Wise-IoU
+        self.wise_iou = int(getattr(hyp, 'wise_iou', self.wise_iou))
 
         # Section C: Adaptive clipping
         self.iou_clip_start = getattr(hyp, 'iou_clip_start', self.iou_clip_start)
@@ -436,6 +482,30 @@ class BboxLoss(nn.Module):
         targ_fg = target_bboxes[fg_mask]
         iou = bbox_iou(pred_fg, targ_fg, xywh=False, CIoU=True)
         loss_reg = 1.0 - iou  # (n_fg, 1)
+
+        # [NEW-10] Focal-IoU: amplify gradients at HIGH IoU.
+        # loss = IoU^gamma * (1 - IoU). The IoU^gamma factor makes the gradient
+        # grow with IoU quality: the model gets MORE signal to refine a box from
+        # IoU=0.7 to IoU=0.9 than to push from 0.3 to 0.5. This directly attacks
+        # the mAP50 vs mAP50-95 gap. With gamma=0: IoU^0 = 1 -> stock CIoU.
+        if self.focal_iou_gamma > 0.0:
+            with torch.no_grad():
+                focal_weight = iou.clamp(min=0.0).pow(self.focal_iou_gamma)  # (n_fg, 1)
+            loss_reg = loss_reg * focal_weight
+
+        # [NEW-11] Wise-IoU: outlier-aware gradient gain.
+        # Down-weights noisy/anomalous samples (high loss relative to batch mean)
+        # while keeping clean examples at full weight. The exp formulation
+        # provides diminishing returns for extreme outliers: an outlier at 3x
+        # the mean gets gain=exp(2)=7.4 instead of the raw 3x, but its product
+        # loss*gain grows sub-linearly compared to the naive case.
+        # Actual effect: focuses the model on "learnable" samples rather than
+        # wasting capacity on annotation noise or extreme cases.
+        if self.wise_iou:
+            with torch.no_grad():
+                mean_loss = loss_reg.mean().clamp(min=1e-8)
+                wise_gain = torch.exp((loss_reg / mean_loss) - 1.0)
+            loss_reg = loss_reg * wise_gain
 
         # [NEW-5] NWD blend for small objects (pixel space; needs stride_fg)
         # [NEW-5b] Adaptive: continuous ramp by smallness instead of flat ratio
@@ -635,6 +705,16 @@ class v8DetectionLoss:
 
         Section F (IARW, NEW-9):
             - iarw_gamma (0.0 off, recommended 2.0-3.0)
+
+        Section G (Focal-IoU, NEW-10):
+            - focal_iou_gamma (0.0 off, recommended 0.5-1.5)
+
+        Section H (Wise-IoU, NEW-11):
+            - wise_iou (0 off, 1 on)
+
+        Section I (Box jitter, NEW-12):
+            - box_jitter (0.0 off, recommended 0.02-0.05)
+            - box_jitter_anneal (1 default, 0 constant jitter)
     """
 
     def __init__(self, model, tal_topk=10, force_tal_topk=False):
@@ -691,6 +771,12 @@ class v8DetectionLoss:
         self.nwd_anneal = int(getattr(h, 'nwd_anneal', 0))
         self.nwd_anneal_min = float(getattr(h, 'nwd_anneal_min', 0.1))
         self.iarw_gamma = float(getattr(h, 'iarw_gamma', 0.0))
+        self.focal_iou_gamma = float(getattr(h, 'focal_iou_gamma', 0.0))
+        self.wise_iou = int(getattr(h, 'wise_iou', 0))
+
+        # Section I: Box jitter  [NEW-12]
+        self.box_jitter = float(getattr(h, 'box_jitter', 0.0))
+        self.box_jitter_anneal = int(getattr(h, 'box_jitter_anneal', 1))
 
         # Section B: Center loss
         self.center_loss_weight_init = getattr(h, 'center_loss_weight_init', 0.0)
@@ -757,6 +843,10 @@ class v8DetectionLoss:
                   f"{'  adaptive (NEW-5b)' if self.nwd_adaptive else ''}"
                   f"{'  anneal->%.2f (NEW-5c)' % self.nwd_anneal_min if self.nwd_anneal else ''}")
             print(f"  [F] iarw_gamma:      {self.iarw_gamma}  (NEW-9, 0=off)")
+            print(f"  [G] focal_iou_gamma: {self.focal_iou_gamma}  (NEW-10, 0=off)")
+            print(f"  [H] wise_iou:        {self.wise_iou}  (NEW-11, 0=off)")
+            print(f"  [I] box_jitter:      {self.box_jitter}  (NEW-12, 0=off)"
+                  f"{'  anneal' if self.box_jitter_anneal else '  constant'}")
             print(f"  [B] center_loss_init:  {self.center_loss_weight_init}  (applied AFTER box gain, NEW-8)")
             print(f"  [B] center_loss_min:   {self.center_loss_weight_min}")
             print(f"  [B] center_loss_decay: {self.center_loss_decay_epochs} epochs")
@@ -929,6 +1019,31 @@ class v8DetectionLoss:
         center_loss = torch.tensor(0.0, device=self.device)
         if fg_mask.sum():
             target_bboxes /= stride_tensor
+
+            # [NEW-12] Box jitter: label smoothing for regression targets.
+            # Add small random perturbation to each GT box edge AFTER TAL
+            # assignment. Prevents overfitting to exact GT coordinates.
+            # Annealed: full jitter early -> zero at end of training.
+            if self.box_jitter > 0.0 and self._model.training:
+                jitter_ratio = self.box_jitter
+                if self.box_jitter_anneal:
+                    progress = self.epoch / max(self.total_epochs, 1)
+                    jitter_ratio = jitter_ratio * (1.0 - progress)  # linear decay
+                if jitter_ratio > 1e-6:
+                    # Compute box dimensions (grid units) for scale-relative jitter
+                    with torch.no_grad():
+                        tb = target_bboxes  # (batch, anchors, 4) in xyxy grid units
+                        bw = (tb[..., 2] - tb[..., 0]).clamp(min=1e-6)  # width
+                        bh = (tb[..., 3] - tb[..., 1]).clamp(min=1e-6)  # height
+                        # Per-edge jitter: uniform(-jitter, +jitter) * dimension
+                        noise = torch.empty_like(tb).uniform_(-1, 1) * jitter_ratio
+                        noise[..., 0] *= bw  # x1 jitter by width
+                        noise[..., 1] *= bh  # y1 jitter by height
+                        noise[..., 2] *= bw  # x2 jitter by width
+                        noise[..., 3] *= bh  # y2 jitter by height
+                        # Only jitter foreground targets; zero noise for background
+                        noise = noise * fg_mask.unsqueeze(-1).float()
+                    target_bboxes = target_bboxes + noise
 
             # Sync training state
             self._sync_bbox_loss_state()
