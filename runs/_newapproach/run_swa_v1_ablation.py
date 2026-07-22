@@ -35,8 +35,11 @@ RUNS (8 total, NO boost):
   swa1_05_03           alpha 0.5→0.3  min/max 0.3/0.5   higher floor than v1
 
 REQUIRES:
-  Your current loss.py (v1 SWA) — NO file swap needed.
-  This is the loss already installed in ultralytics/utils/loss.py
+  loss_function/loss2.py copied to ultralytics/utils/loss.py
+  This is the latest v1 SWA implementation (R7-R8, backward compatible with R2-R5).
+
+  BEFORE RUNNING:
+    cp loss_function/loss2.py /path/to/ultralytics/utils/loss.py
 
 Usage:
   python run_swa_v1_ablation.py                        # all 8 runs
@@ -250,6 +253,29 @@ RUNS = [
 
 
 # =============================================================================
+# EPOCH CALLBACK — CRITICAL for v1 alpha annealing
+# =============================================================================
+# Without this, the alpha stays frozen at alpha_start for the entire training.
+# This callback syncs the current epoch into the loss object so the
+# alpha_start → alpha_end schedule actually anneals.
+
+def on_train_epoch_start(trainer):
+    """Sync epoch into the custom loss (drives alpha / clip schedules)."""
+    epoch = trainer.epoch
+    try:
+        if hasattr(trainer, 'criterion') and trainer.criterion is not None:
+            trainer.criterion.epoch = epoch
+            if hasattr(trainer.criterion, '_sync_bbox_loss_state'):
+                trainer.criterion._sync_bbox_loss_state()
+    except Exception:
+        pass
+    try:
+        trainer.model.current_epoch = epoch
+    except Exception:
+        pass
+
+
+# =============================================================================
 # TRAINING LOOP
 # =============================================================================
 def train_run(run_cfg, with_test=False):
@@ -276,9 +302,13 @@ def train_run(run_cfg, with_test=False):
 
     print(f"  Alpha: {sched}")
     print(f"  Boost: {boost} (OFF)")
-    print(f"  Implementation: v1 (1/area, current loss.py)\n")
+    print(f"  Implementation: v1 (loss_satal3.py)\n")
 
     model = YOLO(MODEL_WEIGHTS)
+
+    # CRITICAL: register epoch callback for alpha annealing
+    model.add_callback('on_train_epoch_start', on_train_epoch_start)
+    print("[setup] Epoch callback registered (alpha annealing active)")
 
     t0 = time.time()
     results = model.train(
