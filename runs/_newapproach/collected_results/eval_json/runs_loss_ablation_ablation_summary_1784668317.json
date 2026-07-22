@@ -1,0 +1,211 @@
+{
+  "timestamp": 1784668317,
+  "training_config": {
+    "model": "YOLOv12s",
+    "loss_file": "loss.py",
+    "data": "/home/constantin/Doctorat/LuggageDataset.v5i.yolov12/data.yaml",
+    "epochs": 70,
+    "imgsz": 640,
+    "batch": 58,
+    "seeds": [
+      42
+    ],
+    "eval_split": "val",
+    "best_metric": "eiou"
+  },
+  "class_weights_sqrt": [
+    1.0599,
+    1.1663,
+    0.7738
+  ],
+  "configs": {
+    "run1_eiou": {
+      "name": "run1_eiou",
+      "description": "EIoU metric only (explicit w/h error) \u2014 primary lever",
+      "params": {
+        "box_metric": "eiou"
+      }
+    },
+    "run2_siou": {
+      "name": "run2_siou",
+      "description": "SIoU metric only (angle-aware + shape cost) \u2014 primary lever",
+      "params": {
+        "box_metric": "siou"
+      }
+    },
+    "run3_metric_nwd": {
+      "name": "run3_metric_nwd",
+      "description": "eiou + width-gated pixel-space NWD (iou_ratio=0.7)",
+      "params": {
+        "box_metric": "eiou",
+        "iou_ratio": 0.7,
+        "nwd_c": 12.0,
+        "nwd_width_gate_px": 24.0
+      }
+    },
+    "run4_metric_widthboost": {
+      "name": "run4_metric_widthboost",
+      "description": "eiou + width-adaptive IoU/DFL 1.5x, cls 1.3x (normalized)",
+      "params": {
+        "box_metric": "eiou",
+        "small_obj_boost": 1.5,
+        "small_obj_cls_boost": 1.3,
+        "small_obj_width_thresh_px": 24.0
+      }
+    },
+    "run5_class_balance": {
+      "name": "run5_class_balance",
+      "description": "Class-balance sanity check (sqrt inv-freq) \u2014 expected ~neutral",
+      "params": {
+        "class_weights": [
+          1.0599,
+          1.1663,
+          0.7738
+        ],
+        "normalize_class_weights": true
+      }
+    }
+  },
+  "summary": {
+    "run1_eiou": {
+      "mAP50_mean": 0.8247187488548682,
+      "mAP50_std": 0.0,
+      "mAP50_95_mean": 0.5649894101252546,
+      "mAP50_95_std": 0.0,
+      "per_seed": {
+        "42": {
+          "mAP50": 0.8247187488548682,
+          "mAP50_95": 0.5649894101252546,
+          "precision": 0.8009110808204435,
+          "recall": 0.7515196508019626,
+          "per_class": {
+            "backpack": {
+              "AP50": 0.8511183325004168,
+              "AP50_95": 0.5920720130509948
+            },
+            "bag": {
+              "AP50": 0.7259614002819439,
+              "AP50_95": 0.4704539035677329
+            },
+            "trolley": {
+              "AP50": 0.897076513782244,
+              "AP50_95": 0.6324423137570362
+            }
+          }
+        }
+      }
+    },
+    "run2_siou": {
+      "mAP50_mean": 0.8192303022381232,
+      "mAP50_std": 0.0,
+      "mAP50_95_mean": 0.5617890991096863,
+      "mAP50_95_std": 0.0,
+      "per_seed": {
+        "42": {
+          "mAP50": 0.8192303022381232,
+          "mAP50_95": 0.5617890991096863,
+          "precision": 0.8125156125809796,
+          "recall": 0.7385096206325427,
+          "per_class": {
+            "backpack": {
+              "AP50": 0.8433330816678857,
+              "AP50_95": 0.584749777944085
+            },
+            "bag": {
+              "AP50": 0.7176752629465081,
+              "AP50_95": 0.4668088165582017
+            },
+            "trolley": {
+              "AP50": 0.8966825620999763,
+              "AP50_95": 0.633808702826772
+            }
+          }
+        }
+      }
+    },
+    "run3_metric_nwd": {
+      "mAP50_mean": 0.8212268334884977,
+      "mAP50_std": 0.0,
+      "mAP50_95_mean": 0.565359597248941,
+      "mAP50_95_std": 0.0,
+      "per_seed": {
+        "42": {
+          "mAP50": 0.8212268334884977,
+          "mAP50_95": 0.565359597248941,
+          "precision": 0.8028999324043684,
+          "recall": 0.74527735871558,
+          "per_class": {
+            "backpack": {
+              "AP50": 0.8446618649764791,
+              "AP50_95": 0.5887380221354815
+            },
+            "bag": {
+              "AP50": 0.7209410598697753,
+              "AP50_95": 0.4718046150654655
+            },
+            "trolley": {
+              "AP50": 0.8980775756192385,
+              "AP50_95": 0.6355361545458758
+            }
+          }
+        }
+      }
+    },
+    "run4_metric_widthboost": {
+      "mAP50_mean": 0.8225722325591986,
+      "mAP50_std": 0.0,
+      "mAP50_95_mean": 0.5627395170126674,
+      "mAP50_95_std": 0.0,
+      "per_seed": {
+        "42": {
+          "mAP50": 0.8225722325591986,
+          "mAP50_95": 0.5627395170126674,
+          "precision": 0.798416259054192,
+          "recall": 0.7535245659215395,
+          "per_class": {
+            "backpack": {
+              "AP50": 0.8469572423004593,
+              "AP50_95": 0.5863701131176894
+            },
+            "bag": {
+              "AP50": 0.7228317684528844,
+              "AP50_95": 0.46488150340923984
+            },
+            "trolley": {
+              "AP50": 0.8979276869242525,
+              "AP50_95": 0.6369669345110729
+            }
+          }
+        }
+      }
+    },
+    "run5_class_balance": {
+      "mAP50_mean": 0.8203031575403511,
+      "mAP50_std": 0.0,
+      "mAP50_95_mean": 0.5649279206134651,
+      "mAP50_95_std": 0.0,
+      "per_seed": {
+        "42": {
+          "mAP50": 0.8203031575403511,
+          "mAP50_95": 0.5649279206134651,
+          "precision": 0.8051056104663492,
+          "recall": 0.7383444272988653,
+          "per_class": {
+            "backpack": {
+              "AP50": 0.8450804176066189,
+              "AP50_95": 0.5888164121347869
+            },
+            "bag": {
+              "AP50": 0.7233752030388245,
+              "AP50_95": 0.4718437307738813
+            },
+            "trolley": {
+              "AP50": 0.89245385197561,
+              "AP50_95": 0.634123618931727
+            }
+          }
+        }
+      }
+    }
+  }
+}

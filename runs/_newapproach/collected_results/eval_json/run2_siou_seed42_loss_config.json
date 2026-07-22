@@ -1,0 +1,7 @@
+{
+  "name": "run2_siou",
+  "description": "SIoU metric only (angle-aware + shape cost) \u2014 primary lever",
+  "params": {
+    "box_metric": "siou"
+  }
+}

@@ -1,0 +1,29 @@
+[
+  {
+    "name": "r7_stack",
+    "label": "[1/4] WIoU + center loss + repulsion on const06 -- stack the winners",
+    "seed": 0,
+    "elapsed_h": 4.308939492106438,
+    "val_map50": 0.7834854737255177,
+    "test_map50": 0.7833799937480315,
+    "test_map5095": 0.5194688784421868
+  },
+  {
+    "name": "r7_wiou_rep",
+    "label": "[2/4] WIoU + repulsion only -- isolate the NEW term vs r4_wiou",
+    "seed": 0,
+    "elapsed_h": 4.226128085056941,
+    "val_map50": 0.831984017971999,
+    "test_map50": 0.8282321573696715,
+    "test_map5095": 0.562135100903214
+  },
+  {
+    "name": "r7_stack_bag",
+    "label": "[3/4] stack + aggressive bag weighting (linear) -- max bag pressure",
+    "seed": 0,
+    "elapsed_h": 4.381339071525468,
+    "val_map50": 0.7852177433730292,
+    "test_map50": 0.7851238237333719,
+    "test_map5095": 0.5198835993986125
+  }
+]

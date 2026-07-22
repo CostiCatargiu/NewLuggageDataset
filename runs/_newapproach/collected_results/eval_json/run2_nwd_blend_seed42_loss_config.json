@@ -1,0 +1,14 @@
+{
+  "name": "run2_nwd_blend",
+  "description": "Class-balance + NWD/CIoU blend (iou_ratio=0.5)",
+  "params": {
+    "class_weights": [
+      1.0599,
+      1.1663,
+      0.7738
+    ],
+    "normalize_class_weights": true,
+    "iou_ratio": 0.5,
+    "nwd_c": 3.0
+  }
+}

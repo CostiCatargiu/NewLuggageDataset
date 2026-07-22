@@ -1,0 +1,74 @@
+[
+  {
+    "name": "r4_satal_mpdiou",
+    "label": "[1/8] SATAL R3 assignment + MPDIoU -- recall AND tight boxes",
+    "seed": 0,
+    "elapsed_h": 2.672586191760169,
+    "val_map50": 0.833810035702068,
+    "test_map50": 0.8371672223049399,
+    "test_map5095": 0.5400973134659067
+  },
+  {
+    "name": "r4_mpdiou",
+    "label": "[2/8] SWA const06 + MPDIoU box loss (tight localization)",
+    "seed": 0,
+    "elapsed_h": 2.674781268835068,
+    "val_map50": 0.8236226722586695,
+    "test_map50": 0.8285939349248516,
+    "test_map5095": 0.5643396711848576
+  },
+  {
+    "name": "r4_satal_wiou",
+    "label": "[3/8] SATAL R3 assignment + Wise-IoU v3",
+    "seed": 0,
+    "elapsed_h": 2.665394322209888,
+    "val_map50": 0.8345898223108122,
+    "test_map50": 0.8362853726301741,
+    "test_map5095": 0.5378353758418117
+  },
+  {
+    "name": "r4_nwd_small",
+    "label": "[4/8] SWA const06 + NWD small_only (C=4.0) on CIoU base",
+    "seed": 0,
+    "elapsed_h": 2.668998795747757,
+    "val_map50": 0.8187269414813166,
+    "test_map50": 0.8272226252165057,
+    "test_map5095": 0.5571115369301325
+  },
+  {
+    "name": "r4_wiou",
+    "label": "[5/8] SWA const06 + Wise-IoU v3 (1.9/3.0, mom 0.02)",
+    "seed": 0,
+    "elapsed_h": 2.669382477204005,
+    "val_map50": 0.8264890013815162,
+    "test_map50": 0.831875697055878,
+    "test_map5095": 0.5643332924724792
+  },
+  {
+    "name": "r4_focaler",
+    "label": "[6/8] SWA const06 + Focaler-CIoU (d0.0/u0.95)",
+    "seed": 0,
+    "elapsed_h": 2.6734804527627096,
+    "val_map50": 0.8229719202572913,
+    "test_map50": 0.831706980273425,
+    "test_map5095": 0.5636951057831955
+  },
+  {
+    "name": "r4_swa_smooth",
+    "label": "[7/8] SWA const06 continuous boost (stride-fixed, power 0.5)",
+    "seed": 0,
+    "elapsed_h": 2.668170515431298,
+    "val_map50": 0.8237851376087284,
+    "test_map50": 0.8286960375157933,
+    "test_map5095": 0.5629384543948153
+  },
+  {
+    "name": "r4_baseline_clean",
+    "label": "[8/8] SWA const06, CIoU, class-weighting OFF -- clean reference",
+    "seed": 0,
+    "elapsed_h": 2.6629280448622175,
+    "val_map50": 0.8245026659673772,
+    "test_map50": 0.8280345971629055,
+    "test_map5095": 0.5639391196192299
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "name": "run4_metric_widthboost",
+  "description": "eiou + width-adaptive IoU/DFL 1.5x, cls 1.3x (normalized)",
+  "params": {
+    "box_metric": "eiou",
+    "small_obj_boost": 1.5,
+    "small_obj_cls_boost": 1.3,
+    "small_obj_width_thresh_px": 24.0
+  }
+}

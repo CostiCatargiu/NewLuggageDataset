@@ -1,0 +1,11 @@
+[
+  {
+    "name": "r5_wiou_default",
+    "label": "[1/7] WIoU on SWA-OFF default -- best shot to beat mAP50-95 0.5684",
+    "seed": 0,
+    "elapsed_h": 3.0394998323255114,
+    "val_map50": 0.8213920079246705,
+    "test_map50": 0.8242726152270929,
+    "test_map5095": 0.5640791301936541
+  }
+]

@@ -1,0 +1,58 @@
+[
+  {
+    "name": "r9_vfl",
+    "phase": "E",
+    "label": "Varifocal cls (0.75/2.0) \u2014 IoU-aware ranking, regression stock",
+    "seed": 0,
+    "elapsed_h": NaN,
+    "val_map50": NaN,
+    "val_map5095": NaN,
+    "test_map50": NaN,
+    "test_map5095": NaN,
+    "error": "'\u001b[31m\u001b[1marea_mode\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['area_weight_mode=inv', 'mode=train'].\n'\u001b[31m\u001b[1mnwd_ratio\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['mask_ratio=4', 'nwd_gate_px=48.0'].\n'\u001b[31m\u001b[1mweight_renorm\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['weight_decay=0.0005'].\n'\u001b[31m\u001b[1marea_w_cap\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['ar_cap=2.0'].\n'\u001b[31m\u001b[1mcls_loss\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['cls_mode=bce'].\n'\u001b[31m\u001b[1marea_gamma\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['shape_gamma=0.1', 'vfl_gamma=2.0,', 'ar_lambda=0.0'].\n'\u001b[31m\u001b[1mnwd_c\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['nwd_C=4.0', 'nwd_const=12.8', 'nwd_mode=small_only'].\n'\u001b[31m\u001b[1marea_ref_px\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['ar_ref=1.5'].\n\n    Arguments received: ['yolo']. Ultralytics 'yolo' commands use the following syntax:\n\n        yolo TASK MODE ARGS\n\n        Where   TASK (optional) is one of {'obb', 'pose', 'classify', 'detect', 'segment'}\n                MODE (required) is one of {'track', 'export', 'val', 'train', 'predict', 'benchmark'}\n                ARGS (optional) are any number of custom 'arg=value' pairs like 'imgsz=320' that override defaults.\n                    See all ARGS at https://docs.ultralytics.com/usage/cfg or with 'yolo cfg'\n\n    1. Train a detection model for 10 epochs with an initial learning_rate of 0.01\n        yolo train data=coco8.yaml model=yolo11n.pt epochs=10 lr0=0.01\n\n    2. Predict a YouTube video using a pretrained segmentation model at image size 320:\n        yolo predict model=yolo11n-seg.pt source='https://youtu.be/LNwODJXcvt4' imgsz=320\n\n    3. Val a pretrained detection model at batch-size 1 and image size 640:\n        yolo val model=yolo11n.pt data=coco8.yaml batch=1 imgsz=640\n\n    4. Export a YOLO11n classification model to ONNX format at image size 224 by 128 (no TASK required)\n        yolo export model=yolo11n-cls.pt format=onnx imgsz=224,128\n\n    5. Ultralytics solutions usage\n        yolo solutions count or in ['heatmap', 'queue', 'speed', 'workout', 'analytics', 'trackzone', 'inference'] source=\"path/to/video/file.mp4\"\n\n    6. Run special commands:\n        yolo help\n        yolo checks\n        yolo version\n        yolo settings\n        yolo copy-cfg\n        yolo cfg\n        yolo solutions help\n\n    Docs: https://docs.ultralytics.com\n    Solutions: https://docs.ultralytics.com/solutions/\n    Community: https://community.ultralytics.com\n    GitHub: https://github.com/ultralytics/ultralytics\n    "
+  },
+  {
+    "name": "r9_anchor",
+    "phase": "-",
+    "label": "Fresh anchor \u2014 all NEW paths inert; repro check vs r8_anchor",
+    "seed": 0,
+    "elapsed_h": 1.5812152163849937,
+    "val_map50": 0.8275129129609522,
+    "val_map5095": 0.5686374904821277,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r9_dflboost",
+    "phase": "A'",
+    "label": "DFL-only boost 2.5 @px36, alpha=0, clips off \u2014 edge precision",
+    "seed": 0,
+    "elapsed_h": 1.5735475694470935,
+    "val_map50": 0.820388468934025,
+    "val_map5095": 0.5639417198260899,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r9_nwd",
+    "phase": "A''",
+    "label": "NWD blend r=0.5 c=64 @px48 \u2014 loss-surface change for tiny boxes",
+    "seed": 0,
+    "elapsed_h": 1.5775324148601957,
+    "val_map50": 0.8228313026268216,
+    "val_map5095": 0.5667684884484281,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r9_area_fixed",
+    "phase": "A",
+    "label": "Fixed-ref sqrt area weight, alpha=0.5 const, renorm \u2014 r8 replication",
+    "seed": 0,
+    "elapsed_h": 1.5896046174234815,
+    "val_map50": 0.8277651593945823,
+    "val_map5095": 0.5644347868460955,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  }
+]

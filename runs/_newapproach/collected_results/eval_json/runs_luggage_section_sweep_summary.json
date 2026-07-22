@@ -1,0 +1,74 @@
+[
+  {
+    "name": "v6_default",
+    "label": "DEFAULT \u2014 all off, stock TAL (10/0.5/6.0)",
+    "elapsed_h": 2.6747867969009613,
+    "val_map50": 0.8205661916901731,
+    "test_map50": 0.8254309670552221,
+    "test_map5095": 0.5684603880499931
+  },
+  {
+    "name": "v6_swa_moderate",
+    "label": "SWA 0.5\u21920.25 (min 0.2/max 0.8), boost 1.75 @ 48px",
+    "elapsed_h": 2.67131671667099,
+    "val_map50": 0.8246127870688768,
+    "test_map50": 0.8331230789205123,
+    "test_map5095": 0.5668210177672056
+  },
+  {
+    "name": "v6_swa_proven",
+    "label": "SWA 0.7\u21920.3 (min 0.2/max 0.8), boost 2.0 @ 48px",
+    "elapsed_h": 2.6694262448946633,
+    "val_map50": 0.8233063604415811,
+    "test_map50": 0.8278267398638733,
+    "test_map5095": 0.5638144861532272
+  },
+  {
+    "name": "v6_swa_high",
+    "label": "SWA 0.9\u21920.4 (min 0.3/max 0.95), boost 2.0 @ 48px",
+    "elapsed_h": 2.6709850665595796,
+    "val_map50": 0.8282719737817062,
+    "test_map50": 0.8343232192797411,
+    "test_map5095": 0.5628980693215522
+  },
+  {
+    "name": "v6_clip_loose",
+    "label": "CLIP loose \u2014 iou 40\u219230, dfl 50\u219240 (eff. 4\u21923 / 5\u21924)",
+    "elapsed_h": 2.6771745147307713,
+    "val_map50": 0.8183448614301464,
+    "test_map50": 0.8245199413669116,
+    "test_map5095": 0.5671105090949705
+  },
+  {
+    "name": "v6_clip_medium",
+    "label": "CLIP medium \u2014 iou 30\u219220, dfl 40\u219230 (eff. 3\u21922 / 4\u21923)",
+    "elapsed_h": 2.6842208775546816,
+    "val_map50": 0.8212466976697977,
+    "test_map50": 0.8262890713563497,
+    "test_map5095": 0.5659777325138624
+  },
+  {
+    "name": "v6_clip_tight",
+    "label": "CLIP tight \u2014 iou 20\u219210, dfl 10\u21925 (eff. 2\u21921 / 1\u21920.5)",
+    "elapsed_h": 2.716243505809042,
+    "val_map50": 0.8174328498169082,
+    "test_map50": 0.8250343649057833,
+    "test_map5095": 0.5640519411953119
+  },
+  {
+    "name": "v6_tal_best",
+    "label": "TAL 13/0.7/4.0 \u2014 ablation winner",
+    "elapsed_h": 2.676229512559043,
+    "val_map50": 0.8189699089054168,
+    "test_map50": 0.8279730771317378,
+    "test_map5095": 0.5550621936807539
+  },
+  {
+    "name": "v6_tal_beta",
+    "label": "TAL 13/0.5/4.0 \u2014 beta isolation (stock alpha)",
+    "elapsed_h": 2.7248016407754685,
+    "val_map50": 0.8200920895844632,
+    "test_map50": 0.8237090406548909,
+    "test_map5095": 0.5585927835550064
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "name": "r8_center_crowd",
+    "label": "[8/10] const06 + WIoU + [B2] FIXED center loss (crowd) -- r7 post-mortem",
+    "seed": 0,
+    "elapsed_h": 2.8204626995987363,
+    "val_map50": 0.8262195299360725,
+    "test_map50": 0.8317598131390564,
+    "test_map5095": 0.563864236221929
+  }
+]

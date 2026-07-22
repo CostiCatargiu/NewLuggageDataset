@@ -1,0 +1,38 @@
+[
+  {
+    "name": "r3_satal_r3",
+    "label": "SATAL R3 revival \u2014 base 12/0.6/5.0, a_s1.2/b_s5.0, factor 1.5, thresh 0.0025/0.0225",
+    "seed": 0,
+    "elapsed_h": 2.7493779273165595,
+    "val_map50": 0.8236125204836761,
+    "test_map50": 0.8268482979843106,
+    "test_map5095": 0.545672323409564
+  },
+  {
+    "name": "r3_satal_r4",
+    "label": "SATAL R4 balanced \u2014 a_s1.3/b_s5.0, factor 1.5, thresh 0.0035/0.0225",
+    "seed": 0,
+    "elapsed_h": 2.6851083411773047,
+    "val_map50": 0.8221245927099883,
+    "test_map50": 0.8245528200914936,
+    "test_map5095": 0.5366856972024493
+  },
+  {
+    "name": "r3_satal_r3_swa",
+    "label": "SATAL R3 + SWA const 0.6 boost 1.75 @48 \u2014 combined candidate",
+    "seed": 0,
+    "elapsed_h": 2.6883132298787435,
+    "val_map50": 0.8326295447901687,
+    "test_map50": 0.8376298234284921,
+    "test_map5095": 0.5419019878517537
+  },
+  {
+    "name": "r3_swa_anchor",
+    "label": "SWA const 0.6 boost 1.75 @48, stock TAL, SATAL off \u2014 cross-file anchor",
+    "seed": 0,
+    "elapsed_h": 2.6796973995367686,
+    "val_map50": 0.8254378748034864,
+    "test_map50": 0.8297036285134229,
+    "test_map5095": 0.5643828061358902
+  }
+]

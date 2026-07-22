@@ -1,0 +1,21 @@
+{
+  "name": "run4_ar_penalty",
+  "description": "Run 3 + aspect-ratio penalty ONLY (isolated experimental)",
+  "params": {
+    "class_weights": [
+      1.0599,
+      1.1663,
+      0.7738
+    ],
+    "normalize_class_weights": true,
+    "iou_ratio": 0.5,
+    "nwd_c": 3.0,
+    "small_obj_boost": 1.5,
+    "small_obj_cls_boost": 1.3,
+    "small_obj_area_thresh": 36.0,
+    "use_ar_penalty": true,
+    "ar_penalty_lambda": 0.05,
+    "ar_penalty_tall_extra": 0.5,
+    "ar_penalty_max": 1.0
+  }
+}

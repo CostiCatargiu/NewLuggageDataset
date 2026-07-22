@@ -1,0 +1,24 @@
+{
+  "name": "run6_full",
+  "description": "Run 3 + AR penalty + Inner-IoU (everything on)",
+  "params": {
+    "class_weights": [
+      1.0599,
+      1.1663,
+      0.7738
+    ],
+    "normalize_class_weights": true,
+    "iou_ratio": 0.5,
+    "nwd_c": 3.0,
+    "small_obj_boost": 1.5,
+    "small_obj_cls_boost": 1.3,
+    "small_obj_area_thresh": 36.0,
+    "use_ar_penalty": true,
+    "ar_penalty_lambda": 0.05,
+    "ar_penalty_tall_extra": 0.5,
+    "ar_penalty_max": 1.0,
+    "use_inner_iou": true,
+    "inner_iou_ratio_small": 0.7,
+    "inner_iou_ratio_large": 1.0
+  }
+}

@@ -1,0 +1,79 @@
+[
+  {
+    "name": "r11_talnwd",
+    "phase": "R11-D'",
+    "label": "NWD-aware TAL assignment (small GTs)",
+    "seed": 0,
+    "elapsed_h": 1.519268615245819,
+    "val_map50": 0.8158182553486265,
+    "val_map5095": 0.5618717861666868,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r11_eiou",
+    "phase": "R11-G",
+    "label": "EIoU base loss \u2014 direct w/h penalty",
+    "seed": 0,
+    "elapsed_h": 1.518475611673461,
+    "val_map50": 0.825821948995773,
+    "val_map5095": 0.5696569556285281,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r11_siou",
+    "phase": "R11-G",
+    "label": "SIoU base loss \u2014 angle+shape cost",
+    "seed": 0,
+    "elapsed_h": 1.470903399984042,
+    "val_map50": 0.15674009888426033,
+    "val_map5095": 0.05913824008444018,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r11_nwd_k03",
+    "phase": "R11-A''",
+    "label": "Adaptive NWD, temperature k=0.3 (sharper)",
+    "seed": 0,
+    "elapsed_h": 1.5157843417591519,
+    "val_map50": 0.8220625533243918,
+    "val_map5095": 0.566359050011352,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r11_nwd_full",
+    "phase": "R11-A''",
+    "label": "Near-full NWD smallest bin (r=0.7, no anneal)",
+    "seed": 0,
+    "elapsed_h": 1.5159635565016005,
+    "val_map50": 0.8211987648126934,
+    "val_map5095": 0.5640686766228563,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r11_relL1",
+    "phase": "R11-I",
+    "label": "Scale-normalized residual (small), w=0.05",
+    "seed": 0,
+    "elapsed_h": 1.5081899984677634,
+    "val_map50": 0.8250846108360896,
+    "val_map5095": 0.5674151582073642,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r11_eiou_talnwd",
+    "phase": "R11-GD'",
+    "label": "EIoU x NWD-assignment \u2014 geometry + assignment",
+    "seed": 0,
+    "elapsed_h": 1.5183843228552076,
+    "val_map50": 0.8141891123368614,
+    "val_map5095": 0.5613868284819091,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  }
+]

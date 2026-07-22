@@ -1,0 +1,56 @@
+[
+  {
+    "name": "r2_swa_boost25",
+    "label": "SWA 0.5\u21920.25 (min 0.2/max 0.8), boost 2.5 @ 48px \u2014 boost strength",
+    "seed": 0,
+    "elapsed_h": 2.7197425459490883,
+    "val_map50": 0.8218399417735377,
+    "test_map50": 0.8286485924578075,
+    "test_map5095": 0.5652057420366041
+  },
+  {
+    "name": "r2_swa_const06",
+    "label": "SWA constant 0.6 (no decay, min 0.6/max 0.8), boost 1.75 @ 48px",
+    "seed": 0,
+    "elapsed_h": 2.7167836493253708,
+    "val_map50": 0.8248563870191608,
+    "test_map50": 0.8319171035206608,
+    "test_map5095": 0.5660774670066886
+  },
+  {
+    "name": "r2_swa_px32",
+    "label": "SWA 0.5\u21920.25 (min 0.2/max 0.8), boost 2.0 @ 32px \u2014 concentrated boost",
+    "seed": 0,
+    "elapsed_h": 2.7118891663683784,
+    "val_map50": 0.8211442978098052,
+    "test_map50": 0.8284631990818389,
+    "test_map5095": 0.5639985386382838
+  },
+  {
+    "name": "r2_tal_strict",
+    "label": "TAL 8/0.5/8.0 \u2014 strict direction (untested)",
+    "seed": 0,
+    "elapsed_h": 2.7168104236655766,
+    "val_map50": 0.8156870160846394,
+    "test_map50": 0.8223883505875828,
+    "test_map5095": 0.5677660257634917
+  },
+  {
+    "name": "r2_tal_beta7",
+    "label": "TAL 10/0.5/7.0 \u2014 beta-only strictening",
+    "seed": 0,
+    "elapsed_h": 2.7495958868000243,
+    "val_map50": 0.8185494165341116,
+    "test_map50": 0.8213421222024261,
+    "test_map5095": 0.5643028156037364
+  },
+  {
+    "name": "r2_swahigh_clip",
+    "label": "SWA 0.9\u21920.4 (min 0.3/max 0.95) b2.0 @48 + loose clips 40\u219230/50\u219240",
+    "seed": 0,
+    "elapsed_h": 2.7275949160920248,
+    "val_map50": 0.8252480055197265,
+    "test_map50": 0.8319156696584304,
+    "test_map5095": 0.5652136708798268
+  }
+]

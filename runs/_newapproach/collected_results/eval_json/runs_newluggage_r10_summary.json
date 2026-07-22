@@ -1,0 +1,146 @@
+[
+  {
+    "name": "r9b_iarw_dfl",
+    "phase": "F+A'",
+    "label": "IARW 2.0 + IoU-gated DFL 2.0 @px36 \u2014 quality + edge compound",
+    "seed": 0,
+    "elapsed_h": NaN,
+    "val_map50": NaN,
+    "val_map5095": NaN,
+    "test_map50": NaN,
+    "test_map5095": NaN,
+    "error": "'\u001b[31m\u001b[1mnwd_adaptive\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['nwd_ratio=0.0', 'nwd_gate_px=48.0', 'nwd_mode=small_only'].\n'\u001b[31m\u001b[1mnwd_anneal\u001b[0m' is not a valid YOLO argument. \n'\u001b[31m\u001b[1mdfl_iou_gated\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['dfl_clip_end=1000.0'].\n'\u001b[31m\u001b[1miarw_gamma\u001b[0m' is not a valid YOLO argument. Similar arguments are i.e. ['area_gamma=0.5', 'shape_gamma=0.1', 'vfl_gamma=2.0'].\n'\u001b[31m\u001b[1mnwd_anneal_min\u001b[0m' is not a valid YOLO argument. \n\n    Arguments received: ['yolo']. Ultralytics 'yolo' commands use the following syntax:\n\n        yolo TASK MODE ARGS\n\n        Where   TASK (optional) is one of {'detect', 'segment', 'obb', 'classify', 'pose'}\n                MODE (required) is one of {'benchmark', 'track', 'train', 'predict', 'export', 'val'}\n                ARGS (optional) are any number of custom 'arg=value' pairs like 'imgsz=320' that override defaults.\n                    See all ARGS at https://docs.ultralytics.com/usage/cfg or with 'yolo cfg'\n\n    1. Train a detection model for 10 epochs with an initial learning_rate of 0.01\n        yolo train data=coco8.yaml model=yolo11n.pt epochs=10 lr0=0.01\n\n    2. Predict a YouTube video using a pretrained segmentation model at image size 320:\n        yolo predict model=yolo11n-seg.pt source='https://youtu.be/LNwODJXcvt4' imgsz=320\n\n    3. Val a pretrained detection model at batch-size 1 and image size 640:\n        yolo val model=yolo11n.pt data=coco8.yaml batch=1 imgsz=640\n\n    4. Export a YOLO11n classification model to ONNX format at image size 224 by 128 (no TASK required)\n        yolo export model=yolo11n-cls.pt format=onnx imgsz=224,128\n\n    5. Ultralytics solutions usage\n        yolo solutions count or in ['heatmap', 'queue', 'speed', 'workout', 'analytics', 'trackzone', 'inference'] source=\"path/to/video/file.mp4\"\n\n    6. Run special commands:\n        yolo help\n        yolo checks\n        yolo version\n        yolo settings\n        yolo copy-cfg\n        yolo cfg\n        yolo solutions help\n\n    Docs: https://docs.ultralytics.com\n    Solutions: https://docs.ultralytics.com/solutions/\n    Community: https://community.ultralytics.com\n    GitHub: https://github.com/ultralytics/ultralytics\n    "
+  },
+  {
+    "name": "r9b_anchor",
+    "phase": "-",
+    "label": "Fresh anchor \u2014 all NEW paths inert",
+    "seed": 0,
+    "elapsed_h": 1.5929085281822417,
+    "val_map50": 0.8275129129609522,
+    "val_map5095": 0.5686374904821277,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r9b_iarw",
+    "phase": "F",
+    "label": "IARW gamma=2.0 \u2014 IoU-aware regression weighting (primary candidate)",
+    "seed": 0,
+    "elapsed_h": 1.561876064605183,
+    "val_map50": 0.8253717473432728,
+    "val_map5095": 0.5653477342720062,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r9b_iarw_lo",
+    "phase": "F",
+    "label": "IARW gamma=1.0 \u2014 conservative variant",
+    "seed": 0,
+    "elapsed_h": 1.56120939678616,
+    "val_map50": 0.825875634805767,
+    "val_map5095": 0.5664488135685705,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r9b_nwd_adapt",
+    "phase": "A''",
+    "label": "Adaptive NWD r=0.3 + anneal \u2014 improved loss surface for small",
+    "seed": 0,
+    "elapsed_h": 1.5599927569760217,
+    "val_map50": 0.8241243071691539,
+    "val_map5095": 0.5670233589949182,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r9b_dfl_gated",
+    "phase": "A'",
+    "label": "IoU-gated DFL boost 2.5 @px36 \u2014 targeted edge sharpening",
+    "seed": 0,
+    "elapsed_h": 1.5587800071636835,
+    "val_map50": 0.8211796781664393,
+    "val_map5095": 0.5639500333229893,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r9b_iarw_nwd",
+    "phase": "F+A''",
+    "label": "IARW 2.0 + adaptive NWD 0.3 \u2014 quality redistribution + surface fix",
+    "seed": 0,
+    "elapsed_h": 1.5620522660679288,
+    "val_map50": 0.822379966458047,
+    "val_map5095": 0.5649854537170713,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r10_anchor",
+    "phase": "-",
+    "label": "Fresh anchor \u2014 all NEW-10..14 inert",
+    "seed": 0,
+    "elapsed_h": 1.5082529022958544,
+    "val_map50": 0.8275129129609522,
+    "val_map5095": 0.5686374904821277,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r10_alpha_iou",
+    "phase": "R10",
+    "label": "alpha-IoU 3.0 \u2014 power-IoU, high-IoU gradient focus",
+    "seed": 0,
+    "elapsed_h": 1.522218290699853,
+    "val_map50": 0.8167258472802702,
+    "val_map5095": 0.5640439133177783,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r10_l1_smooth",
+    "phase": "R10",
+    "label": "Smooth-L1 pixel aux 0.05 (small) \u2014 sub-pixel signal",
+    "seed": 0,
+    "elapsed_h": 1.5075638073682784,
+    "val_map50": 0.822693165725234,
+    "val_map5095": 0.5672200360173485,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r10_dfl_entropy",
+    "phase": "R10",
+    "label": "DFL entropy sharpen 0.05 (small) \u2014 crisper edges",
+    "seed": 0,
+    "elapsed_h": 1.5083983540534973,
+    "val_map50": 0.8226539662425937,
+    "val_map5095": 0.5672514510609103,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r10_nwd_fixedc",
+    "phase": "R10",
+    "label": "Adaptive NWD 0.3 + size-adaptive c \u2014 corrected NWD",
+    "seed": 0,
+    "elapsed_h": 1.507331526213222,
+    "val_map50": 0.8234657163819495,
+    "val_map5095": 0.5671228788622206,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  },
+  {
+    "name": "r10_tightness",
+    "phase": "R10",
+    "label": "Asymmetric tightness 0.5 (small) \u2014 anti-spillover",
+    "seed": 0,
+    "elapsed_h": 1.5084652719895044,
+    "val_map50": 0.8227838019274323,
+    "val_map5095": 0.5641309203923119,
+    "test_map50": NaN,
+    "test_map5095": NaN
+  }
+]

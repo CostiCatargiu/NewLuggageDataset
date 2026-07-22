@@ -1,0 +1,7 @@
+{
+  "name": "run1_eiou",
+  "description": "EIoU metric only (explicit w/h error) \u2014 primary lever",
+  "params": {
+    "box_metric": "eiou"
+  }
+}

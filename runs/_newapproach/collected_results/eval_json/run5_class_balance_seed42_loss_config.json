@@ -1,0 +1,12 @@
+{
+  "name": "run5_class_balance",
+  "description": "Class-balance sanity check (sqrt inv-freq) \u2014 expected ~neutral",
+  "params": {
+    "class_weights": [
+      1.0599,
+      1.1663,
+      0.7738
+    ],
+    "normalize_class_weights": true
+  }
+}

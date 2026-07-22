@@ -1,0 +1,10 @@
+{
+  "name": "run3_metric_nwd",
+  "description": "eiou + width-gated pixel-space NWD (iou_ratio=0.7)",
+  "params": {
+    "box_metric": "eiou",
+    "iou_ratio": 0.7,
+    "nwd_c": 12.0,
+    "nwd_width_gate_px": 24.0
+  }
+}

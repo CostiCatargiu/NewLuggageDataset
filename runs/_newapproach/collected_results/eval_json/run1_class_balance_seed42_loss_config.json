@@ -1,0 +1,12 @@
+{
+  "name": "run1_class_balance",
+  "description": "Class-balance weights only (sqrt inverse-frequency)",
+  "params": {
+    "class_weights": [
+      1.0599,
+      1.1663,
+      0.7738
+    ],
+    "normalize_class_weights": true
+  }
+}
