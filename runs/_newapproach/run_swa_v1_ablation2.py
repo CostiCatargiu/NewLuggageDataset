@@ -5,7 +5,7 @@ SWA v1 Alpha Schedule Ablation 2 — Push alpha limits further.
 PREVIOUS RESULTS (ablation 1, boost=1.0 OFF):
   BEST:  swa1_09_03  alpha 0.9→0.3  mAP50-95 = 0.5748  (+0.63 vs baseline)
          swa1_05_03  alpha 0.5→0.3  mAP50-95 = 0.5718  (+0.33)
-         swa1_07_05  alpha 0.7→0.5  mAP50-95 = 0.5712  (+0.27)
+         swa1_07_05  alpha 0.7→0.5  mAP50-95 = 0.5712  a(+0.27)
   WORST: swa1_09_06  alpha 0.9→0.6  mAP50-95 = 0.5638  (-0.47)
   BASE:  r9_anchor   OFF            mAP50-95 = 0.5685
 
@@ -104,58 +104,58 @@ _ALL_OFF = dict(
 # Trend: wider spread + higher start + lower end = better
 # =============================================================================
 RUNS = [
-    {
-        "name": "swa1b_095_02",
-        "label": "[1/6] alpha 0.95→0.2 — highest start, lowest end tested",
-        "params": {
-            **_ALL_OFF,
-            "alpha_start": 0.95, "alpha_end": 0.2,
-            "alpha_min": 0.2, "alpha_max": 0.95,
-        },
-        "seed": SEED,
-    },
-    {
-        "name": "swa1b_09_02",
-        "label": "[2/6] alpha 0.9→0.2 — winner's start, lower end",
-        "params": {
-            **_ALL_OFF,
-            "alpha_start": 0.9, "alpha_end": 0.2,
-            "alpha_min": 0.2, "alpha_max": 0.9,
-        },
-        "seed": SEED,
-    },
-    {
-        "name": "swa1b_09_01",
-        "label": "[3/6] alpha 0.9→0.1 — winner's start, near-zero end",
-        "params": {
-            **_ALL_OFF,
-            "alpha_start": 0.9, "alpha_end": 0.1,
-            "alpha_min": 0.1, "alpha_max": 0.9,
-        },
-        "seed": SEED,
-    },
-    {
-        "name": "swa1b_095_03",
-        "label": "[4/6] alpha 0.95→0.3 — higher start, same end as winner",
-        "params": {
-            **_ALL_OFF,
-            "alpha_start": 0.95, "alpha_end": 0.3,
-            "alpha_min": 0.3, "alpha_max": 0.95,
-        },
-        "seed": SEED,
-    },
+    # {
+    #     "name": "swa1b_095_02",
+    #     "label": "[1/6] alpha 0.95→0.2 — highest start, lowest end tested",
+    #     "params": {
+    #         **_ALL_OFF,
+    #         "alpha_start": 0.95, "alpha_end": 0.2,
+    #         "alpha_min": 0.2, "alpha_max": 0.95,
+    #     },
+    #     "seed": SEED,
+    # },
+    # {
+    #     "name": "swa1b_09_02",
+    #     "label": "[2/6] alpha 0.9→0.2 — winner's start, lower end",
+    #     "params": {
+    #         **_ALL_OFF,
+    #         "alpha_start": 0.9, "alpha_end": 0.2,
+    #         "alpha_min": 0.2, "alpha_max": 0.9,
+    #     },
+    #     "seed": SEED,
+    # },
+    # {
+    #     "name": "swa1b_09_01",
+    #     "label": "[3/6] alpha 0.9→0.1 — winner's start, near-zero end",
+    #     "params": {
+    #         **_ALL_OFF,
+    #         "alpha_start": 0.9, "alpha_end": 0.1,
+    #         "alpha_min": 0.1, "alpha_max": 0.9,
+    #     },
+    #     "seed": SEED,
+    # },
+    # {
+    #     "name": "swa1b_095_03",
+    #     "label": "[4/6] alpha 0.95→0.3 — higher start, same end as winner",
+    #     "params": {
+    #         **_ALL_OFF,
+    #         "alpha_start": 0.95, "alpha_end": 0.3,
+    #         "alpha_min": 0.3, "alpha_max": 0.95,
+    #     },
+    #     "seed": SEED,
+    # },
 
-    # ---- Start=0.8 (gap between 0.7 and 0.9 — never tested) ----
-    {
-        "name": "swa1b_08_02",
-        "label": "[5/6] alpha 0.8→0.2 — fill the 0.8 start gap, wide spread",
-        "params": {
-            **_ALL_OFF,
-            "alpha_start": 0.8, "alpha_end": 0.2,
-            "alpha_min": 0.2, "alpha_max": 0.8,
-        },
-        "seed": SEED,
-    },
+    # # ---- Start=0.8 (gap between 0.7 and 0.9 — never tested) ----
+    # {
+    #     "name": "swa1b_08_02",
+    #     "label": "[5/6] alpha 0.8→0.2 — fill the 0.8 start gap, wide spread",
+    #     "params": {
+    #         **_ALL_OFF,
+    #         "alpha_start": 0.8, "alpha_end": 0.2,
+    #         "alpha_min": 0.2, "alpha_max": 0.8,
+    #     },
+    #     "seed": SEED,
+    # },
     {
         "name": "swa1b_08_03",
         "label": "[6/6] alpha 0.8→0.3 — fill the 0.8 start gap, same end as winner",
