@@ -259,17 +259,6 @@ def load_pretrained_with_detect_remap(model, weights=PRETRAINED):
     return model
 
 
-def on_train_epoch_start(trainer):
-    epoch = trainer.epoch
-    try:
-        if getattr(trainer, "criterion", None) is not None:
-            trainer.criterion.epoch = epoch
-            if hasattr(trainer.criterion, "_sync_bbox_loss_state"):
-                trainer.criterion._sync_bbox_loss_state()
-    except Exception:
-        pass
-
-
 # =============================================================================
 # TRAINING
 # =============================================================================
@@ -287,7 +276,6 @@ def run_experiment(run, with_test=False):
     try:
         model = YOLO(yaml_path)
         load_pretrained_with_detect_remap(model)
-        model.add_callback("on_train_epoch_start", on_train_epoch_start)
 
         head = type(model.model.model[-1]).__name__
         strides = model.model.stride.tolist()
