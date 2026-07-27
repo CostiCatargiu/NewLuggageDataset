@@ -266,6 +266,30 @@ RUNS = [
         "decoupled_levels": 0,   # duplicated inputs are INTENDED here
         "desc": "[3/3] @896 b12 — best-small 640 head (fat cls tower) at high res vs 57.46",
     },
+    {
+        "name": "arch_gctx22_hires",
+        "yaml": BACKBONE + HEAD_STOCK + TAIL_P2_GCTX2,
+        "batch": 16,          # same cost as hires10 (gctx2 ~= gctx in params/FLOPs)
+        "imgsz": 896,
+        "levels": 4,
+        "strides": [4, 8, 16, 32],
+        "desc": "[4/4] @896 b16 — BEST 640 model at high res; target > 59.19",
+    },
+    # ---- seed repeats, ready to uncomment (turns the 0.22 lead into a measurement) ----
+    # {
+    #     "name": "arch_gctx22_s1",
+    #     "yaml": BACKBONE + HEAD_STOCK + TAIL_P2_GCTX2,
+    #     "batch": 28, "imgsz": 640, "seed": 1,
+    #     "levels": 4, "strides": [4, 8, 16, 32],
+    #     "desc": "[s1] @640 b28 seed 1 — reproducibility of arch_gctx22",
+    # },
+    # {
+    #     "name": "arch_gctx22_s2",
+    #     "yaml": BACKBONE + HEAD_STOCK + TAIL_P2_GCTX2,
+    #     "batch": 28, "imgsz": 640, "seed": 2,
+    #     "levels": 4, "strides": [4, 8, 16, 32],
+    #     "desc": "[s2] @640 b28 seed 2 — reproducibility of arch_gctx22",
+    # },
 ]
 
 
@@ -417,11 +441,12 @@ def build_model(run):
 def run_experiment(run, with_test=False, build_only=False):
     batch = run.get("batch", BATCH)
     imgsz = run.get("imgsz", IMG_SIZE)
+    seed  = run.get("seed", SEED)      # per-config seed (for reproducibility repeats)
 
     print(f"\n{'#' * 72}")
     print(f"# {run['name']}")
     print(f"# {run['desc']}")
-    print(f"# Batch {batch}  Imgsz {imgsz}  Epochs {EPOCHS}  seed {SEED}")
+    print(f"# Batch {batch}  Imgsz {imgsz}  Epochs {EPOCHS}  seed {seed}")
     print(f"{'#' * 72}\n")
 
     start = time.time()
@@ -448,7 +473,7 @@ def run_experiment(run, with_test=False, build_only=False):
             name=run["name"],
             patience=30,
             close_mosaic=10,
-            seed=SEED,
+            seed=seed,
             deterministic=True,
             amp=True,
             val=True,
@@ -457,7 +482,8 @@ def run_experiment(run, with_test=False, build_only=False):
         elapsed = (time.time() - start) / 3600
 
         metrics = {"name": run["name"], "status": "OK", "variant": variant,
-                   "imgsz": imgsz, "batch": batch, "time_h": round(elapsed, 2)}
+                   "imgsz": imgsz, "batch": batch, "seed": seed,
+                   "time_h": round(elapsed, 2)}
         if results is not None:
             try:
                 r = results.results_dict
