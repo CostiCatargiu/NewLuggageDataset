@@ -39,7 +39,7 @@ NEVER TESTED:
   The 3 speculative runs test genuinely NEW axes:
     [6] DetectDeepCls          — deeper cls tower (4-block vs stock 2-block)
     [7] ZGStar per level       — multiplicative feature mixing (StarNet 2024)
-    [8] ZGDCN per level        — deformable conv (adaptive receptive field)
+    [8] ZGDSConv@P3P4          — dynamic snake conv (shape-following for tall objs)
 
 =============================================================================
 RUNS (ordered by confidence)
@@ -51,15 +51,17 @@ RUNS (ordered by confidence)
   [5] arch_gctx2_detail_aux  — GCtx2 x3 + SmallDetail + DetectAuxDual
   [6] arch_deepcls           — DetectDeepCls: 4-block cls tower (head capacity)
   [7] arch_star              — ZGStar x3: multiplicative mixing (NEW nonlinearity)
-  [8] arch_dcn               — ZGDCN x3: deformable conv (adaptive localization)
+  [8] arch_dsconv             — ZGDSConv@P3P4: snake conv (shape-following)
 
 =============================================================================
 MODULE REGISTRATION
 =============================================================================
 All modules are imported AND width-scaled in nn_modules/tasks.py:
-  ZGGlobalContext2, CoordinateAttention, ZGSmallDetail, DySample,
-  DetectAuxDual, DetectDeepCls, ZGStar, ZGDCN — all in the scaling/dispatch sets.
-No build-variant fallback needed.
+  ZGGlobalContext2, ZGSmallDetail, DySample, DetectAuxDual, DetectDeepCls,
+  ZGStar, ZGDSConv — all in the scaling/dispatch sets.
+  CoordinateAttention — has custom dispatch in tasks.py but is NOT width-scaled;
+  uses {c256}/{c512}/{c1024} templates with build_variants() fallback
+  (nominal tried first, pre-scaled as fallback).
 
 Loss/assigner path untouched: use_satal / tal_topk / alpha / beta inherited
 from defaults (use_satal=true / topk=12 / a=0.6 / b=5.0), so these stay
@@ -80,7 +82,9 @@ import time
 import gc
 import sys
 import json
+import math
 import os
+import itertools
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
@@ -103,6 +107,22 @@ BATCH = 58             # global fallback
 EPOCHS = 70
 SEED = 0
 AUX_W = 0.5
+
+# Width scaling for modules NOT in parse_model's scaling set (CoordinateAttention).
+# Must match the `scales:` s entry: [0.50, 0.50, 1024].
+SCALE_WIDTH = 0.50
+MAX_CHANNELS = 1024
+
+
+def scaled_ch(c):
+    """Reproduce ultralytics parse_model channel scaling: make_divisible(min(c, max)*w, 8)."""
+    v = min(c, MAX_CHANNELS) * SCALE_WIDTH
+    return int(math.ceil(v / 8) * 8)
+
+
+# Substitution axes for CoordinateAttention build-variant fallback
+CH_NOMINAL = {"c256": 256, "c512": 512, "c1024": 1024}
+CH_SCALED = {k: scaled_ch(v) for k, v in CH_NOMINAL.items()}
 
 # =============================================================================
 # BUILDING BLOCKS
@@ -181,9 +201,9 @@ TAIL_GCTX2_DYSAMPLE = """  - [14, 1, ZGGlobalContext2, [256]]                # 2
 TAIL_GCTX2_COORDATT = """  - [14, 1, ZGGlobalContext2, [256]]                # 21  P3 + global ctx
   - [17, 1, ZGGlobalContext2, [512]]                # 22  P4 + global ctx
   - [20, 1, ZGGlobalContext2, [1024]]               # 23  P5 + global ctx
-  - [21, 1, CoordinateAttention, [256]]             # 24  P3 + coord attn
-  - [22, 1, CoordinateAttention, [512]]             # 25  P4 + coord attn
-  - [23, 1, CoordinateAttention, [1024]]            # 26  P5 + coord attn
+  - [21, 1, CoordinateAttention, [{c256}]]          # 24  P3 + coord attn
+  - [22, 1, CoordinateAttention, [{c512}]]          # 25  P4 + coord attn
+  - [23, 1, CoordinateAttention, [{c1024}]]         # 26  P5 + coord attn
   - [[24, 25, 26], 1, Detect, [nc]]                 # 27
 """
 
@@ -191,9 +211,9 @@ TAIL_GCTX2_COORDATT = """  - [14, 1, ZGGlobalContext2, [256]]                # 2
 #     DySample improves upsampling quality (thin-edge preservation); CoordAtt
 #     improves H/W spatial attention (94% tall objects). Different axes.
 #     NEVER combined.
-TAIL_DYSAMPLE_COORDATT = """  - [14, 1, CoordinateAttention, [256]]             # 21  P3 + coord attn
-  - [17, 1, CoordinateAttention, [512]]             # 22  P4 + coord attn
-  - [20, 1, CoordinateAttention, [1024]]            # 23  P5 + coord attn
+TAIL_DYSAMPLE_COORDATT = """  - [14, 1, CoordinateAttention, [{c256}]]          # 21  P3 + coord attn
+  - [17, 1, CoordinateAttention, [{c512}]]          # 22  P4 + coord attn
+  - [20, 1, CoordinateAttention, [{c1024}]]         # 23  P5 + coord attn
   - [[21, 22, 23], 1, Detect, [nc]]                 # 24
 """
 
@@ -246,15 +266,14 @@ TAIL_STAR = """  - [14, 1, ZGStar, [256, 4]]                      # 21  P3 + sta
   - [[21, 22, 23], 1, Detect, [nc]]                 # 24
 """
 
-# [8] ZGDCN per level — deformable conv. (Detect @ 24)
-#     The only module that learns per-position sampling offsets, adapting the
-#     receptive field to each object's exact shape. Targets the mAP50->mAP50-95
-#     gap (25pt) by improving localization quality for variable aspect ratios
-#     (bag 2.23, backpack 2.55, trolley 2.96).
-TAIL_DCN = """  - [14, 1, ZGDCN, [256, 3]]                       # 21  P3 + deformable conv
-  - [17, 1, ZGDCN, [512, 3]]                       # 22  P4 + deformable conv
-  - [20, 1, ZGDCN, [1024, 3]]                      # 23  P5 + deformable conv
-  - [[21, 22, 23], 1, Detect, [nc]]                 # 24
+# [8] ZGDSConv at P3/P4 — Dynamic Snake Convolution. (Detect @ 23)
+#     Kernel snakes along elongated structures with cumulative per-tap offsets.
+#     94% tall objects = direct shape prior match. Pure PyTorch (F.grid_sample),
+#     avoids the torchvision deform_conv2d SIGSEGV that killed ZGDCN.
+#     Applied at P3/P4 only (tall objects strongest there); P5 left clean.
+TAIL_DSCONV = """  - [14, 1, ZGDSConv, [256, 9]]                    # 21  P3 + snake conv k=9
+  - [17, 1, ZGDSConv, [512, 9]]                    # 22  P4 + snake conv k=9
+  - [[21, 22, 20], 1, Detect, [nc]]                 # 23  P3(snake)/P4(snake)/P5(clean)
 """
 
 # =============================================================================
@@ -320,12 +339,12 @@ RUNS = [
         "desc": "[7/8] ZGStar x3 — multiplicative mixing (polynomial expansion, StarNet 2024)",
     },
     {
-        "name": "arch_dcn",
-        "yaml": BACKBONE + HEAD_STOCK + TAIL_DCN,
+        "name": "arch_dsconv",
+        "yaml": BACKBONE + HEAD_STOCK + TAIL_DSCONV,
         "batch": 48,
         "levels": 3,
         "strides": [8, 16, 32],
-        "desc": "[8/8] ZGDCN x3 — deformable conv (adaptive RF for variable AR objects)",
+        "desc": "[8/8] ZGDSConv@P3P4 — dynamic snake conv for 94%-tall objects",
     },
 ]
 
@@ -337,6 +356,25 @@ def save_yaml(content, filepath):
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "w") as f:
         f.write(content)
+
+
+def build_variants(yaml_template):
+    """Generate substitution variants for CoordinateAttention channel args.
+
+    CoordinateAttention is NOT in parse_model's width-scaling set, so its YAML
+    channel args must be pre-scaled manually. Try nominal first (in case the
+    module gets added to the scaling set), then pre-scaled as fallback.
+
+    Templates without {c256}/{c512}/{c1024} placeholders return a single
+    "as-written" variant with no substitutions — i.e. a no-op for configs
+    that don't use CoordinateAttention.
+    """
+    if any(k in yaml_template for k in ("{c256}", "{c512}", "{c1024}")):
+        return [
+            ("ch=nominal", CH_NOMINAL),
+            ("ch=pre-scaled", CH_SCALED),
+        ]
+    return [("as-written", {})]
 
 
 def load_pretrained_with_detect_remap(model, weights=PRETRAINED):
@@ -366,26 +404,47 @@ def load_pretrained_with_detect_remap(model, weights=PRETRAINED):
 
 
 def build_model(run):
-    """Construct model, verify head levels and stride pyramid."""
+    """Try each YAML variant until one constructs AND wires the expected pyramid.
+
+    Returns (model, yaml_path, variant_label). Raises RuntimeError if all fail.
+    """
     yaml_path = os.path.join(YAML_DIR, f"{run['name']}.yaml")
-    save_yaml(run["yaml"], yaml_path)
+    variants = build_variants(run["yaml"])
+    errors = []
 
-    model = YOLO(yaml_path)
+    for label, subs in variants:
+        text = run["yaml"].format(**subs) if subs else run["yaml"]
+        save_yaml(text, yaml_path)
+        model = None
+        try:
+            model = YOLO(yaml_path)
 
-    det = model.model.model[-1]
-    nl = getattr(det, "nl", None)
-    strides = [int(s) for s in model.model.stride.tolist()]
+            det = model.model.model[-1]
+            nl = getattr(det, "nl", None)
+            strides = [int(s) for s in model.model.stride.tolist()]
 
-    exp_nl = run.get("levels")
-    exp_st = run.get("strides")
-    if exp_nl is not None and nl != exp_nl:
-        raise RuntimeError(f"head nl={nl}, expected {exp_nl}")
-    if exp_st is not None and strides != exp_st:
-        raise RuntimeError(f"strides={strides}, expected {exp_st}")
+            exp_nl = run.get("levels")
+            exp_st = run.get("strides")
+            if exp_nl is not None and nl != exp_nl:
+                raise RuntimeError(f"head nl={nl}, expected {exp_nl}")
+            if exp_st is not None and strides != exp_st:
+                raise RuntimeError(f"strides={strides}, expected {exp_st}")
 
-    load_pretrained_with_detect_remap(model)
-    print(f"  [build] OK  head={type(det).__name__} nl={nl} strides={strides}")
-    return model, yaml_path
+            load_pretrained_with_detect_remap(model)
+            print(f"  [build] OK via [{label}]  head={type(det).__name__} "
+                  f"nl={nl} strides={strides}")
+            return model, yaml_path, label
+
+        except Exception as e:
+            errors.append(f"[{label}] {type(e).__name__}: {e}")
+            print(f"  [build] variant [{label}] rejected -- {e}")
+            if model is not None:
+                del model
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    raise RuntimeError("all build variants failed:\n    " + "\n    ".join(errors))
 
 
 # =============================================================================
@@ -403,14 +462,15 @@ def run_experiment(run, with_test=False, build_only=False):
     start = time.time()
     model = None
     try:
-        model, yaml_path = build_model(run)
+        model, yaml_path, variant = build_model(run)
 
         if build_only:
             n_params = sum(p.numel() for p in model.model.parameters())
             print(f"  [build-only] {run['name']}: {n_params / 1e6:.2f}M params, "
-                  f"yaml={yaml_path}")
+                  f"yaml={yaml_path}, variant=[{variant}]")
             return {"name": run["name"], "status": "BUILD-OK",
-                    "params_M": round(n_params / 1e6, 2), "time_h": 0.0}
+                    "variant": variant, "params_M": round(n_params / 1e6, 2),
+                    "time_h": 0.0}
 
         results = model.train(
             data=DATA_YAML,
@@ -431,7 +491,7 @@ def run_experiment(run, with_test=False, build_only=False):
 
         elapsed = (time.time() - start) / 3600
 
-        metrics = {"name": run["name"], "status": "OK",
+        metrics = {"name": run["name"], "status": "OK", "variant": variant,
                    "batch": batch, "time_h": round(elapsed, 2)}
         if results is not None:
             try:
@@ -540,6 +600,8 @@ if __name__ == "__main__":
         print(f"{r['name']:<28s} {v.get('mAP50', 0):>8.4f} "
               f"{v.get('mAP50_95', 0):>10.4f} {r['status']:>10s} "
               f"{r.get('time_h', 0):>5.1f}h")
+        if r.get("variant"):
+            print(f"{'':<28s} built via [{r['variant']}]")
         if r.get("params_M"):
             print(f"{'':<28s} {r['params_M']}M params")
         if r.get("error"):
