@@ -281,14 +281,14 @@ TAIL_DSCONV = """  - [14, 1, ZGDSConv, [256, 9]]                    # 21  P3 + s
 # =============================================================================
 RUNS = [
     # --- PROVEN COMBOS (5 runs) ---
-    {
-        "name": "arch_gctx2_dysample",
-        "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_GCTX2_DYSAMPLE,
-        "batch": 52,
-        "levels": 3,
-        "strides": [8, 16, 32],
-        "desc": "[1/8] GCtx2 + DySample head — #1 winner + content-aware upsampling",
-    },
+    # {
+    #     "name": "arch_gctx2_dysample",
+    #     "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_GCTX2_DYSAMPLE,
+    #     "batch": 62,
+    #     "levels": 3,
+    #     "strides": [8, 16, 32],
+    #     "desc": "[1/8] GCtx2 + DySample head — #1 winner + content-aware upsampling",
+    # },
     {
         "name": "arch_gctx2_coordatt",
         "yaml": BACKBONE + HEAD_STOCK + TAIL_GCTX2_COORDATT,
@@ -300,7 +300,7 @@ RUNS = [
     {
         "name": "arch_dysample_coordatt",
         "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_DYSAMPLE_COORDATT,
-        "batch": 52,
+        "batch": 58,
         "levels": 3,
         "strides": [8, 16, 32],
         "desc": "[3/8] DySample + CoordAtt — edge-preserving upsample + H/W attention",
@@ -308,7 +308,7 @@ RUNS = [
     {
         "name": "arch_dysample_p2_gctx2",
         "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_DYS_P2_GCTX2,
-        "batch": 32,
+        "batch": 36,
         "levels": 4,
         "strides": [4, 8, 16, 32],
         "desc": "[4/8] DySample + P2 + GCtx2 — retry stacking with gctx2 (not gctx)",
@@ -316,7 +316,7 @@ RUNS = [
     {
         "name": "arch_gctx2_detail_aux",
         "yaml": BACKBONE + HEAD_STOCK + TAIL_GCTX2_DETAIL_AUX,
-        "batch": 48,
+        "batch": 52,
         "levels": 3,
         "strides": [8, 16, 32],
         "desc": "[5/8] GCtx2 + SmallDetail + AuxDual — #1 winner + dual supervision",
