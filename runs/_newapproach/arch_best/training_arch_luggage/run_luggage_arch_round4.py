@@ -44,42 +44,59 @@ THREE FACTS THIS ROUND IS BUILT ON
     best large of the overnight-2 round. It has NEVER met the P2 head.
 
 =============================================================================
-RUNS
+RUNS — ORDERED BY CONFIDENCE OF IMPROVING ON 57.91
 =============================================================================
-  [1] arch_dysgctx2_dsconv   (b32)  BEST MODEL + ZGDSConv at P3/P4.
-        The additivity rule from fact (2) applied deliberately: the best model's
-        sole deficit is medium; ZGDSConv is the only module in the corpus that is
-        strong on medium AND large. Different deficits -> genuine complementarity,
-        unlike the six same-purpose combos that failed.
-        Snake conv is also a direct shape prior: 94% of boxes are tall,
-        mean h/w = 2.69, mean box 33x72px.
-        Target: keep 57.91's small/large, recover the -1.29 medium -> ~58.3+.
-
-  [2] arch_levelspec         (b32)  PER-LEVEL MODULE SPECIALISATION.
-        Every one of the 27 runs so far applies ONE module family UNIFORMLY to
-        every pyramid level. The per-size evidence says that is wrong:
-            gctx2   helps small (+0.95 sm50-95), hurts large (-1.92)
-            ZGDSConv helps medium + large (67.32 / 62.56)
-        So route them by level instead of stacking them everywhere:
-            gctx2    -> P2, P3   (where small objects live)
-            ZGDSConv -> P4, P5   (where medium/large live)
-        This is the cheapest untested structural idea in the project and it
-        doubles as a control for run [1]: comparing [1] vs [2] isolates whether
-        gctx2 on P4/P5 is a net NEGATIVE. Circumstantial evidence that it is:
-        gctx22 large = 57.92 vs gctx5 large = 60.20, i.e. avg+max may actively
-        hurt at coarse levels while helping at fine ones.
-
-  [3] arch_dysgctx2_r4       (b36)  TUNE THE ONE REPLICATED LEVER.
+  [1] arch_dysgctx2_r4       (b36)  P(improve) ~50%  |  expected size ~+0.1..0.2
+        TUNE THE ONE REPLICATED LEVER — the safest bet in the set.
         ZGGlobalContext2(c1, c2, reduction=8) builds its MLP bottleneck as
         hidden = max(8, c1 // reduction). After the s-scale width multiplier
         (0.50) the P2/P3 levels carry c1=128, so hidden = 16 — a 16-channel
         bottleneck compressing a 2*128 = 256-dim avg+max descriptor. That is
         very tight, and `reduction` has never been varied on any dataset.
-        reduction=4 doubles the bottleneck (32ch at P2/P3) for ~a few thousand
-        extra params and no measurable FLOPs.
-        Byte-identical to arch_dysample_p2_gctx2 except the reduction arg, and
-        run at the SAME batch 36 -> a clean single-variable ablation against
-        57.91, on the only finding that has replicated twice.
+        reduction=4 doubles it for a few thousand params and no real FLOPs.
+        WHY IT RANKS FIRST: changes exactly ONE variable; runs at the SAME
+        batch 36 as its reference so there is no step-count confound; cannot
+        destabilise (same topology, wider MLP); cheapest run of the three.
+        WHY IT MIGHT NOT: `reduction` is a mild hyperparameter — the effect
+        could easily land inside the ~0.15 noise floor.
+
+  [2] arch_dysgctx2_dsconv   (b32)  P(improve) ~40%  |  expected size ~+0.3..0.5
+        BEST MODEL + ZGDSConv at P3/P4 — the biggest prize if it lands.
+        Targets a MEASURED deficit: the best model loses -1.29 on medium, the
+        only bucket where it is behind the baseline, and medium is 39.9% of
+        test instances (MORE than small at 39.7%). ZGDSConv is the only module
+        in the corpus strong on medium (67.32) AND large (62.56), and it has
+        never met the P2 head. Snake conv is also a literal shape prior:
+        94% of boxes are tall, mean h/w = 2.69, mean box 33x72px.
+        WHY IT MIGHT NOT: six of seven combos have failed, and this one stacks
+        two zero-gated residual modules IN SERIES on the same levels (gctx2
+        then dsconv at P3/P4) — structurally the same pattern that sank
+        gctx2_coordatt (57.08) and gctx2_detail_aux (57.35). Two gamma gates in
+        sequence can also simply cancel.
+
+  [3] arch_levelspec         (b32)  P(improve) ~30%  |  highest INFORMATION value
+        PER-LEVEL MODULE SPECIALISATION — the only untested structural idea.
+        All 27 runs so far apply ONE module family UNIFORMLY to every pyramid
+        level. The per-size evidence says that is wrong:
+            gctx2    helps small (+0.95 sm50-95), hurts large (-1.92)
+            ZGDSConv helps medium + large (67.32 / 62.56)
+        So route them by level instead of stacking them everywhere:
+            gctx2    -> P2, P3   (where small objects live)
+            ZGDSConv -> P4, P5   (where medium/large live)
+        Doubles as the control for run [2]: comparing them isolates whether
+        gctx2 on P4/P5 is a net NEGATIVE (gctx22 large = 57.92 vs gctx5 large
+        = 60.20 hints that avg+max may hurt at coarse levels).
+        WHY IT RANKS LAST: the earlier `asym` run already tested "remove gctx
+        from P4/P5" and large got WORSE (57.32 vs 58.14). Different module
+        (gctx not gctx2) on a decoupled head, so not decisive — but it points
+        the wrong way, and this run strips the best-validated module off half
+        the pyramid. A negative result here is still worth having.
+
+QUEUE RATIONALE: r4 first because it is fastest and safest, so an interrupted
+overnight still banks the cleanest result. levelspec last because it is the one
+whose NEGATIVE outcome is publishable on its own.
+Note the ordering by EXPECTED VALUE would swap [1] and [2]: 40% x 0.4pt beats
+50% x 0.15pt. Ordered here by P(improve), as requested.
 
 Deliberately NOT included: more same-purpose combos (rule 2), anything on the
 coordatt axis (coordatt3 is 14th-15th on large and every coordatt combo failed),
@@ -235,12 +252,23 @@ TAIL_DYSGCTX2_R4 = """  - [14, 1, DySample, [2]]                          # 21  
 # =============================================================================
 RUNS = [
     {
+        "name": "arch_dysgctx2_r4",
+        "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_DYSGCTX2_R4,
+        "batch": 36,          # matches arch_dysample_p2_gctx2 exactly -> no step-count confound
+        "levels": 4,
+        "strides": [4, 8, 16, 32],
+        "confidence": "~50% -- highest P(improve). One variable, on the only twice-replicated lever.",
+        "desc": "[1/3] b36 — gctx2 reduction 8->4 (single-variable, safest, cheapest)",
+        "ref": "arch_dysample_p2_gctx2 = 57.91 (reduction=8)",
+    },
+    {
         "name": "arch_dysgctx2_dsconv",
         "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_DYSGCTX2_DSCONV,
         "batch": 32,
         "levels": 4,
         "strides": [4, 8, 16, 32],
-        "desc": "[1/3] b32 — best model + snake conv @P3P4 (attacks the -1.29 medium)",
+        "confidence": "~40% -- lower P(improve) but LARGEST expected magnitude (+0.3..0.5).",
+        "desc": "[2/3] b32 — best model + snake conv @P3P4 (attacks the -1.29 medium)",
         "ref": "arch_dysample_p2_gctx2 = 57.91 (md 66.26)",
     },
     {
@@ -249,17 +277,9 @@ RUNS = [
         "batch": 32,
         "levels": 4,
         "strides": [4, 8, 16, 32],
-        "desc": "[2/3] b32 — gctx2 @P2P3 + snake @P4P5 (per-level specialisation)",
+        "confidence": "~30% -- lowest P(improve), HIGHEST information value either way.",
+        "desc": "[3/3] b32 — gctx2 @P2P3 + snake @P4P5 (per-level specialisation)",
         "ref": "arch_dysample_p2_gctx2 = 57.91 (uniform gctx2 x4)",
-    },
-    {
-        "name": "arch_dysgctx2_r4",
-        "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_DYSGCTX2_R4,
-        "batch": 36,          # matches arch_dysample_p2_gctx2 exactly
-        "levels": 4,
-        "strides": [4, 8, 16, 32],
-        "desc": "[3/3] b36 — gctx2 reduction 8->4 (single-variable, the only replicated lever)",
-        "ref": "arch_dysample_p2_gctx2 = 57.91 (reduction=8)",
     },
 ]
 
