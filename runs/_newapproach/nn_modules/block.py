@@ -70,6 +70,9 @@ __all__ = (
     "ZGDCN",
     "ZGStar",
     "ZGDSConv",
+    "ARSC",
+    "ARSPP",
+    "ARGate",
     "ZGLSKASG",
     "ZGLSKAStripFuse",
     "ZGLSKAMultiDil",
@@ -2004,6 +2007,150 @@ class ZGDSConv(nn.Module):
         y = self.act(self.bn(sx + sy))
         y = self.pw(y)
         return x + self.gamma * y
+
+
+# =============================================================================
+# NOVEL DATASET-MOTIVATED BLOCKS (luggage: 94% tall, mean AR 2.69,
+# per-class AR bag 2.23 / backpack 2.55 / trolley 2.96)
+#
+# Design principle learned from the ShapeCBAM failure: the dataset has ONE
+# dominant geometry (tall), with SUBTLE per-class AR differences. A block must
+# COMMIT to the tall prior (not hedge across H/V/S like ShapeCBAM, which wasted
+# 2/3 of its capacity on wide+square kernels for objects that are 94% tall),
+# and ADAPT to the AR variation WITHIN tallness. All blocks are zero-gated
+# (gamma=0 -> identity at init), the property that made the good ZG blocks
+# generalize and the aggressive ones fail.
+# =============================================================================
+
+
+class ARSC(nn.Module):
+    """Aspect-Ratio-Steered Convolution (NOVEL) — per-location tall/square blend.
+
+    y = x + gamma * blend,   gamma = 0 at init (identity start)
+    blend(p) = (1 - r(p)) * Conv_square(x)(p) + r(p) * Conv_tall(x)(p)
+
+    where r(p) in [0,1] is a per-LOCATION "verticality" scalar predicted by a
+    lightweight 3x3 conv -> sigmoid. Regions on a tall object push r->1 (use the
+    (k x 1) vertical kernel); background / square regions push r->0 (use the
+    square kernel with a local receptive field).
+
+    NOVELTY vs everything else in this file:
+      - ZGStrip / ZGDSConv apply a FIXED elongated / snaking kernel everywhere;
+        ARSC learns, per pixel, HOW tall the kernel should be.
+      - CoordinateAttention / ZGGlobalContext2 do attention but keep SQUARE
+        convolution geometry; ARSC steers the convolution GEOMETRY itself.
+      - ShapeCBAM mixed H/V/S kernels on a wrong premise (wide bags); ARSC
+        commits to the tall prior (tall<->square only) matching the real stats.
+
+    This directly targets the 25pt mAP50->mAP50-95 localization gap: matching the
+    kernel's vertical extent to each object's extent yields tighter box features,
+    which feature-attention (recall already ~96%) cannot provide.
+
+    The mean of r over a region correlates with object aspect ratio -> the
+    "r vs class-AR" plot is a ready-made paper figure.
+
+    YAML args: [c2, k]  e.g.  [512, 7]   (tall kernel is (k x 1), square is 3x3)
+    """
+
+    def __init__(self, c1, c2, k=7):
+        super().__init__()
+        assert c1 == c2, "ARSC preserves channels"
+        assert k % 2 == 1, "k must be odd"
+        # depthwise geometry branches (cheap; geometry is the point, not width)
+        self.conv_square = nn.Conv2d(c1, c1, 3, 1, 1, groups=c1, bias=False)
+        self.conv_tall = nn.Conv2d(c1, c1, (k, 1), 1, (k // 2, 0), groups=c1, bias=False)
+        # per-location verticality predictor r(p) in [0,1]
+        self.steer = nn.Conv2d(c1, 1, 3, 1, 1)
+        nn.init.zeros_(self.steer.weight)
+        nn.init.zeros_(self.steer.bias)  # r starts at 0.5 (unbiased blend) via sigmoid(0)
+        self.bn = nn.BatchNorm2d(c1)
+        self.act = nn.SiLU()
+        self.pw = nn.Conv2d(c1, c1, 1)
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        r = torch.sigmoid(self.steer(x))                 # (B,1,H,W) verticality
+        sq = self.conv_square(x)
+        tl = self.conv_tall(x)
+        blend = (1.0 - r) * sq + r * tl                   # geometry-steered mix
+        y = self.pw(self.act(self.bn(blend)))
+        return x + self.gamma * y
+
+    def verticality(self, x):
+        """Return the per-location r map (for analysis / paper figures)."""
+        return torch.sigmoid(self.steer(x))
+
+
+class ARSPP(nn.Module):
+    """Anisotropic Strip Pyramid Pooling (NOVEL) — multi-scale VERTICAL context.
+
+    y = x + gamma * pw(cat[ x, S_k1(x), S_k2(x), S_k3(x) ]),  gamma = 0 at init.
+
+    ASPP (Chen et al., DeepLab) gathers multi-scale context with a pyramid of
+    SQUARE dilated kernels. For 94%-tall objects, horizontal context is largely
+    wasted background. ARSPP replaces the square pyramid with a pyramid of
+    depthwise VERTICAL strip convs (k x 1) at increasing lengths, so each branch
+    captures vertical context at a different scale (a short strip covers a bag's
+    height, a long strip covers a trolley's full extent). This is the tall-object
+    analogue of ASPP: a multi-scale receptive field committed to the dominant
+    axis instead of spread isotropically.
+
+    NOVELTY: ASPP is square/isotropic; ZGStrip uses a SINGLE strip scale. ARSPP
+    is a multi-scale VERTICAL pyramid — new, and tied to the AR statistics
+    (bag 2.23 -> short strip, trolley 2.96 -> long strip).
+
+    YAML args: [c2, ks]  e.g.  [512, [3, 7, 11]]  (three vertical strip lengths)
+    """
+
+    def __init__(self, c1, c2, ks=(3, 7, 11)):
+        super().__init__()
+        assert c1 == c2, "ARSPP preserves channels"
+        self.strips = nn.ModuleList(
+            nn.Conv2d(c1, c1, (k, 1), 1, (k // 2, 0), groups=c1, bias=False) for k in ks
+        )
+        self.fuse = nn.Conv2d(c1 * (len(ks) + 1), c1, 1)
+        self.bn = nn.BatchNorm2d(c1)
+        self.act = nn.SiLU()
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        feats = [x] + [s(x) for s in self.strips]
+        y = self.act(self.bn(self.fuse(torch.cat(feats, dim=1))))
+        return x + self.gamma * y
+
+
+class ARGate(nn.Module):
+    """Aspect-Ratio Gate (NOVEL, lightweight) — global verticality gate on a tall branch.
+
+    y = x + gamma * g * tall(x),   gamma = 0 at init,
+    g = sigmoid(MLP(GAP(x))) is a single per-image (per-channel) scalar gating a
+    depthwise (k x 1) vertical-conv branch.
+
+    The cheapest member of the family and an important CONTROL: it applies the
+    tall prior but adapts only GLOBALLY (one gate per image), not per-location
+    like ARSC. Comparing ARGate vs ARSC isolates the value of PER-LOCATION
+    adaptivity — a clean ablation axis for the paper (fixed strip < global gate
+    < per-location steer, hopefully).
+
+    YAML args: [c2, k]  e.g.  [512, 7]
+    """
+
+    def __init__(self, c1, c2, k=7, reduction=8):
+        super().__init__()
+        assert c1 == c2, "ARGate preserves channels"
+        self.tall = nn.Conv2d(c1, c1, (k, 1), 1, (k // 2, 0), groups=c1, bias=False)
+        hidden = max(8, c1 // reduction)
+        self.gate = nn.Sequential(
+            nn.Conv2d(c1, hidden, 1), nn.SiLU(), nn.Conv2d(hidden, c1, 1), nn.Sigmoid()
+        )
+        self.bn = nn.BatchNorm2d(c1)
+        self.act = nn.SiLU()
+        self.gamma = nn.Parameter(torch.zeros(c1, 1, 1))
+
+    def forward(self, x):
+        g = self.gate(x.mean(dim=(2, 3), keepdim=True))   # (B,C,1,1) verticality gate
+        y = self.act(self.bn(self.tall(x)))
+        return x + self.gamma * g * y
 
 
 class ZGLSKASG(nn.Module):

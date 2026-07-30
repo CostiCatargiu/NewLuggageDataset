@@ -1,53 +1,48 @@
 # Ultralytics AGPL-3.0 License - https://ultralytics.com/license
 # =============================================================================
-# SATAL + SWA + NWD  —  rebuilt (v2)
+# loss_ardfl.py  —  AR-DFL loss (SATAL + SWA + NWD + Aspect-Ratio-aware DFL)
 # =============================================================================
-# Rewrite of loss_satal_swa_plus_nwd.py. Same ideas, but every silent-failure
-# mode from v1 is removed. Behaviour is now observable and ablatable.
+# THIS IS THE FILE TO DEPLOY. Copy it to your ultralytics install as:
+#     ultralytics/utils/loss.py
+# (identical content to loss_function/loss.py; renamed so it is obvious which
+#  file carries the AR-DFL contribution and pairs with run_ardfl_ablation.py.)
 #
-# WHAT WAS BROKEN IN v1 (and is fixed here)
-# -----------------------------------------------------------------------------
-# 1. use_nwd split-brain default: v8DetectionLoss defaulted True, BboxLoss
-#    defaulted False. With no hyp key set, the config PRINTED "use_nwd: True"
-#    while NWD never executed.  -> FIX: one config object, read once, passed
-#    explicitly. BboxLoss has no independent defaults.
-# 2. self.epoch never updated (relied on model.current_epoch, which Ultralytics
-#    does not set). alpha froze at alpha_start=0.9 for all 70 epochs — the most
-#    aggressive setting — and every clip schedule froze too.  -> FIX: explicit
-#    epoch callback + fail-SAFE fallback (constant mid alpha, loud warning)
-#    instead of silently sitting at worst case.
-# 3. area_weight = 1/area, batch-max normalized: 400:1 spread on this dataset
-#    (1-cell box weighted 1.0, typical 37-cell object 0.027). Most objects
-#    contributed ~2% of the gradient of the smallest box in the batch, and the
-#    scale jittered per batch.  -> FIX: bounded size weight in [1, boost],
-#    keyed on WIDTH (dataset is 94% tall, mean 33x72px — width is the hard axis).
-# 4. Normalizer mismatch: numerator weighted by SWA weights, denominator still
-#    target_scores_sum.  -> FIX: divide by the sum of the weights actually used.
-#    (With swa_alpha=0 this is mathematically identical to target_scores_sum,
-#    so the stock path is reproduced exactly — see NOTE below.)
-# 5. Class weighting hardcoded ALWAYS ON from counts that did not match the
-#    dataset (34901/28628/66946 vs actual 11491/9490/21557).  -> FIX: hyp-driven,
-#    ablatable, counts configurable.
-# 6. nwd_C in grid-cell units -> different physical size per FPN level.
-#    -> FIX: all size/NWD math in PIXELS.
-# 7. E2EDetectLoss referenced undefined v8DetectionLossLuggage (NameError).
-# 8. Segmentation mask_h/mask_w unpack failed when overlap=True.
+# It is a superset of the stock loss: with no hyp flags set it reproduces stock
+# Ultralytics loss EXACTLY. AR-DFL activates only when use_ardfl=True (+ the
+# ardfl_* knobs) are passed via model.train(...), which run_ardfl_ablation.py
+# does for you.
 #
-# NOTE on the normalizer: target_scores is zero on background anchors, so
-# target_scores.sum() == score_weight.sum() exactly. Therefore with
-# swa_alpha=0 / size weighting off, dividing by the weight sum reproduces the
-# stock normalization bit-for-bit. This gives a clean neutral baseline.
+# WHAT IS NEW HERE (vs every prior loss experiment):
+#   AR-DFL = Aspect-Ratio-aware Distribution Focal Loss.
+#   ~60 prior configs reweighted WHICH samples matter or swapped the IoU flavour
+#   and all plateaued (the R9/R10 changelogs proved gradient rescaling is null).
+#   AR-DFL instead changes the BOX REPRESENTATION: stock DFL quantizes all four
+#   box edges into the same 16-bin grid, but this dataset is 94% tall (mean AR
+#   2.69), so the HEIGHT edges (top,bottom) carry the large, hard-to-localise
+#   range while the WIDTH edges (left,right) are short/easy. AR-DFL raises the
+#   per-edge DFL weight on the height edges (and optionally sharpens only the
+#   height-edge distributions), spending regression capacity where the residual
+#   error — the 25pt mAP50->mAP50-95 gap — actually lives. It is orthogonal to
+#   NWD (keep NWD on) and needs NO architecture change (same reg_max, same head).
 #
-# NEUTRAL CONFIG (reproduces stock Ultralytics loss):
+#   bbox2dist edge order = (left, top, right, bottom):
+#       width  edges = columns [0, 2]
+#       height edges = columns [1, 3]
+#
+#   Knobs (all default OFF -> stock behaviour):
+#       use_ardfl, ardfl_h_weight, ardfl_w_weight,
+#       ardfl_ar_gate, ardfl_ar_thresh, ardfl_entropy, ardfl_entropy_w
+#
+# =============================================================================
+# INHERITED (SATAL + SWA + NWD rebuild, v2) — every silent-failure mode from v1
+# removed. NEUTRAL CONFIG (reproduces stock Ultralytics loss):
 #   use_satal=False, swa_alpha=0.0, swa_boost=1.0, use_nwd=False,
-#   use_class_weights=False, use_loss_clip=False
+#   use_class_weights=False, use_loss_clip=False, use_ardfl=False
 #
 # EPOCH TRACKING — REQUIRED for any schedule to work:
 #   from ultralytics.utils.loss import attach_epoch_tracking
 #   model = YOLO(...)
 #   attach_epoch_tracking(model)      # <-- do this BEFORE model.train(...)
-# If you skip it, schedules are disabled and a warning is printed once. They do
-# NOT silently freeze at the aggressive end any more.
 # =============================================================================
 
 import math
@@ -68,11 +63,6 @@ from .tal import bbox2dist
 # =============================================================================
 # EPOCH TRACKING
 # =============================================================================
-# v1's bug: self.epoch was read from model.current_epoch, which Ultralytics never
-# sets, so it stayed 0 forever and every schedule froze at its start value.
-# Here epoch lives in one module-level slot, written by an explicit callback.
-# _EPOCH_EVER_SET lets the loss detect "nobody wired this up" and degrade SAFELY.
-
 _EPOCH_STATE = {"epoch": 0, "total": 0, "ever_set": False, "warned": False}
 
 
@@ -94,8 +84,7 @@ def attach_epoch_tracking(model):
     Register epoch tracking on a YOLO model. Call BEFORE model.train().
 
     Without this, all epoch-dependent schedules (swa alpha annealing, loss
-    clipping annealing) are DISABLED and a one-time warning is printed. This is
-    deliberate: v1 silently froze at the most aggressive setting instead.
+    clipping annealing) are DISABLED and a one-time warning is printed.
     """
     model.add_callback("on_train_epoch_start", _epoch_callback)
     return model
@@ -120,9 +109,6 @@ def _get_progress(total_fallback):
 # =============================================================================
 # CONFIG OBJECT — single source of truth
 # =============================================================================
-# v1 kept parallel copies of the same settings in v8DetectionLoss and BboxLoss,
-# each with its own default. That is exactly how use_nwd ended up printed as True
-# while computing as False. Here the config is parsed ONCE and handed to BboxLoss.
 
 
 class SataLSwaConfig:
@@ -148,17 +134,9 @@ class SataLSwaConfig:
         self.satal_topk_factor = g("satal_topk_factor", 1.5)
 
         # ---- SWA (size weight adaptive) -------------------------------------
-        # swa_mode:
-        #   "scale" (default) -> weight = score_weight * size_weight
-        #        Multiplicative. Preserves TAL's quality signal and only modulates
-        #        it by size. This is the recommended form.
-        #   "blend"           -> weight = a*size_weight + (1-a)*score_weight
-        #        v1's additive form, kept for fidelity/ablation. Note it REPLACES
-        #        the quality signal rather than modulating it.
         self.swa_mode = g("swa_mode", "scale")
         self.swa_alpha = float(g("swa_alpha", 0.0))          # 0.0 -> SWA off (stock)
         self.swa_alpha_end = g("swa_alpha_end", None)        # None -> no annealing
-        # size weighting: bounded, in [1, boost]. NOT 1/area.
         self.swa_size_axis = g("swa_size_axis", "width")     # "width" | "area"
         self.swa_boost = float(g("swa_boost", 1.0))          # 1.0 -> off
         self.swa_width_thresh_px = float(g("swa_width_thresh_px", 24.0))
@@ -172,11 +150,10 @@ class SataLSwaConfig:
         self.wiou_momentum = float(g("wiou_momentum", 0.02))
 
         # ---- NWD ------------------------------------------------------------
-        # ONE flag. No second default anywhere.
         self.use_nwd = bool(g("use_nwd", False))
         self.nwd_mode = g("nwd_mode", "blend")               # "blend"|"pure"|"small_only"
         self.nwd_weight = float(g("nwd_weight", 0.5))
-        self.nwd_c_px = float(g("nwd_c_px", 12.0))           # PIXELS (v1 used grid cells)
+        self.nwd_c_px = float(g("nwd_c_px", 12.0))           # PIXELS
         self.nwd_small_width_px = float(g("nwd_small_width_px", 24.0))
         self.nwd_debug = bool(g("nwd_debug", False))
 
@@ -188,42 +165,23 @@ class SataLSwaConfig:
         self.vfl_gamma = float(g("vfl_gamma", 2.0))
 
         # ---- loss clipping ---------------------------------------------------
-        # v1 clipped at max_clip/10 which was mostly inert, except it could
-        # truncate DFL gradient on exactly the small boxes it meant to help.
-        # Off by default now; values are the real clamp, no hidden /10.
         self.use_loss_clip = bool(g("use_loss_clip", False))
         self.iou_clip = float(g("iou_clip", 2.0))
         self.dfl_clip = float(g("dfl_clip", 5.0))
 
         # ---- AR-DFL (Aspect-Ratio-aware DFL) --------------------------------
-        # THE genuinely untried axis. Every prior loss (60 runs) reweighted
-        # *which samples* matter or swapped the IoU flavour; NONE changed the
-        # box REPRESENTATION. The 25pt mAP50->mAP50-95 gap is a box-tightness
-        # problem, and DFL quantizes all 4 edges identically. For 94%-tall
-        # objects (AR 2.69) the HEIGHT edges (top,bottom) carry the large,
-        # hard-to-localize range while WIDTH edges (left,right) are short/easy.
-        #
-        # bbox2dist orders edges as (left, top, right, bottom):
+        # THE genuinely untried axis. Reweights per-edge DFL toward the HEIGHT
+        # edges (top,bottom), where tall-object localization error concentrates.
+        # bbox2dist order = (left, top, right, bottom):
         #   width  edges = columns [0, 2]
         #   height edges = columns [1, 3]
-        #
-        # AR-DFL raises the DFL loss weight on the HEIGHT edges so the network
-        # spends its regression capacity where the residual error actually lives.
-        # It is orthogonal to NWD (keep NWD on) and needs NO architecture change
-        # (same reg_max, same head) — it only reweights the existing per-edge DFL.
-        #
         #   use_ardfl        : master switch (default off -> stock behaviour)
         #   ardfl_h_weight   : multiplier on height-edge (top,bottom) DFL  (>1)
         #   ardfl_w_weight   : multiplier on width-edge  (left,right) DFL  (<=1)
-        #   ardfl_ar_gate    : if True, apply the reweight ONLY to boxes whose
-        #                      GT aspect ratio (h/w) exceeds ardfl_ar_thresh,
-        #                      so near-square boxes keep symmetric DFL.
-        #   ardfl_ar_thresh  : h/w threshold for the gate (dataset mean ~2.69)
-        #   ardfl_entropy    : optional entropy penalty on the HEIGHT-edge
-        #                      distributions (sharpen -> tighter height). The
-        #                      r10_dfl_entropy run gave the best bag AP; this
-        #                      applies that idea only where it helps (height).
-        #   ardfl_entropy_w  : weight of that entropy term.
+        #   ardfl_ar_gate    : apply only to boxes with GT h/w > ardfl_ar_thresh
+        #   ardfl_ar_thresh  : h/w gate threshold (dataset mean ~2.69)
+        #   ardfl_entropy    : sharpen ONLY the height-edge distributions
+        #   ardfl_entropy_w  : weight of that entropy term
         self.use_ardfl = bool(g("use_ardfl", False))
         self.ardfl_h_weight = float(g("ardfl_h_weight", 1.5))
         self.ardfl_w_weight = float(g("ardfl_w_weight", 1.0))
@@ -274,10 +232,7 @@ class SataLSwaConfig:
 # https://arxiv.org/abs/2110.13389
 # Box -> 2D Gaussian, mu = center, Sigma = diag((w/2)^2, (h/2)^2)
 # W2^2 = ||mu1-mu2||^2 + ||sigma1-sigma2||^2 ;  NWD = exp(-sqrt(W2^2)/C)
-#
-# C is in PIXELS here (paper uses ~12.8 px for AI-TOD). v1 applied C to
-# stride-normalized coords, which silently meant a different physical scale on
-# every FPN level.
+# C is in PIXELS here.
 
 _NWD_DEBUG_FIRED = {"done": False}
 
@@ -312,15 +267,6 @@ def _nwd_similarity(pred_px, target_px, c, eps=1e-7, debug=False):
 # =============================================================================
 # BOX REGRESSION METRICS
 # =============================================================================
-# Dataset is 94% tall (mean h/w 2.69, 33x72px), so metrics with EXPLICIT width
-# and height error terms are better matched than CIoU, whose aspect term goes to
-# ~0 whenever the h/w RATIO matches even if absolute width is wrong.
-#
-#   ciou   : stock (baseline)
-#   eiou   : IoU - center - w_err - h_err            (Zhang 2022)
-#   siou   : IoU - 0.5*(distance + shape)            (Gevorgyan 2022)
-#   mpdiou : IoU - d1^2/d^2 - d2^2/d^2               (Ma & Xu 2023) corner-based
-#   wiou   : WIoU v3, outlier-aware dynamic focusing (Tong 2023)
 
 
 def _corner_geometry(pred, target, eps=1e-7):
@@ -373,7 +319,6 @@ def _box_loss_terms(pred, target, kind, eps=1e-7):
         return 1.0 - (iou - 0.5 * (dist + shape))
 
     if kind == "mpdiou":
-        # Corner-distance form; normalizer is the enclosing-box diagonal.
         d1 = (g["px1"] - g["tx1"]) ** 2 + (g["py1"] - g["ty1"]) ** 2
         d2 = (g["px2"] - g["tx2"]) ** 2 + (g["py2"] - g["ty2"]) ** 2
         d = g["cw"] ** 2 + g["ch"] ** 2 + eps
@@ -383,16 +328,7 @@ def _box_loss_terms(pred, target, kind, eps=1e-7):
 
 
 def _wiou_v3(pred, target, running_mean, alpha, delta, eps=1e-7):
-    """
-    WIoU v3 (Tong et al. 2023). Returns (loss (N,), new_running_mean).
-
-    L_WIoUv1 = R * L_IoU, R = exp(center_dist^2 / enclosing_diag^2) with the
-    enclosing box DETACHED (this is what stops the penalty producing gradient
-    that fights the IoU term).
-    v3 scales by an outlier-degree gradient gain r = beta / (delta * alpha^(beta-delta)),
-    beta = L_IoU / mean(L_IoU), which de-emphasises both easy and very-low-quality
-    anchors. `running_mean` is the momentum-smoothed mean of L_IoU.
-    """
+    """WIoU v3 (Tong et al. 2023). Returns (loss (N,), new_running_mean)."""
     g = _corner_geometry(pred, target, eps)
     l_iou = 1.0 - g["iou"]
 
@@ -412,17 +348,7 @@ def _wiou_v3(pred, target, running_mean, alpha, delta, eps=1e-7):
 
 
 def _size_weight(target_px, cfg):
-    """
-    Bounded per-object weight in [1, swa_boost].
-
-    v1 used 1/area normalized by the batch max -> up to 400:1 spread on this
-    dataset, batch-dependent scale. This is linear and bounded: `boost` at
-    size 0, decaying to 1.0 at the threshold.
-
-    axis="width" is the default because the dataset is 94% tall (mean 33x72px):
-    a thin trolley has medium AREA but small WIDTH, so an area-keyed weight
-    under-serves exactly the hard objects.
-    """
+    """Bounded per-object weight in [1, swa_boost]. axis='width' default (94% tall)."""
     if cfg.swa_boost <= 1.0:
         return torch.ones(target_px.shape[0], device=target_px.device, dtype=target_px.dtype)
 
@@ -484,7 +410,7 @@ class FocalLoss(nn.Module):
 
 
 class DFLoss(nn.Module):
-    """Distribution Focal Loss."""
+    """Distribution Focal Loss (with per-edge access for AR-DFL)."""
 
     def __init__(self, reg_max=16):
         super().__init__()
@@ -537,11 +463,10 @@ def _dfl_edge_entropy(pred_dist):
 
 class BboxLoss(nn.Module):
     """
-    Box loss with bounded SWA weighting and optional pixel-space NWD.
+    Box loss with bounded SWA weighting, optional pixel-space NWD, and AR-DFL.
 
     Takes the SHARED config object — it has no defaults of its own, so the
-    printed config and the computed loss cannot disagree (v1's core bug).
-
+    printed config and the computed loss cannot disagree.
     forward() requires `stride_tensor` so all size/NWD math is done in pixels.
     """
 
@@ -554,7 +479,6 @@ class BboxLoss(nn.Module):
         self.dfl_loss = DFLoss(reg_max) if reg_max > 1 else None
         self._wiou_mean = None  # momentum-smoothed mean of L_IoU (WIoU v3)
 
-    # -- schedules -----------------------------------------------------------
     def _current_alpha(self):
         """SWA alpha. Anneals only if epoch tracking is attached AND an end is set."""
         cfg = self.cfg
@@ -562,8 +486,7 @@ class BboxLoss(nn.Module):
             return cfg.swa_alpha
         progress, active = _get_progress(cfg.total_epochs)
         if not active:
-            # FAIL-SAFE: midpoint, not the aggressive start value (v1's behaviour).
-            return 0.5 * (cfg.swa_alpha + cfg.swa_alpha_end)
+            return 0.5 * (cfg.swa_alpha + cfg.swa_alpha_end)  # FAIL-SAFE midpoint
         return cfg.swa_alpha * (1 - progress) + cfg.swa_alpha_end * progress
 
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes,
@@ -572,7 +495,6 @@ class BboxLoss(nn.Module):
         pred_fg = pred_bboxes[fg_mask]
         target_fg = target_bboxes[fg_mask]
 
-        # pixel-space copies for all size-dependent math
         stride_fg = stride_tensor.expand(target_bboxes.shape[0], -1, -1)[fg_mask]  # (N,1)
         pred_px = pred_fg * stride_fg
         target_px = target_fg * stride_fg
@@ -582,9 +504,8 @@ class BboxLoss(nn.Module):
         size_weight = _size_weight(target_px, cfg).unsqueeze(-1)          # (N,1) in [1,boost]
 
         if cfg.swa_mode == "scale":
-            # multiplicative: modulate the quality signal, don't replace it
             weight = score_weight * size_weight
-        else:  # "blend" — v1's additive form, kept for ablation
+        else:  # "blend"
             a = self._current_alpha()
             weight = a * size_weight + (1.0 - a) * score_weight
 
@@ -593,7 +514,6 @@ class BboxLoss(nn.Module):
             base_loss, batch_mean = _wiou_v3(
                 pred_fg, target_fg, self._wiou_mean, cfg.wiou_alpha, cfg.wiou_delta
             )
-            # momentum update of the outlier-degree normalizer
             cur = (1.0 - bbox_iou(pred_fg, target_fg, xywh=False, CIoU=False).view(-1)).mean().item()
             m = cfg.wiou_momentum
             self._wiou_mean = cur if self._wiou_mean is None else (1 - m) * self._wiou_mean + m * cur
@@ -619,21 +539,17 @@ class BboxLoss(nn.Module):
             box_loss = box_loss.clamp(max=cfg.iou_clip)
 
         # ---- normalization ---------------------------------------------------
-        # Divide by the weights ACTUALLY used (v1 divided by target_scores_sum
-        # regardless). With swa off this equals target_scores_sum exactly, because
-        # target_scores is zero on background anchors.
         norm = weight.sum().clamp(min=1e-9)
         loss_iou = (box_loss * weight).sum() / norm
 
-        # ---- DFL --------------------------------------------------------------
+        # ---- DFL (with optional AR-DFL) --------------------------------------
         if self.dfl_loss:
             target_ltrb = bbox2dist(anchor_points, target_bboxes, self.reg_max - 1)
             pred_dist_fg = pred_dist[fg_mask].view(-1, self.reg_max)   # (N*4, reg_max)
             target_fg_ltrb = target_ltrb[fg_mask]                      # (N, 4) = (l,t,r,b)
 
             if cfg.use_ardfl:
-                # AR-DFL: reweight per-edge DFL toward the HEIGHT edges (t,b),
-                # where tall-object localization error concentrates. Columns:
+                # AR-DFL: reweight per-edge DFL toward the HEIGHT edges (t,b).
                 #   0=left  1=top  2=right  3=bottom  ->  width=[0,2] height=[1,3]
                 per_edge = self.dfl_loss.per_edge(pred_dist_fg, target_fg_ltrb)  # (N,4)
 
@@ -662,8 +578,6 @@ class BboxLoss(nn.Module):
                 loss_dfl = (dfl_per_box * weight).sum() / norm
 
                 # Optional: sharpen ONLY the height-edge distributions (t,b).
-                # r10_dfl_entropy (global sharpening) gave the best bag AP;
-                # here it is targeted at the axis that actually needs tightening.
                 if cfg.ardfl_entropy and cfg.ardfl_entropy_w > 0:
                     pe = pred_dist_fg.view(-1, 4, self.reg_max)          # (N,4,reg_max)
                     height_logits = pe[:, [1, 3], :].reshape(-1, self.reg_max)
@@ -717,7 +631,7 @@ class KeypointLoss(nn.Module):
 
 
 class v8DetectionLoss:
-    """SATAL + SWA + NWD detection loss. All settings come from one config object."""
+    """SATAL + SWA + NWD + AR-DFL detection loss. All settings from one config object."""
 
     def __init__(self, model, tal_topk=10):
         device = next(model.parameters()).device
@@ -732,7 +646,6 @@ class v8DetectionLoss:
         self.reg_max = m.reg_max
         self.use_dfl = m.reg_max > 1
 
-        # ---- ONE config, parsed once ---------------------------------------
         self.cfg = SataLSwaConfig(h, nc=self.nc, total_epochs=getattr(h, "epochs", 70))
         if getattr(h, "tal_topk", None) is None:
             self.cfg.tal_topk = tal_topk
@@ -741,15 +654,13 @@ class v8DetectionLoss:
         self.bbox_loss = BboxLoss(m.reg_max, cfg=self.cfg).to(device)
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
 
-        # ---- class weights: hyp-driven and ablatable ------------------------
         self.class_weights = None
         if self.cfg.use_class_weights:
             counts = self.cfg.class_counts
             if counts is None:
                 raise ValueError(
                     "use_class_weights=True requires class_counts=[n0,n1,...] in hyp "
-                    "(in data.yaml names[] order). v1 hardcoded counts that did not "
-                    "match the dataset; that is no longer allowed."
+                    "(in data.yaml names[] order)."
                 )
             c = torch.tensor([float(x) for x in counts], device=device)
             inv = 1.0 / c
@@ -757,7 +668,6 @@ class v8DetectionLoss:
             w = torch.sqrt(inv)
             self.class_weights = (w / w.mean()).view(1, 1, -1)
 
-        # ---- assigner --------------------------------------------------------
         if self.cfg.use_satal:
             try:
                 from ultralytics.utils.satal import ScaleAdaptiveTaskAlignedAssigner
@@ -783,21 +693,15 @@ class v8DetectionLoss:
 
         self._print_config()
 
-    # ---------------------------------------------------------------------
     def verify_config(self, verbose=True):
-        """
-        Report the LIVE state of the objects that actually compute the loss.
-
-        v1's failure mode was a config printout that disagreed with reality
-        (use_nwd printed True while BboxLoss had it False). Everything here is
-        read back off the live objects, not off the hyp dict.
-        """
+        """Report the LIVE state of the objects that actually compute the loss."""
         live = {
             "assigner_class": type(self.assigner).__name__,
             "satal_active": type(self.assigner).__name__.startswith("ScaleAdaptive"),
             "bbox_loss_cfg_is_shared": self.bbox_loss.cfg is self.cfg,
             "box_loss_type_live": self.bbox_loss.cfg.box_loss_type,
             "use_nwd_live": self.bbox_loss.cfg.use_nwd,
+            "use_ardfl_live": self.bbox_loss.cfg.use_ardfl,
             "swa_mode_live": self.bbox_loss.cfg.swa_mode,
             "swa_alpha_live": self.bbox_loss.cfg.swa_alpha,
             "swa_boost_live": self.bbox_loss.cfg.swa_boost,
@@ -807,23 +711,21 @@ class v8DetectionLoss:
             "is_neutral_stock_equivalent": self.cfg.is_neutral(),
         }
         assert live["bbox_loss_cfg_is_shared"], "BboxLoss is not sharing the config object!"
-        assert live["use_nwd_live"] == self.cfg.use_nwd, "use_nwd mismatch (the v1 bug)!"
+        assert live["use_nwd_live"] == self.cfg.use_nwd, "use_nwd mismatch!"
+        assert live["use_ardfl_live"] == self.cfg.use_ardfl, "use_ardfl mismatch!"
         assert live["box_loss_type_live"] == self.cfg.box_loss_type, "box_loss_type mismatch!"
         assert live["satal_active"] == self.cfg.use_satal, "SATAL flag does not match assigner!"
         if verbose:
             print("\n[verify_config] live loss state")
             for k, v in live.items():
                 print(f"    {k:32s} {v}")
-            if self.cfg.swa_alpha_end is not None and not _EPOCH_STATE["ever_set"]:
-                print("    !! alpha annealing requested but epoch tracking NOT attached")
-                print("       -> call attach_epoch_tracking(model) before train()")
             print()
         return live
 
     def _print_config(self):
         c = self.cfg
         print("\n" + "=" * 62)
-        print("  SATAL-SWA-NWD Loss v2")
+        print("  SATAL-SWA-NWD-ARDFL Loss")
         print("=" * 62)
         print(f"  neutral (== stock loss):  {c.is_neutral()}")
         print(f"  assigner:                 {type(self.assigner).__name__}")
@@ -855,7 +757,6 @@ class v8DetectionLoss:
         print(f"  epoch tracking attached:  {_EPOCH_STATE['ever_set']}")
         print("=" * 62 + "\n")
 
-    # ---------------------------------------------------------------------
     def preprocess(self, targets, batch_size, scale_tensor):
         nl, ne = targets.shape
         if nl == 0:
@@ -879,7 +780,7 @@ class v8DetectionLoss:
         return dist2bbox(pred_dist, anchor_points, xywh=False)
 
     def _compute_cls_loss(self, pred_scores, target_scores, target_scores_sum, dtype):
-        """BCE, optionally VFL-modulated and class-weighted. Neutral config -> stock BCE."""
+        """BCE, optionally VFL-modulated and class-weighted. Neutral -> stock BCE."""
         loss = self.bce(pred_scores, target_scores.to(dtype))
         if self.cfg.use_vfl:
             label = (target_scores > 0).to(dtype)
@@ -938,7 +839,9 @@ class v8DetectionLoss:
 
 
 # =============================================================================
-# OTHER TASK LOSSES
+# OTHER TASK LOSSES  (delegate to v8DetectionLoss machinery; unchanged from
+# the base rebuild — AR-DFL flows through BboxLoss automatically for seg/pose/obb
+# because they all call self.bbox_loss).
 # =============================================================================
 
 
@@ -961,7 +864,7 @@ class v8SegmentationLoss(v8DetectionLoss):
     def __call__(self, preds, batch):
         loss = torch.zeros(4, device=self.device)
         feats, pred_masks, proto = preds if len(preds) == 3 else preds[1]
-        batch_size, _, mask_h, mask_w = proto.shape  # from proto, not masks (v1 bug)
+        batch_size, _, mask_h, mask_w = proto.shape
         pred_distri, pred_scores = torch.cat(
             [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2
         ).split((self.reg_max * 4, self.nc), 1)
@@ -1236,21 +1139,6 @@ class v8OBBLoss(v8DetectionLoss):
         return torch.cat((dist2rbox(pred_dist, pred_angle, anchor_points), pred_angle), dim=-1)
 
 
-class E2EDetectLoss:
-    """End-to-end detection loss. (v1 referenced an undefined class here.)"""
-
-    def __init__(self, model):
-        self.one2many = v8DetectionLoss(model, tal_topk=10)
-        self.one2one = v8DetectionLoss(model, tal_topk=1)
-
-    def __call__(self, preds, batch):
-        preds = preds[1] if isinstance(preds, tuple) else preds
-        l_many = self.one2many(preds["one2many"], batch)
-        l_one = self.one2one(preds["one2one"], batch)
-        return l_many[0] + l_one[0], l_many[1] + l_one[1]
-
-
-
 class DetectAuxLoss:
     """Train-only auxiliary-head deep-supervision loss (dropped at inference)."""
 
@@ -1272,12 +1160,12 @@ class DetectObjLoss(v8DetectionLoss):
 
     Supervises DetectObj's per-anchor objectness logit against the TAL foreground
     mask. Cls loss goes through _compute_cls_loss so it picks up the same toggles
-    (class_weights / VFL / width-boost) as the main detection loss.
+    (class_weights / VFL) as the main detection loss.
     """
 
     def __init__(self, model, obj_weight=1.0):
         super().__init__(model)
-        self.obj_weight = obj_weight
+        self.obj_weight = getattr(model.model[-1], "obj_weight", obj_weight)
         self.bce_obj = nn.BCEWithLogitsLoss(reduction="none")
 
     def __call__(self, preds, batch):
@@ -1313,9 +1201,11 @@ class DetectObjLoss(v8DetectionLoss):
         )
         target_scores_sum = max(target_scores.sum(), 1)
 
-        loss[1] = self._compute_cls_loss(
-            pred_scores, target_scores, target_bboxes, fg_mask, stride_tensor, target_scores_sum, dtype
-        )
+        # NOTE: _compute_cls_loss takes 4 args (pred_scores, target_scores,
+        # target_scores_sum, dtype). The original loss.py called it here with a
+        # stale 7-arg signature (leftover from an older SWA cls path) which would
+        # crash if DetectObj were ever used. Fixed to the real signature.
+        loss[1] = self._compute_cls_loss(pred_scores, target_scores, target_scores_sum, dtype)
 
         if fg_mask.sum():
             target_bboxes /= stride_tensor
