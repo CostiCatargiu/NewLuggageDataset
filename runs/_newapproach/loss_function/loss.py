@@ -266,6 +266,71 @@ class SataLSwaConfig:
         self.adfl_h_scale = float(g("adfl_h_scale", 1.0))
         self.adfl_log_clamp = bool(g("adfl_log_clamp", True))
 
+        # ---- PEU-DFL (Per-Edge Uncertainty-attenuated DFL) -------------------
+        # MOTIVATED BY MEASUREMENT, not by assumption. diag_per_edge_dfl.py on
+        # this dataset reports per-edge residuals of:
+        #     top 4.96px (6.67% of H)   bottom 2.19px (3.40%)
+        #     left 1.34px (5.43% of W)  right 1.44px (5.61%)
+        # The TOP edge is 2.26x worse than the bottom and 3.6x worse than the
+        # width edges. That asymmetry is not explained by aspect ratio, scale or
+        # quantisation (all residuals are SUB-BIN, 0.12-0.43 bins, 0% saturation
+        # -> the model is not bin-limited). It is semantic: the bottom edge is
+        # ground contact (sharp, unambiguous), the top edge is handles,
+        # telescoping poles, straps and occlusion by the carrier — ambiguous for
+        # the annotator as much as for the model.
+        #
+        # Forcing the network to fit an intrinsically ambiguous target is label
+        # noise fitting. The standard remedy is learned attenuation (Kendall &
+        # Gal 2017; KL-Loss, He et al. 2019; Gaussian YOLO), which normally
+        # needs an extra head predicting variance.
+        #
+        # KEY POINT: DFL ALREADY EMITS A DISTRIBUTION PER EDGE. Its variance is
+        # a free aleatoric uncertainty estimate that every implementation throws
+        # away by taking only the expectation. PEU-DFL uses it:
+        #
+        #     mu_e   = sum_i p_i * i                 (this is already the decode)
+        #     var_e  = sum_i p_i * (i - mu_e)^2      (free, currently discarded)
+        #     s_e    = log var_e
+        #     L_e   <- L_e * exp(-beta * s_e) + lambda * s_e
+        #
+        # The attenuation term down-weights edges the model is unsure about; the
+        # lambda*s_e term stops it declaring everything uncertain. At the optimum
+        # var_e tracks L_e, so intrinsically hard edges (top) are attenuated and
+        # easy ones (bottom) are not — self-calibrating, zero new parameters,
+        # zero architecture change.
+        #
+        # The weights are MEAN-NORMALISED to 1, so PEU redistributes DFL weight
+        # across edges without changing the total DFL magnitude. Without that,
+        # any gain is confounded with simply turning the DFL gain up.
+        #
+        #   use_peu           master switch
+        #   peu_beta          attenuation strength (1.0 = full Kendall form)
+        #   peu_lambda        weight of the log-variance penalty
+        #   peu_detach        compute the WEIGHT from a detached variance
+        #                     (prevents the net gaming variance to cut its loss;
+        #                      the lambda term still receives gradient)
+        #   peu_warmup_epochs no attenuation before this epoch — at init the
+        #                     distribution is near-uniform, so variance is
+        #                     meaningless and would suppress all learning
+        #   peu_min_var       floor on variance before the log
+        #   peu_min_var       floor on variance before the log. NOT a numerical
+        #                     epsilon: DFL targets are interpolated between two
+        #                     ADJACENT bins, so even a perfectly fitted edge has
+        #                     var ~0.19-0.25. A floor of 1e-3 would let a
+        #                     confident edge take weight 1/1e-3, and mean
+        #                     normalisation preserves the mean but not the
+        #                     spread — measured blow-up to 86x at beta=1.
+        #   peu_w_clip        hard bound on the weight before normalisation,
+        #                     so the spread stays bounded regardless of beta
+        self.use_peu = bool(g("use_peu", False))
+        self.peu_beta = float(g("peu_beta", 0.5))
+        self.peu_lambda = float(g("peu_lambda", 1.0))
+        self.peu_detach = bool(g("peu_detach", True))
+        self.peu_warmup_epochs = int(g("peu_warmup_epochs", 5))
+        self.peu_min_var = float(g("peu_min_var", 0.25))
+        self.peu_w_clip = float(g("peu_w_clip", 3.0))
+        self.peu_log = bool(g("peu_log", True))
+
         self._validate()
 
     def _validate(self):
@@ -298,6 +363,20 @@ class SataLSwaConfig:
                 "use_adfl=True but both scales are 1.0 — that is stock DFL. "
                 "Set adfl_w_scale < 1.0 (finer width bins) or leave use_adfl=False."
             )
+        if self.peu_beta < 0 or self.peu_lambda < 0:
+            raise ValueError("peu_beta / peu_lambda must be >= 0")
+        if self.use_peu and self.peu_beta == 0.0 and self.peu_lambda == 0.0:
+            raise ValueError("use_peu=True but beta and lambda are both 0 — that is stock DFL.")
+        if self.peu_min_var <= 0:
+            raise ValueError("peu_min_var must be > 0")
+        if self.peu_w_clip < 1.0:
+            raise ValueError(f"peu_w_clip must be >= 1.0, got {self.peu_w_clip}")
+        if self.use_peu and self.use_ardfl:
+            raise ValueError(
+                "use_peu and use_ardfl both set. PEU derives per-edge weights from the "
+                "predicted uncertainty; AR-DFL imposes fixed ones. Running both makes the "
+                "result unattributable — pick one."
+            )
 
     def adfl_scales(self):
         """Per-edge range scale in bbox2dist order (left, top, right, bottom)."""
@@ -310,7 +389,8 @@ class SataLSwaConfig:
         return (self.box_loss_type == "ciou"
                 and not self.use_satal and self.swa_alpha == 0.0 and self.swa_boost == 1.0
                 and not self.use_nwd and not self.use_class_weights and not self.use_vfl
-                and not self.use_loss_clip and not self.use_ardfl and not self.use_adfl)
+                and not self.use_loss_clip and not self.use_ardfl and not self.use_adfl
+                and not self.use_peu)
 
     def as_dict(self):
         return {k: v for k, v in vars(self).items() if not k.startswith("_")}
@@ -629,6 +709,79 @@ def adfl_clamp_report(reset=True):
     return dict(zip(("left", "top", "right", "bottom"), rates))
 
 
+# =============================================================================
+# PEU-DFL — per-edge uncertainty from the DFL distribution itself
+# =============================================================================
+# DFL predicts a categorical distribution over reg_max bins for each of the four
+# edges, then keeps only its MEAN (the integral / decode). Its VARIANCE is
+# computed for free by the same softmax and is thrown away. That variance is an
+# aleatoric uncertainty estimate: a wide distribution means the network cannot
+# commit to an edge location. On this dataset that is exactly the top edge
+# (handles, straps, occlusion) — measured at 2.26x the bottom-edge residual.
+
+_PEU_STATE = {"n": 0, "var": None, "w": None, "loss": None}
+
+
+def _dfl_edge_moments(pred_dist, reg_max):
+    """(N*4, reg_max) logits -> per-edge (mu, var) in BIN units, each (N, 4).
+
+    mu is exactly the decode used by bbox_decode; var is its second central
+    moment under the same distribution.
+    """
+    p = pred_dist.softmax(-1)                                   # (N*4, reg_max)
+    idx = torch.arange(reg_max, device=pred_dist.device, dtype=p.dtype)
+    mu = (p * idx).sum(-1)                                      # (N*4,)
+    var = (p * (idx.unsqueeze(0) - mu.unsqueeze(-1)) ** 2).sum(-1)
+    return mu.view(-1, 4), var.view(-1, 4)
+
+
+def _peu_weights(var, cfg, warmed_up):
+    """Mean-normalised per-edge attenuation weights, and the log-variance term.
+
+    w_e = exp(-beta * log var_e), renormalised so w.mean() == 1. The
+    normalisation is deliberate: PEU must REDISTRIBUTE DFL weight across edges,
+    not scale the total. Otherwise any gain is confounded with a larger dfl gain.
+    """
+    s = torch.log(var.clamp(min=cfg.peu_min_var))               # (N,4) log-variance
+    if not warmed_up:
+        return torch.ones_like(s), s
+    s_w = s.detach() if cfg.peu_detach else s
+    w = torch.exp(-cfg.peu_beta * s_w)
+    # Bound the spread BEFORE normalising. Mean-normalisation fixes the mean but
+    # not the tail: an almost-one-hot edge would otherwise take a weight of
+    # 1/peu_min_var and dominate the batch (measured 86x at beta=1 unclipped).
+    k = cfg.peu_w_clip
+    w = w.clamp(min=1.0 / k, max=k)
+    w = w / w.mean().clamp(min=1e-9)
+    return w, s
+
+
+def _peu_track(var, w, per_edge_loss):
+    st = _PEU_STATE
+    with torch.no_grad():
+        for k, v in (("var", var), ("w", w), ("loss", per_edge_loss)):
+            m = v.detach().mean(0)
+            st[k] = m if st[k] is None else st[k] + m
+        st["n"] += 1
+
+
+def peu_report(reset=True):
+    """Mean per-edge variance / attenuation weight / DFL loss since last call.
+
+    This is the experiment's own hypothesis test: if the top edge really carries
+    the highest aleatoric uncertainty, its variance and DFL loss should be
+    highest and its attenuation weight lowest.
+    """
+    st = _PEU_STATE
+    if not st["n"] or st["var"] is None:
+        return None
+    names = ("left", "top", "right", "bottom")
+    out = {k: dict(zip(names, (st[k] / st["n"]).tolist())) for k in ("var", "w", "loss")}
+    if reset:
+        st["n"], st["var"], st["w"], st["loss"] = 0, None, None, None
+    return out
+
+
 def _dfl_edge_entropy(pred_dist):
     """Mean entropy of the softmax bin distributions in pred_dist (N*E, reg_max).
 
@@ -750,7 +903,37 @@ class BboxLoss(nn.Module):
             pred_dist_fg = pred_dist[fg_mask].view(-1, self.reg_max)   # (N*4, reg_max)
             target_fg_ltrb = target_ltrb[fg_mask]                      # (N, 4) = (l,t,r,b)
 
-            if cfg.use_ardfl:
+            if cfg.use_peu:
+                # ---- PEU-DFL ------------------------------------------------
+                # Attenuate each edge by the uncertainty the network itself
+                # expresses in that edge's bin distribution.
+                per_edge = self.dfl_loss.per_edge(pred_dist_fg, target_fg_ltrb)   # (N,4)
+                _, var = _dfl_edge_moments(pred_dist_fg, self.reg_max)            # (N,4)
+
+                # warmup: at init the bin distribution is near-uniform, so its
+                # variance is meaningless and would suppress every edge equally.
+                # If epoch tracking is unwired we cannot know the epoch, so we
+                # attenuate from step 0 and say so loudly in _print_config.
+                warmed = (not _EPOCH_STATE["ever_set"]) or \
+                         (_EPOCH_STATE["epoch"] >= cfg.peu_warmup_epochs)
+                w_edge, s = _peu_weights(var, cfg, warmed)
+
+                if cfg.peu_log:
+                    _peu_track(var, w_edge, per_edge)
+
+                dfl_per_box = (per_edge * w_edge).mean(-1, keepdim=True)          # (N,1)
+                if cfg.use_loss_clip:
+                    dfl_per_box = dfl_per_box.clamp(max=cfg.dfl_clip)
+                loss_dfl = (dfl_per_box * weight).sum() / norm
+
+                # log-variance penalty — stops the net declaring every edge
+                # uncertain. Normalised by the SAME weight/norm as the main term
+                # so its relative scale is stable through training.
+                if cfg.peu_lambda > 0 and warmed:
+                    reg = s.mean(-1, keepdim=True)                                # (N,1)
+                    loss_dfl = loss_dfl + cfg.peu_lambda * (reg * weight).sum() / norm
+
+            elif cfg.use_ardfl:
                 # AR-DFL: reweight per-edge DFL toward the HEIGHT edges (t,b),
                 # where tall-object localization error concentrates. Columns:
                 #   0=left  1=top  2=right  3=bottom  ->  width=[0,2] height=[1,3]
@@ -971,6 +1154,15 @@ class v8DetectionLoss:
                   (f" (h/w > {c.ardfl_ar_thresh})" if c.ardfl_ar_gate else ""))
             print(f"    height entropy:         {c.ardfl_entropy}" +
                   (f" (w={c.ardfl_entropy_w})" if c.ardfl_entropy else ""))
+        print(f"  PEU-DFL (uncertainty):    {c.use_peu}")
+        if c.use_peu:
+            print(f"    beta / lambda:          {c.peu_beta} / {c.peu_lambda}")
+            print(f"    min var / weight clip:  {c.peu_min_var} / [{1/c.peu_w_clip:.3f}, {c.peu_w_clip}]")
+            print(f"    variance detached:      {c.peu_detach}")
+            print(f"    warmup epochs:          {c.peu_warmup_epochs}"
+                  + ("" if _EPOCH_STATE["ever_set"] else "   !! epoch tracking NOT attached "
+                                                          "-> warmup disabled, attenuation from step 0"))
+            print(f"    weights mean-normalised: True (redistributes, does not rescale DFL)")
         print(f"  A-DFL (anisotropic):      {c.use_adfl}")
         if c.use_adfl:
             rm = self.reg_max

@@ -200,6 +200,21 @@ adfl_w_scale: 1.0 # (float) range scale for WIDTH edges (left,right); <1 = finer
 adfl_h_scale: 1.0 # (float) range scale for HEIGHT edges (top,bottom)
 adfl_log_clamp: True # (bool) log per-edge target saturation each epoch
 
+# --- PEU-DFL (Per-Edge Uncertainty-attenuated DFL) ---
+# DFL already emits a distribution per edge; its VARIANCE is a free aleatoric
+# uncertainty estimate normally discarded. PEU attenuates each edge's DFL loss by
+# it: L_e <- L_e * clip(exp(-beta*log var_e)) + lambda*log var_e. Weights are
+# mean-normalised, so PEU redistributes DFL weight across edges without changing
+# the total. Motivated by the measured top-edge residual (2.26x the bottom edge).
+use_peu: False # (bool) enable per-edge uncertainty attenuation
+peu_beta: 0.5 # (float) attenuation strength; 1.0 = full Kendall form
+peu_lambda: 1.0 # (float) weight of the log-variance penalty
+peu_detach: True # (bool) compute the weight from a detached variance
+peu_warmup_epochs: 5 # (int) no attenuation before this epoch (variance is meaningless at init)
+peu_min_var: 0.25 # (float) variance floor; a perfectly fitted 2-bin edge has var ~0.19-0.25
+peu_w_clip: 3.0 # (float) bound the weight to [1/clip, clip] before normalising
+peu_log: True # (bool) log per-edge variance / weight / DFL each epoch
+
 # Custom config.yaml ---------------------------------------------------------------------------------------------------
 cfg: # (str, optional) for overriding defaults.yaml
 

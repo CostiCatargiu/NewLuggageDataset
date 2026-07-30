@@ -95,9 +95,28 @@ def main():
     proj = torch.arange(reg_max, dtype=torch.float, device=device)
 
     # -- dataloader ------------------------------------------------------------
+    # build_yolo_dataset wants an IterableSimpleNamespace (cfg.imgsz, cfg.augment,
+    # ...), not a plain dict — get_cfg gives us one with every key populated.
+    from ultralytics.cfg import get_cfg
+    from ultralytics.utils import DEFAULT_CFG
+
+    vcfg = get_cfg(DEFAULT_CFG)
+    vcfg.imgsz = args.imgsz
+    vcfg.batch = args.batch
+    vcfg.rect = False
+    vcfg.augment = False
+    vcfg.cache = False
+    vcfg.single_cls = False
+    vcfg.fraction = 1.0
+    vcfg.task = "detect"
+    vcfg.mode = "val"
+
     data = check_det_dataset(args.data)
+    if args.split not in data:
+        sys.exit(f"split '{args.split}' not in data.yaml (have: {[k for k in data if k in ('train','val','test')]})")
+
     ds = build_yolo_dataset(
-        cfg=yolo.overrides if isinstance(yolo.overrides, dict) else {},
+        cfg=vcfg,
         img_path=data[args.split],
         batch=args.batch,
         data=data,
@@ -259,24 +278,33 @@ def main():
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(1, 2, figsize=(12, 4.2))
+        fig, ax = plt.subplots(1, 3, figsize=(16, 4.2))
+        COL = {0: "tab:blue", 2: "tab:cyan", 1: "tab:red", 3: "tab:orange"}
+
+        # (a) how much of the bin budget each edge actually uses
         for e in range(4):
-            style = "-" if e in WIDTH_EDGES else "--"
             ax[0].hist(tgt[e], bins=np.arange(0, reg_max + 1, 0.5), histtype="step",
-                       linestyle=style.replace("-", "solid") if False else None,
-                       ls="-" if e in WIDTH_EDGES else "--", label=EDGE_NAMES[e], density=True)
+                       ls="-" if e in WIDTH_EDGES else "--", color=COL[e],
+                       label=EDGE_NAMES[e], density=True, lw=1.6)
+        ax[0].axvline(reg_max - 1, color="k", lw=0.9)
         ax[0].set_xlabel(f"DFL target (bins, reg_max={reg_max})")
         ax[0].set_ylabel("density")
-        ax[0].set_title("Per-edge DFL target distribution\n(solid = width edges, dashed = height)")
+        ax[0].set_title("(a) Per-edge DFL target distribution\nsolid = width, dashed = height")
         ax[0].legend()
-        ax[0].axvline(reg_max - 1, color="k", lw=0.8)
 
-        labels = EDGE_NAMES
-        vals = [per_edge[n]["resid_rel"] * 100 for n in labels]
-        cols = ["tab:blue" if i in WIDTH_EDGES else "tab:orange" for i in range(4)]
-        ax[1].bar(labels, vals, color=cols)
-        ax[1].set_ylabel("mean residual / box dimension  (%)")
-        ax[1].set_title("Relative localisation error per edge\n(blue = width, orange = height)")
+        # (b) residual in BINS — is the model bin-limited at all?
+        vals_b = [per_edge[n]["resid_bins"] for n in EDGE_NAMES]
+        ax[1].bar(EDGE_NAMES, vals_b, color=[COL[i] for i in range(4)])
+        ax[1].axhline(1.0, color="k", ls=":", lw=1.2)
+        ax[1].text(0.02, 1.03, "1 bin", transform=ax[1].get_yaxis_transform(), fontsize=8)
+        ax[1].set_ylabel("mean |decoded − target|  (bins)")
+        ax[1].set_title("(b) Residual vs bin width\nall edges sub-bin ⇒ not quantisation-limited")
+
+        # (c) IoU-relevant error: residual normalised by the dimension it controls
+        vals_c = [per_edge[n]["resid_rel"] * 100 for n in EDGE_NAMES]
+        ax[2].bar(EDGE_NAMES, vals_c, color=[COL[i] for i in range(4)])
+        ax[2].set_ylabel("mean residual / box dimension  (%)")
+        ax[2].set_title("(c) Relative localisation error per edge")
         fig.tight_layout()
         fig.savefig(os.path.join(args.out, "per_edge_hist.png"), dpi=160)
         print(f"\nfigure -> {os.path.join(args.out, 'per_edge_hist.png')}")
