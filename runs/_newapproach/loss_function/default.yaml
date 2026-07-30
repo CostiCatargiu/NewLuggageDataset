@@ -207,13 +207,26 @@ adfl_log_clamp: True # (bool) log per-edge target saturation each epoch
 # mean-normalised, so PEU redistributes DFL weight across edges without changing
 # the total. Motivated by the measured top-edge residual (2.26x the bottom edge).
 use_peu: False # (bool) enable per-edge uncertainty attenuation
-peu_beta: 0.5 # (float) attenuation strength; 1.0 = full Kendall form
-peu_lambda: 1.0 # (float) weight of the log-variance penalty
+# VALID COMBINATIONS ONLY: detach=True requires lambda=0 (no gaming possible, so
+# no penalty needed); detach=False requires lambda>0 (Kendall, self-balancing).
+# detach=True + lambda>0 was MEASURED to collapse variance to the floor and turn
+# PEU into a no-op — loss.py now rejects it.
+peu_beta: 0.5 # (float) attenuation strength
+peu_lambda: 0.0 # (float) log-variance penalty; must be 0 when peu_detach=True
 peu_detach: True # (bool) compute the weight from a detached variance
 peu_warmup_epochs: 5 # (int) no attenuation before this epoch (variance is meaningless at init)
-peu_min_var: 0.25 # (float) variance floor; a perfectly fitted 2-bin edge has var ~0.19-0.25
+peu_min_var: 0.05 # (float) variance floor, only to prevent log(0); peu_w_clip bounds the weight
 peu_w_clip: 3.0 # (float) bound the weight to [1/clip, clip] before normalising
 peu_log: True # (bool) log per-edge variance / weight / DFL each epoch
+
+# --- EDGEW: fixed per-edge DFL weights (the control arm for PEU) ---
+# Four INDEPENDENT weights, mean-normalised. AR-DFL only expresses [w,h,w,h] and
+# so cannot separate top from bottom — which is the asymmetry under test.
+use_edgew: False # (bool) enable fixed per-edge DFL weighting
+edgew_l: 1.0 # (float) weight on the LEFT edge
+edgew_t: 1.0 # (float) weight on the TOP edge
+edgew_r: 1.0 # (float) weight on the RIGHT edge
+edgew_b: 1.0 # (float) weight on the BOTTOM edge
 
 # Custom config.yaml ---------------------------------------------------------------------------------------------------
 cfg: # (str, optional) for overriding defaults.yaml

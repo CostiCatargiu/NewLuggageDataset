@@ -114,8 +114,9 @@ _BASE = dict(
     use_nwd=False, use_class_weights=False, use_vfl=False, use_loss_clip=False,
     use_ardfl=False, use_adfl=False,
 )
-_PEU_OFF = dict(use_peu=False, peu_beta=0.5, peu_lambda=1.0, peu_detach=True,
-                peu_warmup_epochs=5, peu_min_var=0.25, peu_w_clip=3.0, peu_log=True)
+_PEU_OFF = dict(use_peu=False, peu_beta=0.5, peu_lambda=0.0, peu_detach=True,
+                peu_warmup_epochs=5, peu_min_var=0.05, peu_w_clip=3.0, peu_log=True,
+                use_edgew=False, edgew_l=1.0, edgew_t=1.0, edgew_r=1.0, edgew_b=1.0)
 
 
 def cfg(**over):
@@ -129,10 +130,15 @@ def peu(**over):
     return cfg(use_peu=True, **over)
 
 
-# The control uses AR-DFL's fixed per-edge weights, set to the INVERSE of the
-# measured residuals and mean-normalised — i.e. exactly what a perfectly
-# informed fixed scheme would do. loss.py forbids use_peu + use_ardfl together,
-# so this run is unambiguously the fixed-weight arm.
+# The control uses FOUR INDEPENDENT fixed per-edge weights, set to the inverse
+# of the measured residuals and mean-normalised — exactly what a perfectly
+# informed static scheme would do.
+#
+# NOTE: it must NOT go through AR-DFL, which only expresses [w, h, w, h] and so
+# forces top == bottom. That is precisely the asymmetry under test
+# (top 6.67% vs bottom 3.40%), so AR-DFL cannot serve as this control.
+# loss.py's use_edgew provides the four-weight path and refuses to co-exist with
+# use_peu / use_ardfl.
 _inv = [1.0 / r for r in MEASURED_REL]
 _m = sum(_inv) / 4
 _FIXED_W = [round(v / _m, 3) for v in _inv]          # (l, t, r, b)
@@ -143,27 +149,28 @@ RUNS = [
      "params": cfg()},
 
     {"name": "peu_b05", "rank": 1, "kind": "learned",
-     "label": "beta=0.5 lambda=1.0, detached variance (default)",
-     "params": peu(peu_beta=0.5, peu_lambda=1.0, peu_detach=True)},
+     "label": "beta=0.5, detached variance, lambda=0 (no penalty needed when detached)",
+     "params": peu(peu_beta=0.5, peu_lambda=0.0, peu_detach=True)},
 
     {"name": "peu_fixed_top", "rank": 2, "kind": "CONTROL",
      "label": f"fixed per-edge weights from the MEASURED residuals {_FIXED_W} "
               f"(l,t,r,b) — no uncertainty. Separates 'adaptive' from "
               f"'just down-weight the top edge'",
-     "params": cfg(use_ardfl=True,
-                   ardfl_w_weight=_FIXED_W[0], ardfl_h_weight=_FIXED_W[1],
-                   ardfl_ar_gate=False)},
+     "params": cfg(use_edgew=True,
+                   edgew_l=_FIXED_W[0], edgew_t=_FIXED_W[1],
+                   edgew_r=_FIXED_W[2], edgew_b=_FIXED_W[3])},
 
     {"name": "peu_b10", "rank": 3, "kind": "learned",
-     "label": "beta=1.0 lambda=1.0 — full Kendall attenuation",
-     "params": peu(peu_beta=1.0, peu_lambda=1.0, peu_detach=True)},
+     "label": "beta=1.0, detached, lambda=0 — stronger attenuation dose",
+     "params": peu(peu_beta=1.0, peu_lambda=0.0, peu_detach=True)},
 
-    {"name": "peu_b05_lam2", "rank": 4, "kind": "learned",
-     "label": "beta=0.5 lambda=2.0 — stronger penalty on claiming uncertainty",
-     "params": peu(peu_beta=0.5, peu_lambda=2.0, peu_detach=True)},
+    {"name": "peu_b025", "rank": 4, "kind": "learned",
+     "label": "beta=0.25, detached, lambda=0 — mildest dose",
+     "params": peu(peu_beta=0.25, peu_lambda=0.0, peu_detach=True)},
 
-    {"name": "peu_b05_nodet", "rank": 5, "kind": "learned",
-     "label": "beta=0.5, variance NOT detached — gradient flows through the weight",
+    {"name": "peu_kendall", "rank": 5, "kind": "learned",
+     "label": "beta=0.5 lambda=1.0, NOT detached — true Kendall attenuation, "
+              "self-balancing (the only valid configuration with lambda>0)",
      "params": peu(peu_beta=0.5, peu_lambda=1.0, peu_detach=False)},
 ]
 

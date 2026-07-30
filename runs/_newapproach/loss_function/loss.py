@@ -322,12 +322,43 @@ class SataLSwaConfig:
         #                     spread — measured blow-up to 86x at beta=1.
         #   peu_w_clip        hard bound on the weight before normalisation,
         #                     so the spread stays bounded regardless of beta
+        # ---- EDGEW: fixed per-edge DFL weights (the PEU control) -------------
+        # AR-DFL can only express [w, h, w, h] — it cannot separate top from
+        # bottom, which is precisely the asymmetry the diagnostic found
+        # (top 6.67% vs bottom 3.40% relative residual). A control for PEU needs
+        # four INDEPENDENT weights, so it lives here rather than in AR-DFL.
+        # Weights are mean-normalised, matching PEU, so the two arms differ only
+        # in fixed-vs-learned, not in total DFL magnitude.
+        self.use_edgew = bool(g("use_edgew", False))
+        self.edgew_l = float(g("edgew_l", 1.0))
+        self.edgew_t = float(g("edgew_t", 1.0))
+        self.edgew_r = float(g("edgew_r", 1.0))
+        self.edgew_b = float(g("edgew_b", 1.0))
+
+        # !! MEASURED FAILURE MODE (peu_b05, first attempt) !!
+        # detach=True + lambda>0 COLLAPSES. Detaching removes gradient from the
+        # attenuation term, so the ONLY gradient reaching the variance is
+        # lambda*log(var), which pushes var -> 0 with nothing opposing it. In
+        # Kendall's form the L/var term blows up as var shrinks and balances it;
+        # detaching destroys that balance. Observed: top-edge var fell 0.99 ->
+        # 0.25 (the floor) within one epoch of warmup ending, all weights
+        # converged to 1.000 +/- 0.017, and PEU became a no-op with a negative
+        # constant offset on dfl_loss.
+        #
+        # The two VALID configurations:
+        #   detach=True   -> lambda MUST be 0. The net cannot game a detached
+        #                    weight, so no penalty is needed. Weights follow the
+        #                    natural variance the DFL CE already produces.
+        #   detach=False  -> lambda > 0. True Kendall attenuation, self-balancing.
         self.use_peu = bool(g("use_peu", False))
         self.peu_beta = float(g("peu_beta", 0.5))
-        self.peu_lambda = float(g("peu_lambda", 1.0))
+        self.peu_lambda = float(g("peu_lambda", 0.0))
         self.peu_detach = bool(g("peu_detach", True))
         self.peu_warmup_epochs = int(g("peu_warmup_epochs", 5))
-        self.peu_min_var = float(g("peu_min_var", 0.25))
+        # natural per-edge variance measured in-training is ~0.2-1.0, so a floor
+        # of 0.25 clipped most of the useful signal. peu_w_clip bounds the weight
+        # anyway, so the floor only needs to prevent log(0).
+        self.peu_min_var = float(g("peu_min_var", 0.05))
         self.peu_w_clip = float(g("peu_w_clip", 3.0))
         self.peu_log = bool(g("peu_log", True))
 
@@ -367,10 +398,43 @@ class SataLSwaConfig:
             raise ValueError("peu_beta / peu_lambda must be >= 0")
         if self.use_peu and self.peu_beta == 0.0 and self.peu_lambda == 0.0:
             raise ValueError("use_peu=True but beta and lambda are both 0 — that is stock DFL.")
+        if self.use_peu and self.peu_detach and self.peu_lambda > 0:
+            raise ValueError(
+                "peu_detach=True with peu_lambda>0 is a degenerate configuration and was "
+                "MEASURED to collapse: detaching removes the counterbalancing gradient, so "
+                "lambda*log(var) drives every variance to peu_min_var, all weights converge "
+                "to 1.0 and PEU becomes a no-op with a negative offset on dfl_loss.\n"
+                "  Use peu_detach=True  with peu_lambda=0.0  (weights follow natural variance), "
+                "or peu_detach=False with peu_lambda>0 (true Kendall, self-balancing)."
+            )
+        if self.use_peu and not self.peu_detach and self.peu_lambda == 0.0:
+            raise ValueError(
+                "peu_detach=False with peu_lambda=0 lets the network minimise its loss by "
+                "inflating variance without penalty. Set peu_lambda > 0."
+            )
         if self.peu_min_var <= 0:
             raise ValueError("peu_min_var must be > 0")
         if self.peu_w_clip < 1.0:
             raise ValueError(f"peu_w_clip must be >= 1.0, got {self.peu_w_clip}")
+        if self.use_edgew:
+            ew = (self.edgew_l, self.edgew_t, self.edgew_r, self.edgew_b)
+            if min(ew) < 0:
+                raise ValueError("edgew_* must be >= 0")
+            if sum(ew) == 0:
+                raise ValueError("all edgew_* are 0")
+            if sum(1 for m in (self.use_peu, self.use_ardfl) if m):
+                raise ValueError(
+                    "use_edgew is the FIXED-weight control for PEU. Enabling it together "
+                    "with use_peu or use_ardfl makes the comparison unattributable."
+                )
+
+    def edgew_vec(self):
+        """Mean-normalised fixed per-edge weights (l, t, r, b), or None."""
+        if not self.use_edgew:
+            return None
+        ew = [self.edgew_l, self.edgew_t, self.edgew_r, self.edgew_b]
+        m = sum(ew) / 4.0
+        return [v / m for v in ew]
         if self.use_peu and self.use_ardfl:
             raise ValueError(
                 "use_peu and use_ardfl both set. PEU derives per-edge weights from the "
@@ -390,7 +454,7 @@ class SataLSwaConfig:
                 and not self.use_satal and self.swa_alpha == 0.0 and self.swa_boost == 1.0
                 and not self.use_nwd and not self.use_class_weights and not self.use_vfl
                 and not self.use_loss_clip and not self.use_ardfl and not self.use_adfl
-                and not self.use_peu)
+                and not self.use_peu and not self.use_edgew)
 
     def as_dict(self):
         return {k: v for k, v in vars(self).items() if not k.startswith("_")}
@@ -933,6 +997,22 @@ class BboxLoss(nn.Module):
                     reg = s.mean(-1, keepdim=True)                                # (N,1)
                     loss_dfl = loss_dfl + cfg.peu_lambda * (reg * weight).sum() / norm
 
+            elif cfg.use_edgew:
+                # ---- EDGEW: fixed per-edge weights (the PEU control) --------
+                # Four independent, mean-normalised weights. Differs from PEU
+                # ONLY in fixed-vs-learned, so the comparison isolates whether
+                # adaptivity matters or a static reweight is enough.
+                per_edge = self.dfl_loss.per_edge(pred_dist_fg, target_fg_ltrb)   # (N,4)
+                w_edge = torch.tensor(cfg.edgew_vec(), device=per_edge.device,
+                                      dtype=per_edge.dtype).view(1, 4)
+                if cfg.peu_log:
+                    _peu_track(torch.zeros_like(per_edge),
+                               w_edge.expand_as(per_edge), per_edge)
+                dfl_per_box = (per_edge * w_edge).mean(-1, keepdim=True)
+                if cfg.use_loss_clip:
+                    dfl_per_box = dfl_per_box.clamp(max=cfg.dfl_clip)
+                loss_dfl = (dfl_per_box * weight).sum() / norm
+
             elif cfg.use_ardfl:
                 # AR-DFL: reweight per-edge DFL toward the HEIGHT edges (t,b),
                 # where tall-object localization error concentrates. Columns:
@@ -1154,6 +1234,8 @@ class v8DetectionLoss:
                   (f" (h/w > {c.ardfl_ar_thresh})" if c.ardfl_ar_gate else ""))
             print(f"    height entropy:         {c.ardfl_entropy}" +
                   (f" (w={c.ardfl_entropy_w})" if c.ardfl_entropy else ""))
+        print(f"  EDGEW (fixed per-edge):   {c.use_edgew}"
+              + (f"  l/t/r/b = {[round(v,3) for v in c.edgew_vec()]}" if c.use_edgew else ""))
         print(f"  PEU-DFL (uncertainty):    {c.use_peu}")
         if c.use_peu:
             print(f"    beta / lambda:          {c.peu_beta} / {c.peu_lambda}")
