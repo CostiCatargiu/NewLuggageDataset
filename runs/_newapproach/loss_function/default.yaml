@@ -190,6 +190,16 @@ ardfl_ar_thresh: 1.5 # (float) aspect-ratio (h/w) gate threshold
 ardfl_entropy: False # (bool) entropy-sharpen the HEIGHT-edge distributions
 ardfl_entropy_w: 0.05 # (float) weight of the height-edge entropy term
 
+# --- A-DFL (Anisotropic DFL) — THE contribution. use_adfl=False -> stock DFL ---
+# Per-edge range scale on the DFL bin grid: encode t_e = d_e / s_e, decode d_e = E[bin] * s_e.
+# reg_max is UNCHANGED; only the span the bins cover changes, so s_w < 1 gives the
+# width edges finer spacing. Principled value: s_w/s_h = mean w/h = 1/2.69 = 0.372.
+# REQUIRES adfl_patch_dfl.install() so inference decodes with the same scale.
+use_adfl: False # (bool) enable anisotropic (per-edge range) DFL
+adfl_w_scale: 1.0 # (float) range scale for WIDTH edges (left,right); <1 = finer bins
+adfl_h_scale: 1.0 # (float) range scale for HEIGHT edges (top,bottom)
+adfl_log_clamp: True # (bool) log per-edge target saturation each epoch
+
 # Custom config.yaml ---------------------------------------------------------------------------------------------------
 cfg: # (str, optional) for overriding defaults.yaml
 

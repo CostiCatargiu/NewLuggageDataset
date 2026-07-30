@@ -232,6 +232,40 @@ class SataLSwaConfig:
         self.ardfl_entropy = bool(g("ardfl_entropy", False))
         self.ardfl_entropy_w = float(g("ardfl_entropy_w", 0.05))
 
+        # ---- A-DFL (Anisotropic DFL) — THE representation change -------------
+        # Everything above (and all ~60 prior configs) reweights the loss. This
+        # changes what the box CAN express.
+        #
+        # Stock DFL encodes every edge distance d (in stride units) over the
+        # same reg_max bins, so 1 bin = 1 stride = 8/16/32 px on ALL four edges.
+        # A-DFL introduces a per-edge range scale s_e:
+        #
+        #     encode:  t_e = d_e / s_e     (then the usual clamp to reg_max-1)
+        #     decode:  d_e = E[bin] * s_e
+        #
+        # Bin spacing on edge e becomes s_e * stride px. With s_w < 1 the width
+        # edges get FINER bins (higher resolution) over a SHORTER range; with
+        # s_h >= 1 the height edges trade resolution for reach.
+        #
+        # Why width: an edge error of e px costs e/w IoU on a width edge and
+        # e/h on a height edge — ratio exactly h/w (2.69 on this dataset). Width
+        # edges are the most IoU-sensitive AND, being short, occupy only ~1.6-2.6
+        # of the 16 bins. The rest of the width budget is spent on a range the
+        # data never reaches. Compressing it is free resolution.
+        #
+        # reg_max is UNCHANGED, so pretrained weights load and the head keeps
+        # reg_max*4 channels. The identical scale MUST be applied in the
+        # inference decode (see adfl_patch_dfl.py) or train/test will disagree.
+        #
+        #   use_adfl        master switch (False -> stock DFL exactly)
+        #   adfl_w_scale    range scale for width  edges (left, right)   <= 1
+        #   adfl_h_scale    range scale for height edges (top, bottom)
+        #   adfl_log_clamp  log the per-edge saturation rate once per epoch
+        self.use_adfl = bool(g("use_adfl", False))
+        self.adfl_w_scale = float(g("adfl_w_scale", 1.0))
+        self.adfl_h_scale = float(g("adfl_h_scale", 1.0))
+        self.adfl_log_clamp = bool(g("adfl_log_clamp", True))
+
         self._validate()
 
     def _validate(self):
@@ -255,13 +289,28 @@ class SataLSwaConfig:
             raise ValueError("ardfl_h_weight / ardfl_w_weight must be >= 0")
         if self.ardfl_entropy_w < 0:
             raise ValueError("ardfl_entropy_w must be >= 0")
+        if not 0.05 <= self.adfl_w_scale <= 4.0:
+            raise ValueError(f"adfl_w_scale must be in [0.05, 4.0], got {self.adfl_w_scale}")
+        if not 0.05 <= self.adfl_h_scale <= 4.0:
+            raise ValueError(f"adfl_h_scale must be in [0.05, 4.0], got {self.adfl_h_scale}")
+        if self.use_adfl and self.adfl_w_scale == 1.0 and self.adfl_h_scale == 1.0:
+            raise ValueError(
+                "use_adfl=True but both scales are 1.0 — that is stock DFL. "
+                "Set adfl_w_scale < 1.0 (finer width bins) or leave use_adfl=False."
+            )
+
+    def adfl_scales(self):
+        """Per-edge range scale in bbox2dist order (left, top, right, bottom)."""
+        if not self.use_adfl:
+            return None
+        return (self.adfl_w_scale, self.adfl_h_scale, self.adfl_w_scale, self.adfl_h_scale)
 
     def is_neutral(self):
         """True if this config reproduces stock Ultralytics loss."""
         return (self.box_loss_type == "ciou"
                 and not self.use_satal and self.swa_alpha == 0.0 and self.swa_boost == 1.0
                 and not self.use_nwd and not self.use_class_weights and not self.use_vfl
-                and not self.use_loss_clip and not self.use_ardfl)
+                and not self.use_loss_clip and not self.use_ardfl and not self.use_adfl)
 
     def as_dict(self):
         return {k: v for k, v in vars(self).items() if not k.startswith("_")}
@@ -519,6 +568,67 @@ class DFLoss(nn.Module):
         )  # (N, 4)
 
 
+# =============================================================================
+# ANISOTROPIC DFL (A-DFL)
+# =============================================================================
+# Per-edge range scaling of the DFL bin grid. See SataLSwaConfig for the
+# rationale. Edge order is bbox2dist's: (left, top, right, bottom).
+#
+#   encode:  t_e = d_e / s_e      decode:  d_e = E[bin] * s_e
+#
+# With s_e < 1 the same reg_max bins cover a shorter range, i.e. finer spacing.
+# The scale is a fixed constant vector, so encode/decode are exact inverses and
+# the neutral setting (all ones) is bit-identical to stock.
+
+_ADFL_CLAMP_STATE = {"n": 0, "sat": None, "epoch_logged": -1}
+
+
+def _adfl_vec(scales, device, dtype):
+    """(1,4) tensor of per-edge scales, or None."""
+    if scales is None:
+        return None
+    return torch.tensor(scales, device=device, dtype=dtype).view(1, 4)
+
+
+def adfl_encode(target_ltrb, scales, reg_max, track=False):
+    """Distances (…,4) in stride units -> DFL bin targets under per-edge scaling.
+
+    Returns the scaled target. Saturation (targets pushed past the last bin) is
+    the one real risk of compressing a range, so it is tracked and reported
+    rather than left silent.
+    """
+    if scales is None:
+        return target_ltrb
+    v = _adfl_vec(scales, target_ltrb.device, target_ltrb.dtype)
+    t = target_ltrb / v
+    if track and t.numel():
+        with torch.no_grad():
+            sat = (t >= (reg_max - 1 - 0.02)).float().mean(0) if t.dim() == 2 else \
+                  (t >= (reg_max - 1 - 0.02)).float().reshape(-1, 4).mean(0)
+            s = _ADFL_CLAMP_STATE
+            s["sat"] = sat if s["sat"] is None else s["sat"] + sat
+            s["n"] += 1
+    return t
+
+
+def adfl_decode(dist_bins, scales):
+    """DFL expectation (…,4) in bin units -> distances in stride units."""
+    if scales is None:
+        return dist_bins
+    return dist_bins * _adfl_vec(scales, dist_bins.device, dist_bins.dtype)
+
+
+def adfl_clamp_report(reset=True):
+    """Mean per-edge saturation rate since the last call, or None."""
+    s = _ADFL_CLAMP_STATE
+    if not s["n"] or s["sat"] is None:
+        return None
+    rates = (s["sat"] / s["n"]).tolist()
+    if reset:
+        s["n"], s["sat"] = 0, None
+    return dict(zip(("left", "top", "right", "bottom"), rates))
+
+
 def _dfl_edge_entropy(pred_dist):
     """Mean entropy of the softmax bin distributions in pred_dist (N*E, reg_max).
 
@@ -627,7 +737,16 @@ class BboxLoss(nn.Module):
 
         # ---- DFL --------------------------------------------------------------
         if self.dfl_loss:
-            target_ltrb = bbox2dist(anchor_points, target_bboxes, self.reg_max - 1)
+            # A-DFL: bbox2dist's clamp is applied in the SCALED space, so the
+            # usable range per edge is reg_max-1 bins of width s_e stride units.
+            # Encode first, then let DFLoss do its own final clamp.
+            adfl = cfg.adfl_scales()
+            if adfl is None:
+                target_ltrb = bbox2dist(anchor_points, target_bboxes, self.reg_max - 1)
+            else:
+                raw_ltrb = bbox2dist(anchor_points, target_bboxes, 1e9)   # unclamped
+                target_ltrb = adfl_encode(raw_ltrb, adfl, self.reg_max,
+                                          track=cfg.adfl_log_clamp)
             pred_dist_fg = pred_dist[fg_mask].view(-1, self.reg_max)   # (N*4, reg_max)
             target_fg_ltrb = target_ltrb[fg_mask]                      # (N, 4) = (l,t,r,b)
 
@@ -852,6 +971,17 @@ class v8DetectionLoss:
                   (f" (h/w > {c.ardfl_ar_thresh})" if c.ardfl_ar_gate else ""))
             print(f"    height entropy:         {c.ardfl_entropy}" +
                   (f" (w={c.ardfl_entropy_w})" if c.ardfl_entropy else ""))
+        print(f"  A-DFL (anisotropic):      {c.use_adfl}")
+        if c.use_adfl:
+            rm = self.reg_max
+            print(f"    w/h range scale:        {c.adfl_w_scale} / {c.adfl_h_scale}")
+            print(f"    width  bins:            {rm} over {c.adfl_w_scale*(rm-1):.2f} stride units "
+                  f"({c.adfl_w_scale:.3f} stride/bin)")
+            print(f"    height bins:            {rm} over {c.adfl_h_scale*(rm-1):.2f} stride units "
+                  f"({c.adfl_h_scale:.3f} stride/bin)")
+            print(f"    width resolution gain:  {1.0/max(c.adfl_w_scale,1e-9):.2f}x vs stock")
+            print("    !! DFL.forward must apply the SAME scale at inference")
+            print("       -> python adfl_patch_dfl.py --check")
         print(f"  epoch tracking attached:  {_EPOCH_STATE['ever_set']}")
         print("=" * 62 + "\n")
 
@@ -876,6 +1006,9 @@ class v8DetectionLoss:
         if self.use_dfl:
             b, a, ch = pred_dist.shape
             pred_dist = pred_dist.view(b, a, 4, ch // 4).softmax(3).matmul(self.proj.type(pred_dist.dtype))
+            # A-DFL: bins -> stride units. Must mirror DFL.forward at inference
+            # (adfl_patch_dfl.py) or training and detection disagree.
+            pred_dist = adfl_decode(pred_dist, self.cfg.adfl_scales())
         return dist2bbox(pred_dist, anchor_points, xywh=False)
 
     def _compute_cls_loss(self, pred_scores, target_scores, target_scores_sum, dtype):
