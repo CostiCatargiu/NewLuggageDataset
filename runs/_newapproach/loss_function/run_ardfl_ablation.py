@@ -126,41 +126,63 @@ def cfg(**overrides):
     return d
 
 
+# =============================================================================
+# RUN ORDER = descending probability of beating the anchor (safe -> risky), so
+# an early stop still tests the most promising configs first. The anchor MUST be
+# run first (it is the beat-target and the selection baseline). After that, the
+# order is:
+#   1 h15        mildest single lever -> least likely to destabilise (best odds)
+#   2 gate       same mild weight but ONLY on tall boxes -> most surgical
+#   3 h15_w075   shift capacity to height (mild, well-motivated)
+#   4 entropy    height sharpening (historically best-bag, but an extra term)
+#   5 h20        aggressive 2x -> may over-weight height / hurt width
+#   6 full       stacks everything -> history shows stacking COLLAPSES (worst odds)
+#
+# Rationale (from the 60 prior runs): mild, targeted interventions plateau
+# gracefully; aggressive and stacked ones regress. So run the gentle knobs first.
+# =============================================================================
 RUNS = [
+    # --- rank 0: baseline (must be first) ---
     {
-        "name": "ardfl_anchor", "phase": "-",
+        "name": "ardfl_anchor", "phase": "-", "rank": 0,
         "label": "AR-DFL OFF + NWD (= r10_nwd_fixedc beat-target 57.75)",
         "params": cfg(),
     },
+    # --- rank 1: highest win-probability single lever ---
     {
-        "name": "ardfl_h15", "phase": "A",
-        "label": "height-edge DFL x1.5 (mild)",
+        "name": "ardfl_h15", "phase": "A", "rank": 1,
+        "label": "height-edge DFL x1.5 (mild) — safest single lever",
         "params": cfg(use_ardfl=True, ardfl_h_weight=1.5, ardfl_w_weight=1.0),
     },
+    # --- rank 2: most surgical (tall boxes only) ---
     {
-        "name": "ardfl_h20", "phase": "A",
-        "label": "height-edge DFL x2.0 (stronger)",
-        "params": cfg(use_ardfl=True, ardfl_h_weight=2.0, ardfl_w_weight=1.0),
-    },
-    {
-        "name": "ardfl_h15_w075", "phase": "A",
-        "label": "height x1.5 + width x0.75 (shift capacity to height)",
-        "params": cfg(use_ardfl=True, ardfl_h_weight=1.5, ardfl_w_weight=0.75),
-    },
-    {
-        "name": "ardfl_gate", "phase": "B",
-        "label": "height x1.5, AR-gated (only boxes with h/w>1.5)",
+        "name": "ardfl_gate", "phase": "B", "rank": 2,
+        "label": "height x1.5, AR-gated (only boxes with h/w>1.5) — surgical",
         "params": cfg(use_ardfl=True, ardfl_h_weight=1.5, ardfl_w_weight=1.0,
                       ardfl_ar_gate=True, ardfl_ar_thresh=1.5),
     },
+    # --- rank 3: shift capacity from width to height ---
     {
-        "name": "ardfl_entropy", "phase": "C",
+        "name": "ardfl_h15_w075", "phase": "A", "rank": 3,
+        "label": "height x1.5 + width x0.75 (shift capacity to height)",
+        "params": cfg(use_ardfl=True, ardfl_h_weight=1.5, ardfl_w_weight=0.75),
+    },
+    # --- rank 4: distribution sharpening (best-bag idea, extra term) ---
+    {
+        "name": "ardfl_entropy", "phase": "C", "rank": 4,
         "label": "height x1.5 + height-edge entropy sharpening (w=0.05)",
         "params": cfg(use_ardfl=True, ardfl_h_weight=1.5, ardfl_w_weight=1.0,
                       ardfl_entropy=True, ardfl_entropy_w=0.05),
     },
+    # --- rank 5: aggressive dose (may over-weight height) ---
     {
-        "name": "ardfl_full", "phase": "ABC",
+        "name": "ardfl_h20", "phase": "A", "rank": 5,
+        "label": "height-edge DFL x2.0 (stronger) — aggressive dose",
+        "params": cfg(use_ardfl=True, ardfl_h_weight=2.0, ardfl_w_weight=1.0),
+    },
+    # --- rank 6: full stack (lowest odds — stacking historically collapses) ---
+    {
+        "name": "ardfl_full", "phase": "ABC", "rank": 6,
         "label": "height x1.5 + width x0.75 + gate + height entropy (combo)",
         "params": cfg(use_ardfl=True, ardfl_h_weight=1.5, ardfl_w_weight=0.75,
                       ardfl_ar_gate=True, ardfl_ar_thresh=1.5,
@@ -299,9 +321,12 @@ if __name__ == "__main__":
     print(f"  AR-DFL ABLATION ({len(runs)} runs @{IMG_SIZE}, {EPOCHS} epochs, seed {SEED})")
     print(f"  Beat-target: ardfl_anchor (NWD, no AR-DFL) ~= 57.75 mAP50-95")
     print(f"  Baseline (plain TAL, no NWD)               ~= 57.43")
+    print(f"  Order = descending win-probability (safe first); OK to stop early.")
     print(f"{'=' * 70}")
+    print(f"  {'rk':>2s}  {'name':<18s} {'label'}")
+    print(f"  {'-' * 66}")
     for r in runs:
-        print(f"  {r['name']:<18s} {r['label']}")
+        print(f"  {r.get('rank', '?'):>2}  {r['name']:<18s} {r['label']}")
     print(f"{'=' * 70}\n")
 
     all_results = []
