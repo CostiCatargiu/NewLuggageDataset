@@ -894,47 +894,79 @@ def lba_report(reset=True):
     return out
 
 
-def make_lba_assigner(base_cls, strength, ref_cells, sigma, **base_kwargs):
-    """Wrap ANY TaskAlignedAssigner subclass with the level-balancing prior.
+class _LBAMixin:
+    """Level-balancing prior, mixed in ahead of any TaskAlignedAssigner.
 
     LBA is orthogonal to which assigner you use: SATAL adapts alpha/beta/topk by
     object AREA, LBA reweights candidates by which pyramid LEVEL they sit on.
-    They compose. An earlier version selected the assigner with
-    `if use_satal ... elif use_lba ...`, which silently disabled LBA whenever
-    SATAL was on — and since the telemetry was gated on the config flag rather
-    than on the live assigner, it reported SATAL's level distribution while
-    claiming to measure LBA. Building the class dynamically from whatever base
-    is in play removes that whole failure mode.
+    They compose, so this is a mixin rather than a competing branch. (An earlier
+    version selected the assigner with `if use_satal ... elif use_lba ...`, which
+    silently disabled LBA whenever SATAL was on.)
+
+    The concrete classes below are defined at MODULE level, not built inside a
+    factory — a locally-defined class cannot be pickled, and Ultralytics pickles
+    the model (and with it the criterion and assigner) on every checkpoint save.
+
+    Config values are set as attributes after construction so no __init__
+    signature has to be matched.
     """
 
-    class _LevelBalanced(base_cls):
-        def __init__(self, *a, **kw):
-            super().__init__(*a, **kw)
-            self.lba_strength = strength
-            self.lba_ref_cells = ref_cells
-            self.lba_sigma = sigma
-            self.stride_tensor = None
-            self._lba_warned = False
+    lba_strength = 1.0
+    lba_ref_cells = 4.5
+    lba_sigma = 1.0
+    stride_tensor = None
+    _lba_warned = False
 
-        def get_box_metrics(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt,
-                            *extra, **extra_kw):
-            # SATAL's get_box_metrics takes an additional `scale_t` argument.
-            # Pass anything beyond the standard five straight through so this
-            # wrapper works over any assigner signature.
-            align, overlaps = super().get_box_metrics(
-                pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt, *extra, **extra_kw)
-            s = self.stride_tensor
-            if s is None:
-                if not self._lba_warned:
-                    print("[LBA] WARNING stride_tensor not set — prior NOT applied")
-                    self._lba_warned = True
-                return align, overlaps
-            prior = _lba_prior(gt_bboxes, s.view(-1).to(align.dtype),
-                               self.lba_ref_cells, self.lba_sigma)
-            return align * prior.pow(self.lba_strength).to(align.dtype), overlaps
+    def get_box_metrics(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt,
+                        *extra, **extra_kw):
+        # SATAL's get_box_metrics takes an extra `scale_t`; pass anything beyond
+        # the standard five straight through so this works over any signature.
+        align, overlaps = super().get_box_metrics(
+            pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt, *extra, **extra_kw)
+        s = self.stride_tensor
+        if s is None:
+            if not self._lba_warned:
+                print("[LBA] WARNING stride_tensor not set — prior NOT applied")
+                self._lba_warned = True
+            return align, overlaps
+        prior = _lba_prior(gt_bboxes, s.view(-1).to(align.dtype),
+                           self.lba_ref_cells, self.lba_sigma)
+        return align * prior.pow(self.lba_strength).to(align.dtype), overlaps
 
-    _LevelBalanced.__name__ = f"LevelBalanced{base_cls.__name__}"
-    return _LevelBalanced(**base_kwargs)
+
+class LevelBalancedTaskAlignedAssigner(_LBAMixin, TaskAlignedAssigner):
+    """Stock TAL + level prior."""
+
+
+# SATAL lives outside this module and may be absent; define the composed class at
+# import time when it is available so that it is picklable AND unpicklable.
+try:
+    from ultralytics.utils.satal import ScaleAdaptiveTaskAlignedAssigner as _SATALBase
+
+    class LevelBalancedScaleAdaptiveTaskAlignedAssigner(_LBAMixin, _SATALBase):
+        """SATAL + level prior."""
+
+except Exception:  # noqa: BLE001
+    _SATALBase = None
+    LevelBalancedScaleAdaptiveTaskAlignedAssigner = None
+
+
+def make_lba_assigner(base_cls, strength, ref_cells, sigma, **base_kwargs):
+    """Instantiate the module-level LBA class matching `base_cls`."""
+    if _SATALBase is not None and base_cls is _SATALBase:
+        cls = LevelBalancedScaleAdaptiveTaskAlignedAssigner
+    elif base_cls is TaskAlignedAssigner:
+        cls = LevelBalancedTaskAlignedAssigner
+    else:
+        raise TypeError(
+            f"no module-level LBA class for {base_cls.__name__}. Add one rather "
+            "than generating it dynamically — locally-defined classes cannot be "
+            "pickled and Ultralytics pickles the criterion on every save."
+        )
+    obj = cls(**base_kwargs)
+    obj.lba_strength, obj.lba_ref_cells, obj.lba_sigma = strength, ref_cells, sigma
+    obj.stride_tensor = None
+    return obj
 
 
 # =============================================================================
