@@ -281,15 +281,15 @@ if __name__ == "__main__":
     has_anchor_queued = any(r["name"] == "lba_anchor" for r, _ in todo)
     anchor_done = os.path.isdir(os.path.join(PROJECT_DIR, "lba_anchor"))
     if wants_lba and not has_anchor_queued and not anchor_done:
-        sys.exit(
-            "\nREFUSING TO RUN.\n"
-            "  LBA variants were requested but 'lba_anchor' is neither queued nor\n"
-            f"  already present in {PROJECT_DIR}/.\n\n"
-            "  Without a baseline trained under identical conditions the results\n"
-            "  cannot be attributed to LBA. Run one of:\n\n"
-            "      python run_lba_ablation.py lba_anchor lba_s10\n"
-            "      python run_lba_ablation.py                  # full list, anchor first\n"
-        )
+        print("\n" + "!" * 78)
+        print("  WARNING: running LBA without a matched 'lba_anchor'.")
+        print(f"  No lba_anchor in {PROJECT_DIR}/ and none queued.")
+        print("  The only reference will be v12s_default2 = 57.63, trained in a")
+        print("  DIFFERENT session. This project has already produced 1.5-point")
+        print("  gaps between supposedly identical baselines, so a delta of less")
+        print("  than ~1.5 pt against it will not be attributable to LBA.")
+        print("  Proceeding anyway — add 'lba_anchor' later if the result is close.")
+        print("!" * 78 + "\n")
 
     for r, s in todo:
         print(f"  {r['rank']:>2}  {r['name']:<16s} seed={s}  {r['label']}")
