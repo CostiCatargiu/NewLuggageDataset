@@ -322,6 +322,52 @@ class SataLSwaConfig:
         #                     spread — measured blow-up to 86x at beta=1.
         #   peu_w_clip        hard bound on the weight before normalisation,
         #                     so the spread stays bounded regardless of beta
+        # ---- LBA (Level-Balanced Assignment) — THE new mechanism -------------
+        # MEASURED PATHOLOGY (diag_per_edge_dfl.py, v12s_default2, 67,685 fg
+        # anchors over 4,600 val images):
+        #
+        #   stride   % of anchor grid   % of foreground   ratio
+        #      8          76.2%              59.3%         0.78
+        #     16          19.0%              39.4%         2.07
+        #     32           4.8%               1.3%         0.28
+        #
+        # P5 receives 887 foreground anchors in total — an entire pyramid level
+        # gets essentially no box/DFL gradient, while P4 is over-subscribed 7x
+        # relative to it. Meanwhile LARGE objects are 29.5% of all foreground,
+        # carry the worst top-edge residual (8.17px vs 3.43px for small) and the
+        # worst AP (44.41 stock, recoverable to 59.85 — so it is not a capacity
+        # limit, it is a supervision-allocation problem).
+        #
+        # WHY THIS HAPPENS: TAL selects topk candidates per GT by
+        # score^alpha * iou^beta, which is completely LEVEL-AGNOSTIC. Nothing in
+        # the metric knows which pyramid level a candidate came from, so levels
+        # with more anchors and easier early IoU win the topk, and coarse levels
+        # starve. OTA / SimOTA / TAL all balance across GTs; none balance across
+        # LEVELS.
+        #
+        # THE MECHANISM: multiply the alignment metric by a soft scale-matching
+        # prior. Each level has a nominal object size of stride * lba_ref_cells
+        # (measured: assigned objects sit at ~7-8 cells tall on every level).
+        # For a GT of geometric size s:
+        #
+        #     octaves = log2( s / (stride * lba_ref_cells) )
+        #     prior   = exp( -octaves^2 / (2 * lba_sigma^2) )
+        #     align  <- align * prior^lba_strength
+        #
+        # Soft, not a hard size range (FCOS/ATSS use hard ranges and cannot
+        # express partial preference); no new parameters; no architecture change.
+        # lba_strength=0 reproduces stock TAL exactly.
+        #
+        #   use_lba        master switch
+        #   lba_strength   prior exponent; 0 = off, 1.0 = full prior
+        #   lba_ref_cells  nominal object size per level, in stride units
+        #   lba_sigma      prior width in octaves (1.0 = +/- one octave is 0.61x)
+        self.use_lba = bool(g("use_lba", False))
+        self.lba_strength = float(g("lba_strength", 1.0))
+        self.lba_ref_cells = float(g("lba_ref_cells", 8.0))
+        self.lba_sigma = float(g("lba_sigma", 1.0))
+        self.lba_log = bool(g("lba_log", True))
+
         # ---- EDGEW: fixed per-edge DFL weights (the PEU control) -------------
         # AR-DFL can only express [w, h, w, h] — it cannot separate top from
         # bottom, which is precisely the asymmetry the diagnostic found
@@ -416,6 +462,13 @@ class SataLSwaConfig:
             raise ValueError("peu_min_var must be > 0")
         if self.peu_w_clip < 1.0:
             raise ValueError(f"peu_w_clip must be >= 1.0, got {self.peu_w_clip}")
+        if self.use_lba:
+            if self.lba_strength <= 0:
+                raise ValueError("use_lba=True but lba_strength<=0 — that is stock TAL.")
+            if self.lba_sigma <= 0:
+                raise ValueError("lba_sigma must be > 0")
+            if self.lba_ref_cells <= 0:
+                raise ValueError("lba_ref_cells must be > 0")
         if self.use_edgew:
             ew = (self.edgew_l, self.edgew_t, self.edgew_r, self.edgew_b)
             if min(ew) < 0:
@@ -454,7 +507,7 @@ class SataLSwaConfig:
                 and not self.use_satal and self.swa_alpha == 0.0 and self.swa_boost == 1.0
                 and not self.use_nwd and not self.use_class_weights and not self.use_vfl
                 and not self.use_loss_clip and not self.use_ardfl and not self.use_adfl
-                and not self.use_peu and not self.use_edgew)
+                and not self.use_peu and not self.use_edgew and not self.use_lba)
 
     def as_dict(self):
         return {k: v for k, v in vars(self).items() if not k.startswith("_")}
@@ -771,6 +824,87 @@ def adfl_clamp_report(reset=True):
     if reset:
         s["n"], s["sat"] = 0, None
     return dict(zip(("left", "top", "right", "bottom"), rates))
+
+
+# =============================================================================
+# LEVEL-BALANCED ASSIGNMENT (LBA)
+# =============================================================================
+# TAL ranks candidates by score^alpha * iou^beta with no notion of which FPN
+# level a candidate came from. Measured consequence on this dataset: P5 receives
+# 1.3% of foreground against a 4.8% grid share (ratio 0.28) while P4 takes 39.4%
+# against 19.0% (ratio 2.07). One pyramid level is effectively untrained, and
+# large objects — which should own it — are the worst-performing bucket.
+#
+# LBA multiplies the alignment metric by a soft scale-matching prior so each
+# level preferentially receives the objects whose size matches its resolution.
+
+_LBA_STATE = {"n": 0, "fg_per_level": None, "strides": None}
+
+
+def _lba_prior(gt_bboxes, stride_per_anchor, ref_cells, sigma, eps=1e-9):
+    """Soft scale-matching prior, shape (bs, n_max_boxes, n_anchors), in (0, 1].
+
+    gt_bboxes         : (bs, n, 4) xyxy in PIXELS
+    stride_per_anchor : (n_anchors,) pixels per cell at that anchor's level
+    """
+    w = (gt_bboxes[..., 2] - gt_bboxes[..., 0]).clamp(min=eps)
+    h = (gt_bboxes[..., 3] - gt_bboxes[..., 1]).clamp(min=eps)
+    size = (w * h).sqrt().unsqueeze(-1)                       # (bs, n, 1)
+    nominal = (stride_per_anchor * ref_cells).view(1, 1, -1)  # (1, 1, a)
+    octaves = torch.log2(size / nominal.clamp(min=eps))
+    return torch.exp(-(octaves ** 2) / (2.0 * sigma ** 2))
+
+
+def _lba_track(fg_mask, stride_per_anchor):
+    """Accumulate foreground counts per pyramid level — the hypothesis test."""
+    with torch.no_grad():
+        st = _LBA_STATE
+        uniq = torch.unique(stride_per_anchor)
+        counts = torch.stack([((stride_per_anchor.view(1, -1) == s) & fg_mask).sum()
+                              for s in uniq]).float()
+        st["strides"] = uniq.tolist()
+        st["fg_per_level"] = counts if st["fg_per_level"] is None else st["fg_per_level"] + counts
+        st["n"] += 1
+
+
+def lba_report(reset=True):
+    """Foreground share per FPN level since the last call."""
+    st = _LBA_STATE
+    if not st["n"] or st["fg_per_level"] is None:
+        return None
+    c = st["fg_per_level"]
+    tot = c.sum().clamp(min=1)
+    out = {int(s): {"fg": int(v.item()), "share": float((v / tot).item())}
+           for s, v in zip(st["strides"], c)}
+    if reset:
+        st["n"], st["fg_per_level"] = 0, None
+    return out
+
+
+class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
+    """TAL with a soft scale-matching prior over FPN levels.
+
+    `stride_tensor` must be set on the instance before __call__ (v8DetectionLoss
+    does this); without it the assigner degrades to stock TAL and says so once.
+    """
+
+    def __init__(self, topk=10, num_classes=80, alpha=0.5, beta=6.0,
+                 strength=1.0, ref_cells=8.0, sigma=1.0, eps=1e-9):
+        super().__init__(topk=topk, num_classes=num_classes, alpha=alpha, beta=beta, eps=eps)
+        self.strength, self.ref_cells, self.sigma = strength, ref_cells, sigma
+        self.stride_tensor = None
+        self._warned = False
+
+    def get_box_metrics(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt):
+        align, overlaps = super().get_box_metrics(pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt)
+        s = self.stride_tensor
+        if s is None:
+            if not self._warned:
+                print("[LBA] WARNING stride_tensor not set — running stock TAL")
+                self._warned = True
+            return align, overlaps
+        prior = _lba_prior(gt_bboxes, s.view(-1).to(align.dtype), self.ref_cells, self.sigma)
+        return align * prior.pow(self.strength).to(align.dtype), overlaps
 
 
 # =============================================================================
@@ -1157,6 +1291,13 @@ class v8DetectionLoss:
                 large_area_thresh=self.cfg.satal_large_area,
                 topk_small_factor=self.cfg.satal_topk_factor,
             )
+        elif self.cfg.use_lba:
+            self.assigner = LevelBalancedTaskAlignedAssigner(
+                topk=self.cfg.tal_topk, num_classes=self.nc,
+                alpha=self.cfg.tal_alpha, beta=self.cfg.tal_beta,
+                strength=self.cfg.lba_strength, ref_cells=self.cfg.lba_ref_cells,
+                sigma=self.cfg.lba_sigma,
+            )
         else:
             self.assigner = TaskAlignedAssigner(
                 topk=self.cfg.tal_topk, num_classes=self.nc,
@@ -1234,6 +1375,12 @@ class v8DetectionLoss:
                   (f" (h/w > {c.ardfl_ar_thresh})" if c.ardfl_ar_gate else ""))
             print(f"    height entropy:         {c.ardfl_entropy}" +
                   (f" (w={c.ardfl_entropy_w})" if c.ardfl_entropy else ""))
+        print(f"  LBA (level-balanced):     {c.use_lba}")
+        if c.use_lba:
+            print(f"    strength / sigma:       {c.lba_strength} / {c.lba_sigma} octaves")
+            print(f"    nominal obj per level:  {c.lba_ref_cells} cells "
+                  f"(= {[int(c.lba_ref_cells*s) for s in (8,16,32)]} px at stride 8/16/32)")
+            print("    measured pathology:     P5 fg share 1.3% vs 4.8% grid (ratio 0.28)")
         print(f"  EDGEW (fixed per-edge):   {c.use_edgew}"
               + (f"  l/t/r/b = {[round(v,3) for v in c.edgew_vec()]}" if c.use_edgew else ""))
         print(f"  PEU-DFL (uncertainty):    {c.use_peu}")
@@ -1321,12 +1468,21 @@ class v8DetectionLoss:
         if hasattr(self.assigner, "set_imgsz"):
             self.assigner.set_imgsz(imgsz)
 
+        # LBA needs the per-anchor stride to know which pyramid level each
+        # candidate belongs to. TaskAlignedAssigner's signature does not carry
+        # it, so hand it over explicitly here.
+        if self.cfg.use_lba:
+            self.assigner.stride_tensor = stride_tensor
+
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(),
             (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
             anchor_points * stride_tensor,
             gt_labels, gt_bboxes, mask_gt,
         )
+
+        if self.cfg.use_lba and self.cfg.lba_log:
+            _lba_track(fg_mask, stride_tensor)
 
         target_scores_sum = max(target_scores.sum(), 1)
         loss[1] = self._compute_cls_loss(pred_scores, target_scores, target_scores_sum, dtype)

@@ -263,6 +263,90 @@ def main():
     add("  -> start conservative; the ablation runner logs live clamp rates.")
     add("=" * 86)
 
+    # ------------------------------------------------------- STRATIFIED -----
+    # The aggregate numbers above average over every object size, which hides
+    # the question that actually matters. The measured performance gap on this
+    # dataset is in LARGE objects (mAP50-95 44.4 stock vs 59.9 with the tuned
+    # assigner; large remains the worst bucket even in the good config). A large
+    # object needs half_side/stride bins: at 200 px on stride 8 that is 12.5 of
+    # 15, i.e. near the ceiling. If large objects saturate the DFL range while
+    # small ones use ~4 bins, that is a representation failure on the axis where
+    # the gap lives — and the fix is MORE range for height, not finer width.
+    maxside = np.maximum(W, H)
+    BUCKETS = [("small", maxside < 48), ("medium", (maxside >= 48) & (maxside <= 96)),
+               ("large", maxside > 96)]
+
+    lines.append("")
+    lines.append("=" * 86)
+    lines.append("STRATIFIED BY OBJECT SIZE   (max bbox side: small <48px, 48-96 medium, >96 large)")
+    lines.append("=" * 86)
+    lines.append(f"{'bucket':<8s}{'n':>8s}{'edge':>8s}{'mean tgt':>10s}{'p99 tgt':>9s}"
+                 f"{'SATURATED':>11s}{'resid(bin)':>11s}{'resid(px)':>10s}")
+    strat = {}
+    for bname, bmask in BUCKETS:
+        n = int(bmask.sum())
+        strat[bname] = {"n": n}
+        if n == 0:
+            continue
+        lines.append("-" * 86)
+        for e in range(4):
+            t, r, p = tgt[e][bmask], rb[e][bmask], rp[e][bmask]
+            sat = float((t >= sat_edge).mean())
+            strat[bname][EDGE_NAMES[e]] = dict(
+                mean_target_bins=float(t.mean()), p99_target_bins=float(np.percentile(t, 99)),
+                saturation_rate=sat, resid_bins=float(r.mean()), resid_px=float(p.mean()))
+            flag = "  <<<" if sat > 0.02 else ""
+            lines.append(f"{bname if e == 0 else '':<8s}{n if e == 0 else '':>8}{EDGE_NAMES[e]:>8s}"
+                         f"{t.mean():>10.2f}{np.percentile(t, 99):>9.2f}"
+                         f"{sat*100:>10.2f}%{r.mean():>11.3f}{p.mean():>10.2f}{flag}")
+
+    # ------------------------------------------------------ BY FPN STRIDE ----
+    lines.append("")
+    lines.append("=" * 86)
+    lines.append("STRATIFIED BY FPN STRIDE   (bin width in px == stride; saturation risk grows with"
+                 " object size at LOW stride)")
+    lines.append("=" * 86)
+    lines.append(f"{'stride':>7s}{'n':>9s}{'mean W':>8s}{'mean H':>8s}"
+                 f"{'sat L/R':>10s}{'sat T/B':>10s}{'p99 T/B tgt':>13s}")
+    lines.append("-" * 86)
+    by_stride = {}
+    for s_val in sorted(set(np.round(S).astype(int).tolist())):
+        m = np.round(S).astype(int) == s_val
+        n = int(m.sum())
+        if n == 0:
+            continue
+        satw = float(((tgt[0][m] >= sat_edge) | (tgt[2][m] >= sat_edge)).mean())
+        sath = float(((tgt[1][m] >= sat_edge) | (tgt[3][m] >= sat_edge)).mean())
+        p99h = float(np.percentile(np.concatenate([tgt[1][m], tgt[3][m]]), 99))
+        by_stride[int(s_val)] = dict(n=n, sat_width=satw, sat_height=sath, p99_height_bins=p99h)
+        lines.append(f"{s_val:>7d}{n:>9d}{W[m].mean():>8.1f}{H[m].mean():>8.1f}"
+                     f"{satw*100:>9.2f}%{sath*100:>9.2f}%{p99h:>13.2f}")
+
+    # ------------------------------------------------------------ VERDICT ---
+    lines.append("")
+    lines.append("=" * 86)
+    lines.append("VERDICT — is there a DFL representation problem on LARGE objects?")
+    lines.append("=" * 86)
+    lg = strat.get("large", {})
+    if lg.get("n", 0) == 0:
+        lines.append("  no large objects sampled — increase --batches")
+    else:
+        h_sat = max(lg["top"]["saturation_rate"], lg["bottom"]["saturation_rate"])
+        h_p99 = max(lg["top"]["p99_target_bins"], lg["bottom"]["p99_target_bins"])
+        lines.append(f"  large objects: n={lg['n']}, height-edge saturation {h_sat*100:.2f}%, "
+                     f"p99 height target {h_p99:.1f}/{reg_max-1} bins")
+        if h_sat > 0.02 or h_p99 > 0.85 * (reg_max - 1):
+            lines.append("  >>> YES. Height targets are pressing against the top of the bin range on")
+            lines.append("      large objects. A-DFL with adfl_h_scale > 1 (MORE range for height) is")
+            lines.append("      justified, and it targets the size bucket where the gap actually is.")
+            lines.append("      Suggested: adfl_h_scale = "
+                         f"{max(1.0, round(h_p99/(reg_max-1)/0.8, 2))}, adfl_w_scale = 1.0")
+        else:
+            lines.append("  >>> NO. Large-object height targets sit well inside the range and do not")
+            lines.append("      saturate. DFL has no representation problem at any size. A-DFL is")
+            lines.append("      finished alongside PEU — put the remaining effort into the assigner,")
+            lines.append("      which is the only mechanism with a measured effect (+1.68).")
+
     report = "\n".join(lines)
     print("\n" + report)
     with open(os.path.join(args.out, "per_edge_report.txt"), "w") as f:
@@ -271,7 +355,8 @@ def main():
         json.dump(dict(reg_max=reg_max, n_fg=n_fg_total, split=args.split,
                        per_edge=per_edge, suggested_w_scale=safe_w,
                        suggested_h_scale=safe_h,
-                       width_rel_resid=float(wr), height_rel_resid=float(hr)), f, indent=2)
+                       width_rel_resid=float(wr), height_rel_resid=float(hr),
+                       by_size=strat, by_stride=by_stride), f, indent=2)
 
     # ------------------------------------------------------------------ plot --
     try:
