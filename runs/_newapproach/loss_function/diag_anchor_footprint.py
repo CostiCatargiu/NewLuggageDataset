@@ -100,7 +100,10 @@ def candidates_in_gts(anc_points, gt_bboxes, eps=1e-9):
     b, n, _ = gt_bboxes.shape
     lt, rb = gt_bboxes.view(-1, 1, 4).chunk(2, 2)          # (b*n, 1, 2) each
     deltas = torch.cat((anc_points[None] - lt, rb - anc_points[None]), dim=2)
-    return deltas.view(b, n, -1, 4).amin(3).gt_(eps)
+    # NOTE: out-of-place gt(), not ultralytics' in-place gt_(). The in-place form
+    # keeps the float dtype (returns 0.0/1.0), which is fine where ultralytics
+    # combines masks with `*` but breaks the bitwise `&` used below.
+    return deltas.view(b, n, -1, 4).amin(3).gt(eps)
 
 
 def main():
@@ -188,16 +191,17 @@ def main():
                 b, scale_tensor=imgsz[[1, 0, 1, 0]],
             )
             gt_labels, gt_bboxes = targets.split((1, 4), 2)     # pixels
-            mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0.0)   # (b, n, 1)
+            mask_gt = gt_bboxes.sum(2, keepdim=True).gt(0.0)    # (b, n, 1) bool
 
             pred_bboxes = crit.bbox_decode(anchor_points, pred_distri)
 
             out = assigner(
                 pred_scores.detach().sigmoid(),
                 (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
-                anc_px, gt_labels, gt_bboxes, mask_gt,
+                anc_px, gt_labels, gt_bboxes,
+                mask_gt.to(gt_bboxes.dtype),   # ultralytics expects the float mask
             )
-            fg_mask = out[3]            # (b, a) bool
+            fg_mask = out[3].bool()     # (b, a)
             target_gt_idx = out[4]      # (b, a) long
             if fg_mask.sum() == 0:
                 continue

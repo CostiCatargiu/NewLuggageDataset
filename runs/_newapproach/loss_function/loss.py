@@ -1143,9 +1143,17 @@ class BboxLoss(nn.Module):
 
         # ---- normalization ---------------------------------------------------
         # Divide by the weights ACTUALLY used (v1 divided by target_scores_sum
-        # regardless). With swa off this equals target_scores_sum exactly, because
+        # regardless). With swa off weight.sum() == target_scores.sum(), because
         # target_scores is zero on background anchors.
-        norm = weight.sum().clamp(min=1e-9)
+        #
+        # !! FIXED: the floor must be 1.0, not 1e-9. Stock uses
+        #    target_scores_sum = max(target_scores.sum(), 1). Early in training
+        #    target_scores.sum() < 1 (with beta=6 a poorly-fit anchor contributes
+        #    iou^6 ~ 1e-5), so a 1e-9 floor inflated box+dfl by orders of
+        #    magnitude while cls stayed correctly normalised at line 1562.
+        #    That made the "neutral" config NOT stock: measured -1.68 mAP50-95
+        #    overall and -15.44 on large objects vs the stock baseline.
+        norm = weight.sum().clamp(min=1.0)
         loss_iou = (box_loss * weight).sum() / norm
 
         # ---- DFL --------------------------------------------------------------

@@ -12,6 +12,315 @@ from ultralytics.utils.torch_utils import autocast
 from .metrics import bbox_iou, probiou
 from .tal import bbox2dist
 
+# =============================================================================
+# CUSTOM v3 — stock Ultralytics loss + three gated mechanisms.
+# =============================================================================
+# Base: loss_original_stock.py, copied VERBATIM. Every addition below is behind
+# a switch that defaults to OFF, and the stock code paths are untouched, so with
+# no hyp keys set this file is bit-identical to stock. That is the property the
+# previous rebuild lost: it re-implemented the normalisation as
+# `weight.sum().clamp(min=1e-9)` instead of `max(target_scores.sum(), 1)`, which
+# inflated box+dfl early in training and cost -1.68 mAP50-95 (-15.44 on large)
+# at "neutral" settings. Nothing here rewrites stock arithmetic.
+#
+# MECHANISMS
+#   use_ardfl  per-edge DFL weights  (w,h,w,h)
+#   use_peu    per-edge attenuation by the DFL distribution's own variance
+#   use_lba    level-balanced assignment prior on the TAL alignment metric
+#
+# Only one of use_ardfl / use_peu may be on at a time — both rewrite the same
+# per-edge DFL reduction, so together they are unattributable.
+# =============================================================================
+
+_EPOCH = {"epoch": 0, "total": 0, "set": False}
+
+
+def set_epoch(epoch, total=None):
+    """Call from an on_train_epoch_start callback so PEU warmup knows the epoch."""
+    _EPOCH["epoch"] = int(epoch)
+    if total:
+        _EPOCH["total"] = int(total)
+    _EPOCH["set"] = True
+
+
+def attach_epoch_callback(model, total_epochs=None):
+    """Convenience: wire set_epoch into an Ultralytics model."""
+    def _cb(trainer):
+        set_epoch(trainer.epoch, getattr(trainer, "epochs", total_epochs))
+    model.add_callback("on_train_epoch_start", _cb)
+
+
+class CustomLossCfg:
+    """Every knob this file reads. Defaults reproduce stock exactly."""
+
+    def __init__(self, h):
+        g = lambda k, d: getattr(h, k, d)  # noqa: E731
+
+        # ---- AR-DFL ---------------------------------------------------------
+        # Per-edge DFL weights, order (left, top, right, bottom).
+        # DIRECTION: an e-px error costs e/w on a width edge and e/h on a height
+        # edge, ratio h/w = 2.69 on this dataset -> the WIDTH edges are ~2.7x
+        # more IoU-sensitive and should receive MORE weight. Earlier runs used
+        # h=1.5/w=0.75, i.e. the opposite, and measured -0.46. Defaults below are
+        # the corrected direction. Weights are mean-normalised so total DFL
+        # magnitude is unchanged and any gain is not just "more DFL gain".
+        self.use_ardfl = bool(g("use_ardfl", False))
+        self.ardfl_w_weight = float(g("ardfl_w_weight", 1.5))
+        self.ardfl_h_weight = float(g("ardfl_h_weight", 0.75))
+
+        # ---- PEU-DFL --------------------------------------------------------
+        # DFL emits a distribution per edge; its variance is a free aleatoric
+        # uncertainty estimate. L_e <- L_e * exp(-beta * s_e) + lambda * s_e.
+        #
+        # peu_norm_by_mu: variance in BIN units grows with target magnitude, so
+        # raw var attenuates LARGE objects hardest — measured as monotonic
+        # large-object damage (beta=1.0 cost -3.03 mAP50-95_large). Dividing by
+        # mu^2 makes the signal scale-free. Default True (the fix).
+        #
+        # VALID COMBINATIONS ONLY (enforced below):
+        #   detach=True  -> lambda MUST be 0. Nothing can game a detached weight.
+        #   detach=False -> lambda > 0. True Kendall form, self-balancing.
+        # detach=True with lambda>0 collapses: the only gradient reaching the
+        # variance is lambda*log(var), which drives var to the floor unopposed.
+        # Measured at -4.33 and -7.31.
+        self.use_peu = bool(g("use_peu", False))
+        self.peu_beta = float(g("peu_beta", 0.5))
+        self.peu_lambda = float(g("peu_lambda", 0.0))
+        self.peu_detach = bool(g("peu_detach", True))
+        self.peu_norm_by_mu = bool(g("peu_norm_by_mu", True))
+        self.peu_warmup_epochs = int(g("peu_warmup_epochs", 5))
+        self.peu_min_var = float(g("peu_min_var", 0.05))
+        self.peu_w_clip = float(g("peu_w_clip", 3.0))
+
+        # ---- LBA ------------------------------------------------------------
+        # Soft scale-matching prior on the TAL alignment metric:
+        #   octaves = log2( size / (stride * ref_cells) )
+        #   prior   = exp( -octaves^2 / (2 sigma^2) );  align <- align * prior^strength
+        #
+        # lba_size_axis: 'max' uses max(w,h), 'geom' uses sqrt(w*h). On a 94%-tall
+        # dataset the geometric mean under-reads extent by ~1.67x, so 'max' is the
+        # default. lba_size_gate_px: apply the prior ONLY to GTs above this size —
+        # the measured effect was large +3.99 / medium -1.42, so gating keeps the
+        # gain and drops the cost. 0 = ungated (original behaviour).
+        self.use_lba = bool(g("use_lba", False))
+        self.lba_strength = float(g("lba_strength", 1.0))
+        self.lba_ref_cells = float(g("lba_ref_cells", 4.5))
+        self.lba_sigma = float(g("lba_sigma", 1.0))
+        self.lba_size_axis = str(g("lba_size_axis", "max"))
+        self.lba_size_gate_px = float(g("lba_size_gate_px", 0.0))
+        self.lba_log = bool(g("lba_log", True))
+
+        self._validate()
+
+    def _validate(self):
+        if self.use_peu and self.use_ardfl:
+            raise ValueError(
+                "use_peu and use_ardfl both set — both rewrite the per-edge DFL "
+                "reduction, so the comparison would be unattributable."
+            )
+        if self.use_ardfl and self.ardfl_w_weight == self.ardfl_h_weight:
+            raise ValueError(
+                f"use_ardfl=True but w==h=={self.ardfl_w_weight} — that is stock DFL."
+            )
+        if self.ardfl_w_weight < 0 or self.ardfl_h_weight < 0:
+            raise ValueError("ardfl weights must be >= 0")
+        if self.use_peu:
+            if self.peu_beta < 0 or self.peu_lambda < 0:
+                raise ValueError("peu_beta / peu_lambda must be >= 0")
+            if self.peu_beta == 0 and self.peu_lambda == 0:
+                raise ValueError("use_peu=True but beta and lambda are both 0 — that is stock.")
+            if self.peu_detach and self.peu_lambda > 0:
+                raise ValueError(
+                    "peu_detach=True with peu_lambda>0 is the COLLAPSING config "
+                    "(measured -4.33 / -7.31). Use detach=True with lambda=0, or "
+                    "detach=False with lambda>0."
+                )
+            if not self.peu_detach and self.peu_lambda == 0:
+                raise ValueError(
+                    "peu_detach=False with peu_lambda=0 lets the net inflate variance "
+                    "to cut its own loss. Set peu_lambda > 0."
+                )
+            if self.peu_min_var <= 0:
+                raise ValueError("peu_min_var must be > 0")
+            if self.peu_w_clip < 1.0:
+                raise ValueError("peu_w_clip must be >= 1.0")
+        if self.use_lba:
+            if self.lba_strength <= 0:
+                raise ValueError("use_lba=True but lba_strength<=0 — that is stock TAL.")
+            if self.lba_sigma <= 0 or self.lba_ref_cells <= 0:
+                raise ValueError("lba_sigma / lba_ref_cells must be > 0")
+            if self.lba_size_axis not in ("max", "geom"):
+                raise ValueError("lba_size_axis must be 'max' or 'geom'")
+
+    def is_stock(self):
+        return not (self.use_ardfl or self.use_peu or self.use_lba)
+
+    def banner(self):
+        out = ["=" * 62, "  CUSTOM v3 loss  (stock + AR-DFL / PEU / LBA)", "=" * 62,
+               f"  neutral (== stock):   {self.is_stock()}"]
+        out.append(f"  AR-DFL:               {self.use_ardfl}")
+        if self.use_ardfl:
+            out.append(f"    w / h weight:       {self.ardfl_w_weight} / {self.ardfl_h_weight}")
+        out.append(f"  PEU-DFL:              {self.use_peu}")
+        if self.use_peu:
+            out.append(f"    beta / lambda:      {self.peu_beta} / {self.peu_lambda}")
+            out.append(f"    detach / norm_mu:   {self.peu_detach} / {self.peu_norm_by_mu}")
+            out.append(f"    warmup epochs:      {self.peu_warmup_epochs}"
+                       + ("" if _EPOCH["set"] else "   [!! epoch tracking NOT attached"
+                                                   " — attenuating from step 0]"))
+        out.append(f"  LBA:                  {self.use_lba}")
+        if self.use_lba:
+            out.append(f"    strength / sigma:   {self.lba_strength} / {self.lba_sigma}")
+            out.append(f"    ref_cells / axis:   {self.lba_ref_cells} / {self.lba_size_axis}")
+            out.append(f"    size gate (px):     {self.lba_size_gate_px or 'off'}")
+        out.append("=" * 62)
+        return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
+# PEU helpers
+# ---------------------------------------------------------------------------
+_PEU_STATE = {"n": 0, "var": None, "w": None}
+
+
+def _dfl_edge_moments(pred_dist, reg_max):
+    """(N*4, reg_max) logits -> per-edge (mu, var) in BIN units, each (N, 4)."""
+    p = pred_dist.softmax(-1)
+    idx = torch.arange(reg_max, device=pred_dist.device, dtype=p.dtype)
+    mu = (p * idx).sum(-1)
+    var = (p * (idx.unsqueeze(0) - mu.unsqueeze(-1)) ** 2).sum(-1)
+    return mu.view(-1, 4), var.view(-1, 4)
+
+
+def _peu_weights(mu, var, cfg, warmed):
+    """Mean-normalised per-edge attenuation weights, and the log-variance term.
+
+    Mean-normalisation is deliberate: PEU must REDISTRIBUTE DFL weight across
+    edges, not scale the total, or a gain is confounded with a larger dfl gain.
+    """
+    v = var.clamp(min=cfg.peu_min_var)
+    if cfg.peu_norm_by_mu:
+        # scale-free: raw bin-unit variance grows with target magnitude, so it
+        # would attenuate large objects rather than uncertain edges.
+        v = v / mu.detach().clamp(min=1.0) ** 2
+    s = torch.log(v)
+    if not warmed:
+        return torch.ones_like(s), s
+    s_w = s.detach() if cfg.peu_detach else s
+    # Centre the log-variance BEFORE exponentiating. peu_w_clip is meant to bound
+    # the RELATIVE spread across edges; without centring, peu_norm_by_mu divides
+    # every edge by ~mu^2, pushes every weight past the clip together, and PEU
+    # silently becomes a no-op (all weights -> 1.000). Verified numerically.
+    s_w = s_w - s_w.mean()
+    w = torch.exp(-cfg.peu_beta * s_w)
+    k = cfg.peu_w_clip
+    w = w.clamp(min=1.0 / k, max=k)          # bound the spread BEFORE normalising
+    return w / w.mean().clamp(min=1e-9), s
+
+
+def _peu_track(var, w):
+    with torch.no_grad():
+        st = _PEU_STATE
+        for key, val in (("var", var), ("w", w)):
+            m = val.mean(0)
+            st[key] = m if st[key] is None else st[key] + m
+        st["n"] += 1
+
+
+def peu_report(reset=True):
+    """Mean per-edge variance and weight since the last call."""
+    st = _PEU_STATE
+    if not st["n"]:
+        return None
+    names = ("left", "top", "right", "bottom")
+    out = {"var": dict(zip(names, (st["var"] / st["n"]).tolist())),
+           "weight": dict(zip(names, (st["w"] / st["n"]).tolist()))}
+    if reset:
+        st["n"], st["var"], st["w"] = 0, None, None
+    return out
+
+
+# ---------------------------------------------------------------------------
+# LBA helpers
+# ---------------------------------------------------------------------------
+_LBA_STATE = {"n": 0, "fg": None, "strides": None}
+
+
+def _lba_prior(gt_bboxes, stride_per_anchor, cfg, eps=1e-9):
+    """Soft scale-matching prior, (bs, n_max_boxes, n_anchors), in (0, 1].
+
+    gt_bboxes         : (bs, n, 4) xyxy in PIXELS
+    stride_per_anchor : (n_anchors,) pixels per cell at that anchor's level
+    """
+    w = (gt_bboxes[..., 2] - gt_bboxes[..., 0]).clamp(min=eps)
+    h = (gt_bboxes[..., 3] - gt_bboxes[..., 1]).clamp(min=eps)
+    if cfg.lba_size_axis == "max":
+        size = torch.maximum(w, h)
+    else:
+        size = (w * h).sqrt()
+    size = size.unsqueeze(-1)                                    # (bs, n, 1)
+    nominal = (stride_per_anchor * cfg.lba_ref_cells).view(1, 1, -1)
+    octaves = torch.log2(size / nominal.clamp(min=eps))
+    prior = torch.exp(-(octaves ** 2) / (2.0 * cfg.lba_sigma ** 2))
+    if cfg.lba_size_gate_px > 0:
+        # measured: the prior helps large objects (+3.99) and hurts medium
+        # (-1.42). Gating to large GTs keeps the gain and drops the cost.
+        prior = torch.where(size > cfg.lba_size_gate_px, prior, torch.ones_like(prior))
+    return prior
+
+
+def _lba_track(fg_mask, stride_per_anchor):
+    with torch.no_grad():
+        st = _LBA_STATE
+        uniq = torch.unique(stride_per_anchor)
+        counts = torch.stack([((stride_per_anchor.view(1, -1) == s) & fg_mask).sum()
+                              for s in uniq]).float()
+        st["strides"] = uniq.tolist()
+        st["fg"] = counts if st["fg"] is None else st["fg"] + counts
+        st["n"] += 1
+
+
+def lba_report(reset=True):
+    """Foreground share per FPN level since the last call."""
+    st = _LBA_STATE
+    if not st["n"] or st["fg"] is None:
+        return None
+    tot = st["fg"].sum().clamp(min=1)
+    out = {int(s): {"fg": int(v.item()), "share": float((v / tot).item())}
+           for s, v in zip(st["strides"], st["fg"])}
+    if reset:
+        st["n"], st["fg"] = 0, None
+    return out
+
+
+class _LBAMixin:
+    """Level prior, mixed in ahead of TaskAlignedAssigner.
+
+    Concrete classes are defined at MODULE level, not built in a factory —
+    Ultralytics pickles the criterion (and its assigner) on every checkpoint
+    save, and a locally-defined class cannot be pickled.
+    """
+
+    lba_cfg = None
+    stride_tensor = None
+    _warned = False
+
+    def get_box_metrics(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt, *a, **kw):
+        align, overlaps = super().get_box_metrics(
+            pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt, *a, **kw)
+        s, cfg = self.stride_tensor, self.lba_cfg
+        if s is None or cfg is None:
+            if not self._warned:
+                print("[LBA] WARNING stride_tensor not set — prior NOT applied")
+                self._warned = True
+            return align, overlaps
+        prior = _lba_prior(gt_bboxes, s.view(-1).to(align.dtype), cfg)
+        return align * prior.pow(cfg.lba_strength).to(align.dtype), overlaps
+
+
+class LevelBalancedTaskAlignedAssigner(_LBAMixin, TaskAlignedAssigner):
+    """Stock TAL + level prior."""
+
 
 class VarifocalLoss(nn.Module):
     """
@@ -87,14 +396,29 @@ class DFLoss(nn.Module):
             + F.cross_entropy(pred_dist, tr.view(-1), reduction="none").view(tl.shape) * wr
         ).mean(-1, keepdim=True)
 
+    def per_edge(self, pred_dist, target):
+        """Identical maths to __call__ but WITHOUT the mean over the 4 edges,
+        so a per-edge weighting can be applied before reduction. Returns (N, 4)
+        in (left, top, right, bottom) order."""
+        target = target.clamp(0, self.reg_max - 1 - 0.01)
+        tl = target.long()
+        tr = tl + 1
+        wl = tr - target
+        wr = 1 - wl
+        return (
+            F.cross_entropy(pred_dist, tl.view(-1), reduction="none").view(tl.shape) * wl
+            + F.cross_entropy(pred_dist, tr.view(-1), reduction="none").view(tl.shape) * wr
+        )
+
 
 class BboxLoss(nn.Module):
     """Criterion class for computing training losses during training."""
 
-    def __init__(self, reg_max=16):
+    def __init__(self, reg_max=16, cfg=None):
         """Initialize the BboxLoss module with regularization maximum and DFL settings."""
         super().__init__()
         self.dfl_loss = DFLoss(reg_max) if reg_max > 1 else None
+        self.cfg = cfg
 
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask):
         """IoU loss."""
@@ -104,9 +428,44 @@ class BboxLoss(nn.Module):
 
         # DFL loss
         if self.dfl_loss:
+            cfg = self.cfg
             target_ltrb = bbox2dist(anchor_points, target_bboxes, self.dfl_loss.reg_max - 1)
-            loss_dfl = self.dfl_loss(pred_dist[fg_mask].view(-1, self.dfl_loss.reg_max), target_ltrb[fg_mask]) * weight
-            loss_dfl = loss_dfl.sum() / target_scores_sum
+
+            if cfg is not None and cfg.use_ardfl:
+                # ---- AR-DFL: fixed per-edge weights, mean-normalised --------
+                pd = pred_dist[fg_mask].view(-1, self.dfl_loss.reg_max)
+                per_edge = self.dfl_loss.per_edge(pd, target_ltrb[fg_mask])       # (N,4)
+                ew = torch.tensor(
+                    [cfg.ardfl_w_weight, cfg.ardfl_h_weight,
+                     cfg.ardfl_w_weight, cfg.ardfl_h_weight],
+                    device=per_edge.device, dtype=per_edge.dtype,
+                ).view(1, 4)
+                ew = ew / ew.mean()                                              # total DFL unchanged
+                loss_dfl = (per_edge * ew).mean(-1, keepdim=True) * weight
+                loss_dfl = loss_dfl.sum() / target_scores_sum
+
+            elif cfg is not None and cfg.use_peu:
+                # ---- PEU: attenuate by the edge's own distribution variance --
+                pd = pred_dist[fg_mask].view(-1, self.dfl_loss.reg_max)
+                per_edge = self.dfl_loss.per_edge(pd, target_ltrb[fg_mask])       # (N,4)
+                mu, var = _dfl_edge_moments(pd, self.dfl_loss.reg_max)            # (N,4)
+                # At init the bin distribution is near-uniform, so its variance
+                # carries no signal and would suppress every edge equally.
+                warmed = (not _EPOCH["set"]) or (_EPOCH["epoch"] >= cfg.peu_warmup_epochs)
+                w_edge, s = _peu_weights(mu, var, cfg, warmed)
+                _peu_track(var, w_edge)
+                loss_dfl = (per_edge * w_edge).mean(-1, keepdim=True) * weight
+                loss_dfl = loss_dfl.sum() / target_scores_sum
+                if cfg.peu_lambda > 0 and warmed:
+                    reg = s.mean(-1, keepdim=True)
+                    loss_dfl = loss_dfl + cfg.peu_lambda * (reg * weight).sum() / target_scores_sum
+
+            else:
+                # ---- STOCK, untouched ---------------------------------------
+                loss_dfl = self.dfl_loss(
+                    pred_dist[fg_mask].view(-1, self.dfl_loss.reg_max), target_ltrb[fg_mask]
+                ) * weight
+                loss_dfl = loss_dfl.sum() / target_scores_sum
         else:
             loss_dfl = torch.tensor(0.0).to(pred_dist.device)
 
@@ -173,9 +532,20 @@ class v8DetectionLoss:
 
         self.use_dfl = m.reg_max > 1
 
-        self.assigner = TaskAlignedAssigner(topk=tal_topk, num_classes=self.nc, alpha=0.5, beta=6.0)
-        self.bbox_loss = BboxLoss(m.reg_max).to(device)
+        self.cfg = CustomLossCfg(h)
+
+        if self.cfg.use_lba:
+            self.assigner = LevelBalancedTaskAlignedAssigner(
+                topk=tal_topk, num_classes=self.nc, alpha=0.5, beta=6.0
+            )
+            self.assigner.lba_cfg = self.cfg
+            self.assigner.stride_tensor = None
+        else:
+            self.assigner = TaskAlignedAssigner(topk=tal_topk, num_classes=self.nc, alpha=0.5, beta=6.0)
+
+        self.bbox_loss = BboxLoss(m.reg_max, cfg=self.cfg).to(device)
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
+        print(self.cfg.banner())
 
     def preprocess(self, targets, batch_size, scale_tensor):
         """Preprocesses the target counts and matches with the input batch size to output a tensor."""
@@ -230,6 +600,10 @@ class v8DetectionLoss:
         # dfl_conf = pred_distri.view(batch_size, -1, 4, self.reg_max).detach().softmax(-1)
         # dfl_conf = (dfl_conf.amax(-1).mean(-1) + dfl_conf.amax(-1).amin(-1)) / 2
 
+        # LBA needs the per-anchor stride to know which level a candidate is on.
+        if self.cfg.use_lba:
+            self.assigner.stride_tensor = stride_tensor
+
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             # pred_scores.detach().sigmoid() * 0.8 + dfl_conf.unsqueeze(-1) * 0.2,
             pred_scores.detach().sigmoid(),
@@ -239,6 +613,11 @@ class v8DetectionLoss:
             gt_bboxes,
             mask_gt,
         )
+
+        # Track level occupancy for ANY assigner — without the baseline share
+        # there is nothing to compare an LBA run against.
+        if self.cfg.lba_log:
+            _lba_track(fg_mask, stride_tensor)
 
         target_scores_sum = max(target_scores.sum(), 1)
 
@@ -742,23 +1121,16 @@ class E2EDetectLoss:
         loss_one2one = self.one2one(one2one, batch)
         return loss_one2many[0] + loss_one2one[0], loss_one2many[1] + loss_one2one[1]
 
-
 class DetectAuxLoss:
-    """Train-only auxiliary-head deep-supervision loss.
-
-    Supports DetectAux, DetectAuxDual, DetectAuxDualDeepP3, and DetectDecoupledAux.
-    Main loss + aux_weight * auxiliary loss. Aux is dropped at inference (zero cost).
-    """
+    """Train-only auxiliary-head deep-supervision loss (dropped at inference)."""
 
     def __init__(self, model, aux_weight=0.25):
-        """Initialize with a shared detection loss and the auxiliary weight."""
         self.det = v8DetectionLoss(model, tal_topk=10)
         self.aux_weight = getattr(model.model[-1], "aux_weight", aux_weight)
 
     def __call__(self, preds, batch):
-        """Main loss + aux_weight * auxiliary loss."""
         preds = preds[1] if isinstance(preds, tuple) else preds
-        if not isinstance(preds, dict):  # val/eval path: only main head present
+        if not isinstance(preds, dict):
             return self.det(preds, batch)
         loss_main = self.det(preds["main"], batch)
         loss_aux = self.det(preds["aux"], batch)
@@ -766,20 +1138,19 @@ class DetectAuxLoss:
 
 
 class DetectObjLoss(v8DetectionLoss):
-    """v8 detection loss + objectness (foreground/background) BCE term.
+    """v8 detection loss + an objectness (fg/bg) BCE term.
 
     Supervises DetectObj's per-anchor objectness logit against the TAL foreground
-    mask to suppress background-like anchors and improve precision.
+    mask. Cls loss goes through _compute_cls_loss so it picks up the same toggles
+    (class_weights / VFL / width-boost) as the main detection loss.
     """
 
     def __init__(self, model, obj_weight=1.0):
-        """Initialize the base detection loss plus an objectness BCE."""
         super().__init__(model)
         self.obj_weight = obj_weight
         self.bce_obj = nn.BCEWithLogitsLoss(reduction="none")
 
     def __call__(self, preds, batch):
-        """Detection loss on the main head + objectness BCE on the obj branch."""
         preds = preds[1] if isinstance(preds, tuple) else preds
         if not isinstance(preds, dict):  # val/eval: only main head present
             return super().__call__(preds, batch)
@@ -793,17 +1164,14 @@ class DetectObjLoss(v8DetectionLoss):
         pred_obj = torch.cat(
             [oi.view(feats[0].shape[0], 1, -1) for oi in obj_feats], 2
         ).permute(0, 2, 1).contiguous()  # (b, A, 1)
-
         dtype = pred_scores.dtype
         batch_size = pred_scores.shape[0]
         imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
         anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
-
         targets = torch.cat((batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1)
         targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
         gt_labels, gt_bboxes = targets.split((1, 4), 2)
         mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0.0)
-
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(),
@@ -813,20 +1181,27 @@ class DetectObjLoss(v8DetectionLoss):
             gt_bboxes,
             mask_gt,
         )
-
         target_scores_sum = max(target_scores.sum(), 1)
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # cls
+
+        loss[1] = self._compute_cls_loss(
+            pred_scores, target_scores, target_bboxes, fg_mask, stride_tensor, target_scores_sum, dtype
+        )
+
         if fg_mask.sum():
             target_bboxes /= stride_tensor
             loss[0], loss[2] = self.bbox_loss(
-                pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask
+                pred_distri, pred_bboxes, anchor_points, target_bboxes,
+                target_scores, target_scores_sum, fg_mask, stride_tensor
             )
-        # objectness BCE: target = foreground mask
         obj_target = fg_mask.unsqueeze(-1).to(dtype)  # (b, A, 1)
         loss[3] = self.bce_obj(pred_obj, obj_target).mean()
-
         loss[0] *= self.hyp.box
         loss[1] *= self.hyp.cls
         loss[2] *= self.hyp.dfl
         loss[3] *= self.obj_weight
         return loss.sum() * batch_size, loss[:3].detach()  # log box/cls/dfl
+
+
+# NOTE: a second, byte-equivalent E2EDetectLoss used to sit here and shadowed the
+# one defined above (audit bug B4). Removed — the baseline's definition stands.
+
