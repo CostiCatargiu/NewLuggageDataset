@@ -894,30 +894,43 @@ def lba_report(reset=True):
     return out
 
 
-class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
-    """TAL with a soft scale-matching prior over FPN levels.
+def make_lba_assigner(base_cls, strength, ref_cells, sigma, **base_kwargs):
+    """Wrap ANY TaskAlignedAssigner subclass with the level-balancing prior.
 
-    `stride_tensor` must be set on the instance before __call__ (v8DetectionLoss
-    does this); without it the assigner degrades to stock TAL and says so once.
+    LBA is orthogonal to which assigner you use: SATAL adapts alpha/beta/topk by
+    object AREA, LBA reweights candidates by which pyramid LEVEL they sit on.
+    They compose. An earlier version selected the assigner with
+    `if use_satal ... elif use_lba ...`, which silently disabled LBA whenever
+    SATAL was on — and since the telemetry was gated on the config flag rather
+    than on the live assigner, it reported SATAL's level distribution while
+    claiming to measure LBA. Building the class dynamically from whatever base
+    is in play removes that whole failure mode.
     """
 
-    def __init__(self, topk=10, num_classes=80, alpha=0.5, beta=6.0,
-                 strength=1.0, ref_cells=8.0, sigma=1.0, eps=1e-9):
-        super().__init__(topk=topk, num_classes=num_classes, alpha=alpha, beta=beta, eps=eps)
-        self.strength, self.ref_cells, self.sigma = strength, ref_cells, sigma
-        self.stride_tensor = None
-        self._warned = False
+    class _LevelBalanced(base_cls):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self.lba_strength = strength
+            self.lba_ref_cells = ref_cells
+            self.lba_sigma = sigma
+            self.stride_tensor = None
+            self._lba_warned = False
 
-    def get_box_metrics(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt):
-        align, overlaps = super().get_box_metrics(pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt)
-        s = self.stride_tensor
-        if s is None:
-            if not self._warned:
-                print("[LBA] WARNING stride_tensor not set — running stock TAL")
-                self._warned = True
-            return align, overlaps
-        prior = _lba_prior(gt_bboxes, s.view(-1).to(align.dtype), self.ref_cells, self.sigma)
-        return align * prior.pow(self.strength).to(align.dtype), overlaps
+        def get_box_metrics(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt):
+            align, overlaps = super().get_box_metrics(
+                pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt)
+            s = self.stride_tensor
+            if s is None:
+                if not self._lba_warned:
+                    print("[LBA] WARNING stride_tensor not set — prior NOT applied")
+                    self._lba_warned = True
+                return align, overlaps
+            prior = _lba_prior(gt_bboxes, s.view(-1).to(align.dtype),
+                               self.lba_ref_cells, self.lba_sigma)
+            return align * prior.pow(self.lba_strength).to(align.dtype), overlaps
+
+    _LevelBalanced.__name__ = f"LevelBalanced{base_cls.__name__}"
+    return _LevelBalanced(**base_kwargs)
 
 
 # =============================================================================
@@ -1287,6 +1300,9 @@ class v8DetectionLoss:
             self.class_weights = (w / w.mean()).view(1, 1, -1)
 
         # ---- assigner --------------------------------------------------------
+        # SATAL and LBA are ORTHOGONAL and compose: SATAL adapts alpha/beta/topk
+        # by object AREA, LBA reweights candidates by pyramid LEVEL. Pick the
+        # base class first, then optionally wrap it with the LBA prior.
         if self.cfg.use_satal:
             try:
                 from ultralytics.utils.satal import ScaleAdaptiveTaskAlignedAssigner
@@ -1295,7 +1311,8 @@ class v8DetectionLoss:
                     "use_satal=True but ultralytics.utils.satal is missing. "
                     "Install/copy the SATAL assigner or set use_satal=False."
                 ) from e
-            self.assigner = ScaleAdaptiveTaskAlignedAssigner(
+            base_cls = ScaleAdaptiveTaskAlignedAssigner
+            base_kw = dict(
                 topk=self.cfg.tal_topk, num_classes=self.nc,
                 alpha=self.cfg.tal_alpha, beta=self.cfg.tal_beta,
                 alpha_small=self.cfg.satal_alpha_small, beta_small=self.cfg.satal_beta_small,
@@ -1304,18 +1321,20 @@ class v8DetectionLoss:
                 large_area_thresh=self.cfg.satal_large_area,
                 topk_small_factor=self.cfg.satal_topk_factor,
             )
-        elif self.cfg.use_lba:
-            self.assigner = LevelBalancedTaskAlignedAssigner(
-                topk=self.cfg.tal_topk, num_classes=self.nc,
-                alpha=self.cfg.tal_alpha, beta=self.cfg.tal_beta,
-                strength=self.cfg.lba_strength, ref_cells=self.cfg.lba_ref_cells,
-                sigma=self.cfg.lba_sigma,
-            )
         else:
-            self.assigner = TaskAlignedAssigner(
-                topk=self.cfg.tal_topk, num_classes=self.nc,
-                alpha=self.cfg.tal_alpha, beta=self.cfg.tal_beta,
-            )
+            base_cls = TaskAlignedAssigner
+            base_kw = dict(topk=self.cfg.tal_topk, num_classes=self.nc,
+                           alpha=self.cfg.tal_alpha, beta=self.cfg.tal_beta)
+
+        if self.cfg.use_lba:
+            self.assigner = make_lba_assigner(
+                base_cls, self.cfg.lba_strength, self.cfg.lba_ref_cells,
+                self.cfg.lba_sigma, **base_kw)
+            # fail loudly rather than silently training the wrong thing
+            assert hasattr(self.assigner, "lba_strength"), "LBA wrapper did not apply"
+        else:
+            self.assigner = base_cls(**base_kw)
+
 
         self._print_config()
 
@@ -1388,7 +1407,10 @@ class v8DetectionLoss:
                   (f" (h/w > {c.ardfl_ar_thresh})" if c.ardfl_ar_gate else ""))
             print(f"    height entropy:         {c.ardfl_entropy}" +
                   (f" (w={c.ardfl_entropy_w})" if c.ardfl_entropy else ""))
-        print(f"  LBA (level-balanced):     {c.use_lba}")
+        live_lba = hasattr(self.assigner, "lba_strength")
+        print(f"  LBA (level-balanced):     {c.use_lba}"
+              + ("" if c.use_lba == live_lba else "   !!! CONFIG/LIVE MISMATCH !!!"))
+        print(f"    live assigner class:    {type(self.assigner).__name__}")
         if c.use_lba:
             print(f"    strength / sigma:       {c.lba_strength} / {c.lba_sigma} octaves")
             print(f"    nominal obj per level:  {c.lba_ref_cells} cells "
@@ -1484,7 +1506,7 @@ class v8DetectionLoss:
         # LBA needs the per-anchor stride to know which pyramid level each
         # candidate belongs to. TaskAlignedAssigner's signature does not carry
         # it, so hand it over explicitly here.
-        if self.cfg.use_lba:
+        if hasattr(self.assigner, "lba_strength"):
             self.assigner.stride_tensor = stride_tensor
 
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
@@ -1494,7 +1516,11 @@ class v8DetectionLoss:
             gt_labels, gt_bboxes, mask_gt,
         )
 
-        if self.cfg.use_lba and self.cfg.lba_log:
+        # Log level occupancy for ANY assigner, not just LBA — otherwise the
+        # baseline share is unmeasurable and there is nothing to compare to.
+        # (The earlier version gated this on cfg.use_lba, so it reported SATAL's
+        # distribution while the LBA branch was dead code.)
+        if self.cfg.lba_log:
             _lba_track(fg_mask, stride_tensor)
 
         target_scores_sum = max(target_scores.sum(), 1)
