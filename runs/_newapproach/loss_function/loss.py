@@ -916,9 +916,13 @@ def make_lba_assigner(base_cls, strength, ref_cells, sigma, **base_kwargs):
             self.stride_tensor = None
             self._lba_warned = False
 
-        def get_box_metrics(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt):
+        def get_box_metrics(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt,
+                            *extra, **extra_kw):
+            # SATAL's get_box_metrics takes an additional `scale_t` argument.
+            # Pass anything beyond the standard five straight through so this
+            # wrapper works over any assigner signature.
             align, overlaps = super().get_box_metrics(
-                pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt)
+                pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt, *extra, **extra_kw)
             s = self.stride_tensor
             if s is None:
                 if not self._lba_warned:
