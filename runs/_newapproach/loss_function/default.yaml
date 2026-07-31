@@ -231,7 +231,7 @@ peu_log: True # (bool) log per-edge variance / weight / DFL each epoch
 # lba_strength=0 or use_lba=False reproduces stock TAL exactly.
 use_lba: False # (bool) enable the level-balancing prior
 lba_strength: 1.0 # (float) prior exponent; 0 = off, 1.0 = full prior
-lba_ref_cells: 8.0 # (float) nominal object size per level, in stride units
+lba_ref_cells: 4.5 # (float) nominal object size per level in stride units; MEASURED (assigned objects sit at 4.4-5.4 cells geometric). 8.0 was wrong — that is the HEIGHT in cells, and the prior keys on sqrt(w*h).
 lba_sigma: 1.0 # (float) prior width in octaves
 lba_log: True # (bool) log foreground share per FPN level each epoch
 

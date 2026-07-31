@@ -109,7 +109,12 @@ _BASE = dict(
     use_nwd=False, use_class_weights=False, use_vfl=False, use_loss_clip=False,
     use_ardfl=False, use_adfl=False, use_peu=False, use_edgew=False,
 )
-_LBA_OFF = dict(use_lba=False, lba_strength=1.0, lba_ref_cells=8.0,
+# ref_cells=4.5 is MEASURED, not guessed: objects currently assigned to each
+# level have geometric size 4.43 / 4.43 / 5.37 cells. The first attempt used 8.0
+# (derived from object HEIGHT in cells, which is wrong because the prior keys on
+# sqrt(w*h) and these boxes are 2.79x taller than wide). That pushed everything
+# down the pyramid — P5 peaked at 6.9% then decayed to 2.7% while P3 rose to 68%.
+_LBA_OFF = dict(use_lba=False, lba_strength=1.0, lba_ref_cells=4.5,
                 lba_sigma=1.0, lba_log=True)
 
 

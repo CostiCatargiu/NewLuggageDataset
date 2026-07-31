@@ -362,9 +362,22 @@ class SataLSwaConfig:
         #   lba_strength   prior exponent; 0 = off, 1.0 = full prior
         #   lba_ref_cells  nominal object size per level, in stride units
         #   lba_sigma      prior width in octaves (1.0 = +/- one octave is 0.61x)
+        # !! CALIBRATION ERROR, MEASURED AND FIXED !!
+        # ref_cells was first set to 8.0 from "assigned objects sit at 7-8 cells
+        # TALL". But the prior keys on the GEOMETRIC size sqrt(w*h), and these
+        # boxes are 2.79x taller than wide, so the geometric size is sqrt(2.79)
+        # = 1.67x smaller than the height. Correct value is 8.0/1.67 ~ 4.8.
+        # Empirically, objects currently assigned to each level have geometric
+        # size 4.43 / 4.43 / 5.37 cells -> ref_cells ~ 4.5.
+        #
+        # With ref_cells=8 the nominal sizes (64/128/256 px) are far above the
+        # actual box sizes, so EVERY object looks "too small for its level" and
+        # the prior pushes it down the pyramid. Observed in training: P5 share
+        # peaked at 6.9% then decayed to 2.7% while P3 rose 59.3% -> 68% — the
+        # exact opposite of the intent.
         self.use_lba = bool(g("use_lba", False))
         self.lba_strength = float(g("lba_strength", 1.0))
-        self.lba_ref_cells = float(g("lba_ref_cells", 8.0))
+        self.lba_ref_cells = float(g("lba_ref_cells", 4.5))
         self.lba_sigma = float(g("lba_sigma", 1.0))
         self.lba_log = bool(g("lba_log", True))
 
