@@ -270,6 +270,27 @@ if __name__ == "__main__":
         sel = RUNS if not args.runs else [r for r in RUNS if r["name"] in set(args.runs)]
         todo = [(r, SEED) for r in sel]
 
+    # ---- refuse to run LBA variants without a matched anchor ---------------
+    # This has now been launched three times without lba_anchor. Every LBA run
+    # is uninterpretable without a baseline trained under IDENTICAL conditions:
+    # the only other reference is v12s_default2, trained in a different session,
+    # and this project has already produced 1.5-point gaps between supposedly
+    # identical baselines. Six GPU-hours of unattributable numbers is worse than
+    # an error message.
+    wants_lba = any(r["kind"] == "LBA" for r, _ in todo)
+    has_anchor_queued = any(r["name"] == "lba_anchor" for r, _ in todo)
+    anchor_done = os.path.isdir(os.path.join(PROJECT_DIR, "lba_anchor"))
+    if wants_lba and not has_anchor_queued and not anchor_done:
+        sys.exit(
+            "\nREFUSING TO RUN.\n"
+            "  LBA variants were requested but 'lba_anchor' is neither queued nor\n"
+            f"  already present in {PROJECT_DIR}/.\n\n"
+            "  Without a baseline trained under identical conditions the results\n"
+            "  cannot be attributed to LBA. Run one of:\n\n"
+            "      python run_lba_ablation.py lba_anchor lba_s10\n"
+            "      python run_lba_ablation.py                  # full list, anchor first\n"
+        )
+
     for r, s in todo:
         print(f"  {r['rank']:>2}  {r['name']:<16s} seed={s}  {r['label']}")
     print(f"{'=' * 78}\n")
