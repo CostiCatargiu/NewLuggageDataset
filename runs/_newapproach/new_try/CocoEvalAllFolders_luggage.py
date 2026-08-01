@@ -136,6 +136,41 @@ def patch_yaml_val(data_yaml: str, new_val_path: str):
 
 
 # =============================================================================
+# TRAINING-PARAMS READER
+# =============================================================================
+# Each training run writes an `ablation_params.json` into its own run folder
+# (see run_newluggage_*.py). Format:
+#   {"name":..., "phase":..., "label":..., "params": {..hyp dict..},
+#    "epochs":..., "imgsz":..., "batch":..., "seed":...}
+# The eval reads that file back so the params reported in the eval JSON are the
+# TRUE trained hyperparameters — never fabricated/guessed.
+
+def load_run_params(run_dir: Path) -> dict:
+    """Read the ground-truth params dict written by the training script.
+
+    Looks for `ablation_params.json` in the run folder and returns its "params"
+    sub-dict. Returns {} (with a warning) if the file is missing or unreadable,
+    so evaluation still proceeds — the run just has no params attached.
+    """
+    pfile = run_dir / "ablation_params.json"
+    if not pfile.exists():
+        print(f"  [WARN] no ablation_params.json in {run_dir.name} "
+              f"— params will be empty for this run.")
+        return {}
+    try:
+        with open(pfile) as f:
+            data = json.load(f) or {}
+        params = data.get("params", {})
+        if not isinstance(params, dict):
+            print(f"  [WARN] 'params' in {pfile} is not a dict — ignoring.")
+            return {}
+        return params
+    except Exception as e:
+        print(f"  [WARN] could not read {pfile}: {e}")
+        return {}
+
+
+# =============================================================================
 # PRECISION/RECALL @ BEST-F1 HELPERS  (NEW)
 # =============================================================================
 
@@ -489,9 +524,13 @@ def eval_run(run_dir: Path, data_yaml: str, coco_ann: str,
         print(f"  [SKIP] {name} already in {split_name} results.")
         return None
 
+    # Ground-truth params written by the training script for this run.
+    params = load_run_params(run_dir)
+
     print(f"\n{'=' * 70}")
-    print(f"  RUN   : {name}")
-    print(f"  SPLIT : {split_name}")
+    print(f"  RUN    : {name}")
+    print(f"  SPLIT  : {split_name}")
+    print(f"  PARAMS : {len(params)} key(s) from ablation_params.json")
     print(f"{'=' * 70}")
 
     from ultralytics import YOLO
@@ -625,6 +664,7 @@ def eval_run(run_dir: Path, data_yaml: str, coco_ann: str,
     return {
         "name": name,
         "split": split_name,
+        "params": params,
         "metrics": ordered_metrics,
         "per_class": per_class_final,
     }

@@ -20,7 +20,7 @@ except ImportError:  # very old ultralytics
 # =============================================================================
 DATA_YAML = "/home/constantin/Doctorat/LuggageDataset.v5i.yolov12/data.yaml"
 MODEL_WEIGHTS = "yolov12s.pt"
-PROJECT_DIR = "runs_newluggage5_r0"
+PROJECT_DIR = "runs_newluggage5_r0_new"
 
 EPOCHS = 70
 IMG_SIZE = 640
@@ -91,23 +91,25 @@ R0A_SWA_A07_03_SQRT = dict(alpha_start=0.7, alpha_end=0.3, alpha_min=0.3, alpha_
 # =============================================================================
 # A2-1 Targeted scope: boost only the truly tiny (~18% of instances)
 R0A2_PX24_TGT = dict(alpha_start=0.9, alpha_end=0.4, alpha_min=0.4, alpha_max=0.9,
-                     small_obj_px=24, small_obj_boost=2.0, dfl_small_boost=1.0,
+                     small_obj_px=24, small_obj_boost=2.0,
                      **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK)
 # A2-2 High contrast, no decay: max dose on the tiny bin only, held all run
 R0A2_PX24_HI = dict(alpha_start=0.7, alpha_end=0.7, alpha_min=0.7, alpha_max=0.7,
-                    small_obj_px=24, small_obj_boost=4.0, dfl_small_boost=1.0,
+                    small_obj_px=24, small_obj_boost=4.0,
                     **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK)
 # A2-3 Inverted (rising) schedule: size emphasis during the LATE refinement
 # phase (incl. the close_mosaic window) instead of the early chaotic phase
 R0A2_RISE = dict(alpha_start=0.2, alpha_end=0.8, alpha_min=0.2, alpha_max=0.8,
-                 small_obj_px=36, small_obj_boost=2.0, dfl_small_boost=1.0,
+                 small_obj_px=36, small_obj_boost=2.0,
                  **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK)
 # A2-4 DFL-only boost: alpha=0 (no area blending), boost ONLY the DFL term for
 # small objects -> targets box-edge precision, the diagnosed deficit
 # (AP50_small 0.79 vs AP50-95_small 0.52 with AR50_small ~0.96).
-# REQUIRES the dfl_small_boost patch in loss.py.
+# NOTE: dfl_small_boost is NOT implemented in loss2.py and was removed. With it
+# gone this config equals R0_DEFAULT (anchor) and no longer tests the DFL-only
+# boost mechanism until loss2.py implements it.
 R0A2_DFLBOOST = dict(alpha_start=0.0, alpha_end=0.0, alpha_min=0.0, alpha_max=0.0,
-                     small_obj_px=36, small_obj_boost=1.0, dfl_small_boost=2.5,
+                     small_obj_px=36, small_obj_boost=1.0,
                      **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK)
 
 # =============================================================================
@@ -181,7 +183,8 @@ R0D_TAL_TOPK13 = dict(**_SWA_OFF, **_CENTER_OFF, **_CLIP_OFF,
 #           small -> higher alpha (lean on cls), lower beta (soft IoU),
 #                    more positives (topk x factor); large -> stock-like.
 #           Built on the SWA-high base so SWA weighting stays active.
-#           NOTE: requires ultralytics/utils/satal.py (ScaleAdaptiveTaskAlignedAssigner).
+#           NOTE: use_satal/satal_* are implemented in loss2.py (and rely on
+#           ScaleAdaptiveTaskAlignedAssigner).
 # =============================================================================
 # E-1 Moderate scale split: gentle small-object relaxation
 R0E_SATAL_MILD = dict(
@@ -212,7 +215,7 @@ R0E_SATAL_STRONG = dict(
 #           selectivity vs 4.3% for large). rho sweep mirrors report table 6:
 #           small-object taken/GT should drop 8.64 -> ~2.5 / 3.9 / 5.8.
 #           Built on SWA-high base to match the Phase-E SATAL comparison.
-#           NOTE: requires use_snatal support in loss.py (Section N).
+#           NOTE: use_snatal/snatal_* are implemented in loss2.py (Section N).
 # =============================================================================
 _TAL_STOCK_ABG = dict(tal_topk=10, tal_alpha=0.5, tal_beta=6.0)
 R0N_SNATAL_R015 = dict(**_SWA_HIGH, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK_ABG,
