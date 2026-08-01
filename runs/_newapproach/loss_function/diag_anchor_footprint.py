@@ -1,68 +1,4 @@
-#!/usr/bin/env python3
-"""
-Anchor-footprint diagnostic — decomposes P5 starvation into SUPPLY vs METRIC.
 
-WHAT IT ANSWERS
----------------
-diag_per_edge_dfl.py measured the SYMPTOM: P5 receives ~1.3% of foreground while
-holding 4.8% of the anchor grid. This script measures the CAUSE, and separates
-the two candidates, which need opposite fixes.
-
-Stock TAL builds its positive set in two stages:
-
-  1. mask_in_gts  — keep only anchors whose CENTRE falls inside the GT box.
-                    This is pure geometry: a box of w x h px offers
-                    (w/stride) x (h/stride) candidate cells at that level.
-  2. topk         — rank the surviving candidates by score^alpha * iou^beta and
-                    keep the best `topk` **pooled across ALL levels**.
-
-Because stage 2 pools, a level's share of the selected positives is bounded by
-its share of the candidate pool from stage 1. For this dataset's mean box
-(41 x 90 px @640, i.e. 33 x 72 @512 upscaled):
-
-    level      cells offered        share of pool
-    P3 (s8)    5.1 x 11.3 = 55        ~70%
-    P4 (s16)   2.6 x  5.6 = 18        ~23%
-    P5 (s32)   1.3 x  2.8 =  6        ~7.6%
-
-So P5 can never win more than ~8% of a topk=10 draw on geometry alone — and with
-only 6 candidate cells it cannot supply topk=10 at all. The question this script
-answers is whether the observed ~1.3% equals that geometric ceiling or falls
-below it:
-
-    selected_share ~= candidate_share -> SUPPLY-limited.
-                                          The pool is the constraint. Fix by
-                                          allocating topk PER LEVEL rather than
-                                          globally (a level-aware topk).
-
-    selected_share <  candidate_share -> METRIC-biased.
-                                          The alignment metric additionally
-                                          penalises coarse anchors. Fix by
-                                          reweighting the metric (LBA prior).
-
-    selected_share >  candidate_share -> no starvation to fix at that level.
-
-The ratio  selected_share / candidate_share  is reported as SELECTION BIAS.
-1.0 = the metric is level-neutral and all starvation is geometric.
-
-It also reports, per level, the fraction of GTs whose candidate pool at that
-level is smaller than topk — those GTs *cannot* be assigned topk anchors there
-no matter what the metric says.
-
-USAGE
------
-Edit the CONFIGURATION block below, then:
-
-    python diag_anchor_footprint.py
-
-OUTPUT
-------
-    <OUT_DIR>/footprint_stats.json    machine-readable
-    <OUT_DIR>/footprint_report.txt    the tables
-
-NOTE: run on the STOCK assigner (use_lba=False, use_satal=False) — this measures
-the baseline pathology. Re-run with a mechanism on to verify it moved.
-"""
 
 import json
 import os
@@ -75,7 +11,7 @@ import torch
 # =============================================================================
 # CONFIGURATION  — edit these, no CLI
 # =============================================================================
-WEIGHTS = "runs_adfl/adfl_anchor/weights/best.pt"
+WEIGHTS = "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/runs_custom_v3/v3_anchor2/weights/best.pt"
 DATA_YAML = "/home/constantin/Doctorat/LuggageDataset.v5i.yolov12/data.yaml"
 
 SPLIT = "val"          # "train" | "val" | "test"
