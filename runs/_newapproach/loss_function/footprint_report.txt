@@ -1,0 +1,77 @@
+==============================================================================
+ANCHOR-FOOTPRINT DIAGNOSTIC — supply vs metric decomposition
+==============================================================================
+weights   : /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/runs_custom_v3/v3_anchor2/weights/best.pt
+split     : val   imgsz: 640   batches: 60
+assigner  : TaskAlignedAssigner   topk: 10
+GTs       : 5706     foreground anchors: 53167
+
+1) CANDIDATE SUPPLY vs SELECTED POSITIVES, per pyramid level
+------------------------------------------------------------------------------
+ stride   cand/GT  cand share   sel/GT  sel share  SEL BIAS         verdict
+------------------------------------------------------------------------------
+      8     53.76      76.12%     5.41     58.11%      0.76       mild bias
+     16     13.48      19.08%     3.77     40.44%      2.12  supply-limited
+     32      3.39       4.80%     0.14      1.45%      0.30   METRIC-BIASED
+
+  SEL BIAS = sel_share / cand_share.
+  ~1.0 -> the metric is level-neutral; starvation is purely GEOMETRIC.
+         Fix by allocating topk per level, not globally.
+  <1.0 -> the metric additionally penalises this level.
+         Fix by reweighting the alignment metric (LBA prior).
+
+2) CAN THIS LEVEL EVEN SUPPLY topk ANCHORS?
+------------------------------------------------------------------------------
+ stride   pool<topk   pool==0    p10    p50    p90
+------------------------------------------------------------------------------
+      8       17.3%      0.2%    6.0   27.0  126.0
+     16       58.9%      5.2%    2.0    6.0   30.0
+     32       91.3%     26.3%    0.0    2.0    8.0
+
+  'pool<topk' = GTs that CANNOT receive topk positives at this level,
+  regardless of the metric. If that is high at s32, a per-level topk is
+  the only thing that can change the allocation.
+
+3) PER CLASS — selection bias by level
+------------------------------------------------------------------------------
+class                   s8         s16         s32
+------------------------------------------------------------------------------
+backpack              0.73        2.18        0.63
+bag                   0.85        1.81        0.22
+trolley               0.75        2.20        0.18
+
+4) SELECTIVITY — how much of its OWN pool does a GT have to accept?
+------------------------------------------------------------------------------
+size         n GT   pool/GT  taken/GT  SELECTIVITY  p10 pool  p90 pool
+------------------------------------------------------------------------------
+small        2417      15.9      8.64        54.3%         6        29
+medium       2272      58.2      9.82        16.9%        26       100
+large        1017     228.3      9.81         4.3%        90       415
+
+  topk is ABSOLUTE, so selectivity is set by geometry, not by design.
+  A supply-poor GT is forced to accept nearly all of its candidates;
+  a supply-rich one keeps only its best few. If small << large here,
+  small objects are training on a diluted positive set.
+
+5) POSITIVE-SET QUALITY — are the forced extras actually bad?
+------------------------------------------------------------------------------
+size       mean IoU  p10 IoU   worst    %<0.3  ctr dist  p90 dist
+------------------------------------------------------------------------------
+small         0.807    0.634   0.001     1.0%     0.381     0.663
+medium        0.863    0.706   0.279     0.0%     0.285     0.524
+large         0.880    0.726   0.310     0.0%     0.260     0.480
+
+  'ctr dist' = |anchor centre - GT centre| / sqrt(w*h), model-free.
+  Higher = positives sit further out toward the box edge. If small
+  objects show higher marginal-% AND higher centre distance, the
+  dilution is real and supply-normalised topk should REDUCE rho.
+
+6) WHAT WOULD SUPPLY-NORMALISED topk DO?  k_eff = clamp(rho*pool, 1, topk)
+------------------------------------------------------------------------------
+size         now   rho=0.15   rho=0.25    rho=0.4
+------------------------------------------------------------------------------
+small       8.64       2.46       3.93       5.82
+medium      9.82       7.32       9.13       9.87
+large       9.81       9.96      10.00      10.00
+
+==============================================================================
