@@ -98,85 +98,6 @@ COMBINED_OUTPUT_JSON = RUNS_ROOT + "/all_results.json"
 
 
 # =============================================================================
-# ✏️  PHASE TEMPLATES (unchanged)
-# =============================================================================
-
-PHASE_A_BEST = {
-    "alpha_start": 1.0,
-    "alpha_end": 1.0,
-    "alpha_min": 1.0,
-    "alpha_max": 1.0,
-    "small_obj_boost": 1.0,
-    "small_obj_px": 48,
-}
-
-PHASE_B_BEST = {
-    "center_loss_weight_init": 0.0,
-    "center_loss_weight_min": 0.0,
-    "center_loss_decay_epochs": 35,
-}
-
-PHASE_C_BEST = {
-    "iou_clip_start": 1000.0,
-    "iou_clip_end": 1000.0,
-    "dfl_clip_start": 1000.0,
-    "dfl_clip_end": 1000.0,
-}
-
-PHASE_TEMPLATES = {
-    "A": {
-        "inherits": [],
-        "own_params": {
-            "alpha_start": 0.5,
-            "alpha_end": 0.3,
-            "alpha_min": 0.3,
-            "alpha_max": 1.0,
-            "small_obj_px": 48,
-            "small_obj_boost": 1.0,
-        },
-    },
-    "B": {
-        "inherits": [PHASE_A_BEST],
-        "own_params": {
-            "center_loss_weight_init": 0.01,
-            "center_loss_weight_min": 0.01,
-            "center_loss_decay_epochs": 35,
-        },
-    },
-    "C": {
-        "inherits": [PHASE_A_BEST, PHASE_B_BEST],
-        "own_params": {
-            "iou_clip_start": 6.0,
-            "iou_clip_end": 2.0,
-            "dfl_clip_start": 1000.0,
-            "dfl_clip_end": 1000.0,
-        },
-    },
-    "D": {
-        "inherits": [PHASE_A_BEST, PHASE_B_BEST, PHASE_C_BEST],
-        "own_params": {
-            "tal_topk": 10,
-            "tal_alpha": 0.5,
-            "tal_beta": 6.0,
-        },
-    },
-    "E": {
-        "inherits": [PHASE_A_BEST, PHASE_B_BEST, PHASE_C_BEST],
-        "own_params": {},
-    },
-}
-
-DEFAULTS = {
-    "alpha_start": 0.5,
-    "alpha_end": 0.3,
-    "alpha_min": 0.3,
-    "alpha_max": 1.0,
-    "small_obj_px": 48,
-    "small_obj_boost": 1.0,
-}
-
-
-# =============================================================================
 # YAML PATCHING (val: field swap for valid/test passes)
 # =============================================================================
 
@@ -212,100 +133,6 @@ def patch_yaml_val(data_yaml: str, new_val_path: str):
         with open(yaml_path, "w") as f:
             f.write(original_text)
         print(f"  [YAML] restored original val: field")
-
-
-# =============================================================================
-# HELPERS
-# =============================================================================
-
-def get_phase_letter(phase_str: str) -> str:
-    m = re.match(r'^([A-Za-z]+)', phase_str)
-    return m.group(1).upper() if m else ""
-
-
-def build_phase_base(phase_letter: str) -> dict:
-    cfg = {**DEFAULTS}
-    template = PHASE_TEMPLATES.get(phase_letter)
-    if template is None:
-        return cfg
-    for inherited in template.get("inherits", []):
-        cfg.update(inherited)
-    cfg.update(template.get("own_params", {}))
-    return cfg
-
-
-def parse_folder_name(name: str) -> dict:
-    cfg = {}
-    phase_m = re.match(r'^([A-Za-z]+\d+)', name)
-    if phase_m:
-        cfg["phase"] = phase_m.group(1)
-
-    patterns = {
-        "alpha_start":     (r'_as([\d.]+)', float),
-        "alpha_end":       (r'_ae([\d.]+)', float),
-        "small_obj_px":    (r'_px(\d+)',    int),
-        "small_obj_boost": (r'_b([\d.]+)',  float),
-        "tal_topk":        (r'_topk(\d+)',  int),
-        "tal_alpha":       (r'_ta([\d.]+)', float),
-        "tal_beta":        (r'_tb([\d.]+)', float),
-        "iou_clip_start":  (r'_ics([\d.]+)', float),
-        "iou_clip_end":    (r'_ice([\d.]+)', float),
-        "dfl_clip_start":  (r'_dcs([\d.]+)', float),
-        "dfl_clip_end":    (r'_dce([\d.]+)', float),
-    }
-    for key, (pat, cast) in patterns.items():
-        m = re.search(pat, name)
-        if m:
-            cfg[key] = cast(m.group(1))
-    return cfg
-
-
-# =============================================================================
-# CONFIG EXTRACTION — SA-TAL parameters only
-# =============================================================================
-
-# The exact set of parameters reported in each result's "config" field.
-# Defaults match your "works well" baseline.
-SATAL_PARAMS = {
-    "use_satal":          True,
-    "satal_alpha_small":  1.2,
-    "satal_beta_small":   4.5,
-    "satal_alpha_large":  1.0,
-    "satal_beta_large":   6.0,
-    "satal_small_area":   0.002500,
-    "satal_large_area":   0.022500,
-    "satal_topk_factor":  1.3,
-    "tal_topk":           12,
-    "tal_alpha":          0.6,
-    "tal_beta":           5.0,
-}
-
-
-def load_args_yaml(run_dir: Path) -> dict:
-    """Load the args.yaml that Ultralytics saves alongside each training run."""
-    for candidate in [run_dir / "args.yaml", run_dir / "hyp.yaml"]:
-        if candidate.exists():
-            try:
-                with open(candidate) as f:
-                    return yaml.safe_load(f) or {}
-            except Exception:
-                pass
-    return {}
-
-
-def build_config(run_dir: Path) -> dict:
-    """
-    Build the config dict reported for this run.
-
-    Returns ONLY the SA-TAL parameters listed in SATAL_PARAMS, pulling
-    values from the run's args.yaml when present, falling back to defaults
-    otherwise. No phase parsing, no folder-name parsing.
-    """
-    from_yaml = load_args_yaml(run_dir)
-    cfg = {}
-    for key, default in SATAL_PARAMS.items():
-        cfg[key] = from_yaml.get(key, default)
-    return cfg
 
 
 # =============================================================================
@@ -662,12 +489,9 @@ def eval_run(run_dir: Path, data_yaml: str, coco_ann: str,
         print(f"  [SKIP] {name} already in {split_name} results.")
         return None
 
-    cfg = build_config(run_dir)
-
     print(f"\n{'=' * 70}")
     print(f"  RUN   : {name}")
     print(f"  SPLIT : {split_name}")
-    print(f"  CFG   : {cfg}")
     print(f"{'=' * 70}")
 
     from ultralytics import YOLO
@@ -801,7 +625,6 @@ def eval_run(run_dir: Path, data_yaml: str, coco_ann: str,
     return {
         "name": name,
         "split": split_name,
-        "config": cfg,
         "metrics": ordered_metrics,
         "per_class": per_class_final,
     }
