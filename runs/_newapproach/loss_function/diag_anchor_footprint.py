@@ -85,6 +85,12 @@ BATCHES = 60           # how many batches to sample; 60 x 16 ~ 960 images
 WORKERS = 4
 DEVICE = 0 if torch.cuda.is_available() else "cpu"
 OUT_DIR = "diag_fp_out"
+
+# Object-size buckets by MAX SIDE in pixels at IMG_SIZE. Defaults are the
+# dataset report's 48/96 px at 512, scaled to 640 (x1.25).
+SIZE_BINS = (60.0, 120.0)          # small < 60 <= medium <= 120 < large
+SNA_RHO = (0.15, 0.25, 0.40)       # supply-normalised budgets to simulate
+MARGINAL_IOU = 0.30                # a selected anchor below this is "marginal"
 # =============================================================================
 
 CLASS_NAMES_FALLBACK = {0: "class0", 1: "class1", 2: "class2"}
@@ -113,6 +119,7 @@ def main():
     from ultralytics.data.utils import check_det_dataset
     from ultralytics.data.build import build_dataloader, build_yolo_dataset
     from ultralytics.utils.tal import make_anchors
+    from ultralytics.utils.metrics import bbox_iou
     from ultralytics.cfg import get_cfg
     from ultralytics.utils import DEFAULT_CFG
 
@@ -162,6 +169,19 @@ def main():
     n_gt_total = 0
     n_fg_total = 0
 
+    # ---- selectivity / positive-set quality, bucketed by GT max side --------
+    # SEL: per GT, how much of its OWN candidate pool it is forced to accept.
+    #      topk is absolute, so supply-poor (small) objects take nearly all of
+    #      their candidates while supply-rich ones keep only the best few.
+    # QUAL: are the extra positives small objects are forced to take actually
+    #       bad? Measured two ways — IoU of the predicted box (what TAL ranks
+    #       on) and normalised centre distance (model-free geometry).
+    BUCKETS = ("small", "medium", "large")
+    sel_pool = {b: [] for b in BUCKETS}    # per-GT candidate pool (all levels)
+    sel_taken = {b: [] for b in BUCKETS}   # per-GT positives assigned
+    q_iou = {b: [] for b in BUCKETS}       # per-fg-anchor IoU
+    q_dist = {b: [] for b in BUCKETS}      # per-fg-anchor |anc-gtc| / sqrt(wh)
+
     print(f"sampling up to {BATCHES} batches from '{SPLIT}' ...")
     with torch.no_grad():
         for bi, batch in enumerate(loader):
@@ -201,6 +221,7 @@ def main():
                 anc_px, gt_labels, gt_bboxes,
                 mask_gt.to(gt_bboxes.dtype),   # ultralytics expects the float mask
             )
+            target_bboxes = out[1]      # (b, a, 4) xyxy in PIXELS (gt_bboxes were px)
             fg_mask = out[3].bool()     # (b, a)
             target_gt_idx = out[4]      # (b, a) long
             if fg_mask.sum() == 0:
@@ -213,6 +234,9 @@ def main():
 
             valid_gt = mask_gt.squeeze(-1).bool()                        # (b, n)
             n_gt_total += int(valid_gt.sum())
+
+            tot_c = torch.zeros_like(valid_gt, dtype=torch.long)   # pool, all levels
+            tot_s = torch.zeros_like(valid_gt, dtype=torch.long)   # positives, all levels
 
             for s in stride.tolist():
                 lvl = (s_per_anchor == s)                                # (a,)
@@ -228,6 +252,9 @@ def main():
                     counts = torch.bincount(flat, minlength=c_per_gt.numel())
                     s_per_gt = counts.view_as(c_per_gt)
 
+                tot_c += c_per_gt
+                tot_s += s_per_gt
+
                 cand[s] += float(c_per_gt.sum())
                 sel[s] += float(s_per_gt.sum())
                 cvals = c_per_gt[valid_gt].float()
@@ -241,6 +268,43 @@ def main():
                     if m.any():
                         cand_c[ci][s] += float(c_per_gt[m].sum())
                         sel_c[ci][s] += float(s_per_gt[m].sum())
+
+            # ---- selectivity per GT, bucketed by max side -------------------
+            gw = (gt_bboxes[..., 2] - gt_bboxes[..., 0]).clamp(min=1e-6)
+            gh = (gt_bboxes[..., 3] - gt_bboxes[..., 1]).clamp(min=1e-6)
+            gmax = torch.maximum(gw, gh)                                 # (b, n) px
+            bmask = {
+                "small": valid_gt & (gmax < SIZE_BINS[0]),
+                "medium": valid_gt & (gmax >= SIZE_BINS[0]) & (gmax <= SIZE_BINS[1]),
+                "large": valid_gt & (gmax > SIZE_BINS[1]),
+            }
+            for bname, m in bmask.items():
+                if m.any():
+                    sel_pool[bname].append(tot_c[m].float().cpu().numpy())
+                    sel_taken[bname].append(tot_s[m].float().cpu().numpy())
+
+            # ---- quality of the positives actually assigned -----------------
+            if fg_mask.any():
+                bidx, aidx = fg_mask.nonzero(as_tuple=True)
+                gidx = target_gt_idx[bidx, aidx]
+                tb = target_bboxes[bidx, aidx]                            # (N,4) px
+                pb = (pred_bboxes.detach() * stride_tensor)[bidx, aidx]    # (N,4) px
+                iou = bbox_iou(pb, tb, xywh=False, CIoU=False).view(-1)
+                tcx = (tb[:, 0] + tb[:, 2]) * 0.5
+                tcy = (tb[:, 1] + tb[:, 3]) * 0.5
+                ac = anc_px[aidx]
+                geo = ((tb[:, 2] - tb[:, 0]) * (tb[:, 3] - tb[:, 1])).clamp(min=1.0).sqrt()
+                dist = ((ac[:, 0] - tcx) ** 2 + (ac[:, 1] - tcy) ** 2).sqrt() / geo
+                gm = gmax[bidx, gidx]
+                qsel = {
+                    "small": gm < SIZE_BINS[0],
+                    "medium": (gm >= SIZE_BINS[0]) & (gm <= SIZE_BINS[1]),
+                    "large": gm > SIZE_BINS[1],
+                }
+                for bname, m in qsel.items():
+                    if m.any():
+                        q_iou[bname].append(iou[m].float().cpu().numpy())
+                        q_dist[bname].append(dist[m].float().cpu().numpy())
 
             if (bi + 1) % 10 == 0:
                 print(f"  batch {bi+1}/{BATCHES}  fg={n_fg_total}  gts={n_gt_total}")
@@ -340,6 +404,76 @@ def main():
         add(row)
         per_class[str(cname)] = entry
     add("")
+    add("4) SELECTIVITY — how much of its OWN pool does a GT have to accept?")
+    add("-" * 78)
+    add(f"{'size':<9}{'n GT':>8}{'pool/GT':>10}{'taken/GT':>10}{'SELECTIVITY':>13}"
+        f"{'p10 pool':>10}{'p90 pool':>10}")
+    add("-" * 78)
+    per_size = {}
+    for b in ("small", "medium", "large"):
+        if not sel_pool[b]:
+            continue
+        pool = np.concatenate(sel_pool[b])
+        taken = np.concatenate(sel_taken[b])
+        selectivity = taken.sum() / max(pool.sum(), 1e-9)
+        add(f"{b:<9}{len(pool):>8}{pool.mean():>10.1f}{taken.mean():>10.2f}"
+            f"{selectivity * 100:>12.1f}%{np.percentile(pool, 10):>10.0f}"
+            f"{np.percentile(pool, 90):>10.0f}")
+        per_size[b] = {"n_gt": int(len(pool)), "pool_mean": float(pool.mean()),
+                       "taken_mean": float(taken.mean()), "selectivity": float(selectivity),
+                       "pool_p10": float(np.percentile(pool, 10)),
+                       "pool_p50": float(np.percentile(pool, 50)),
+                       "pool_p90": float(np.percentile(pool, 90))}
+    add("")
+    add("  topk is ABSOLUTE, so selectivity is set by geometry, not by design.")
+    add("  A supply-poor GT is forced to accept nearly all of its candidates;")
+    add("  a supply-rich one keeps only its best few. If small << large here,")
+    add("  small objects are training on a diluted positive set.")
+    add("")
+
+    add(f"5) POSITIVE-SET QUALITY — are the forced extras actually bad?")
+    add("-" * 78)
+    add(f"{'size':<9}{'mean IoU':>10}{'p10 IoU':>9}{'worst':>8}"
+        f"{f'%<{MARGINAL_IOU}':>9}{'ctr dist':>10}{'p90 dist':>10}")
+    add("-" * 78)
+    for b in ("small", "medium", "large"):
+        if not q_iou[b]:
+            continue
+        iou = np.concatenate(q_iou[b])
+        dist = np.concatenate(q_dist[b])
+        marg = float((iou < MARGINAL_IOU).mean())
+        add(f"{b:<9}{iou.mean():>10.3f}{np.percentile(iou, 10):>9.3f}{iou.min():>8.3f}"
+            f"{marg * 100:>8.1f}%{dist.mean():>10.3f}{np.percentile(dist, 90):>10.3f}")
+        per_size.setdefault(b, {}).update({
+            "iou_mean": float(iou.mean()), "iou_p10": float(np.percentile(iou, 10)),
+            "iou_min": float(iou.min()), "frac_marginal": marg,
+            "ctr_dist_mean": float(dist.mean()),
+            "ctr_dist_p90": float(np.percentile(dist, 90))})
+    add("")
+    add("  'ctr dist' = |anchor centre - GT centre| / sqrt(w*h), model-free.")
+    add("  Higher = positives sit further out toward the box edge. If small")
+    add("  objects show higher marginal-% AND higher centre distance, the")
+    add("  dilution is real and supply-normalised topk should REDUCE rho.")
+    add("")
+
+    add("6) WHAT WOULD SUPPLY-NORMALISED topk DO?  k_eff = clamp(rho*pool, 1, topk)")
+    add("-" * 78)
+    add(f"{'size':<9}{'now':>7}" + "".join(f"{'rho=' + str(r):>11}" for r in SNA_RHO))
+    add("-" * 78)
+    sna = {}
+    for b in ("small", "medium", "large"):
+        if not sel_pool[b]:
+            continue
+        pool = np.concatenate(sel_pool[b])
+        taken = np.concatenate(sel_taken[b])
+        row = f"{b:<9}{taken.mean():>7.2f}"
+        sna[b] = {}
+        for r in SNA_RHO:
+            k = np.clip(np.round(r * pool), 1, topk)
+            row += f"{k.mean():>11.2f}"
+            sna[b][str(r)] = float(k.mean())
+        add(row)
+    add("")
     add("=" * 78)
 
     report = "\n".join(lines)
@@ -352,7 +486,9 @@ def main():
             "weights": WEIGHTS, "split": SPLIT, "imgsz": IMG_SIZE,
             "batches": BATCHES, "assigner": type(assigner).__name__, "topk": topk,
             "n_gt": int(n_gt_total), "n_fg": int(n_fg_total),
+            "size_bins_px": list(SIZE_BINS), "marginal_iou": MARGINAL_IOU,
             "per_level": per_level, "per_class": per_class,
+            "per_size": per_size, "sna_simulation": sna,
         }, f, indent=2)
     print(f"\nsaved -> {OUT_DIR}/footprint_report.txt")
     print(f"saved -> {OUT_DIR}/footprint_stats.json")
