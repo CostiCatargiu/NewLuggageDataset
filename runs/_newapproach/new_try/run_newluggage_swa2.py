@@ -29,10 +29,10 @@ DESIGN (10 runs, all px=48, center/clip/TAL OFF so ONLY the SWA block varies):
       swa2_sqrt_a08_04   0.8->0.4
       swa2_sqrt_a06_03   0.6->0.3
       swa2_sqrt_a05_025  0.5->0.25
-      swa2_sqrt_a07_03   0.7->0.3   (winner re-run / repro sanity anchor)
-  Block C — 'log' SHAPE (never tested) @ 0.7->0.3:
-      swa2_log_a07_b2    boost 2.0
-      swa2_log_a07_b1    boost 1.0
+  Block C — 'log' SHAPE (never tested):
+      swa2_log_a07_b2    0.7->0.3 boost 2.0
+      swa2_log_a07_b1    0.7->0.3 boost 1.0
+      swa2_log_a06_03    0.6->0.3 boost 2.0  (log at a 2nd schedule)
   Block D — best-guess STACK: sqrt winner + NWD blend (both reproducible winners):
       swa2_sqrt_a07_nwd  0.7->0.3 sqrt boost2 + use_nwd blend, nwd_weight=0.3,
                          nwd_C=4.0  (CORRECTED: loss2.py nwd_C is stride-normalized
@@ -40,7 +40,7 @@ DESIGN (10 runs, all px=48, center/clip/TAL OFF so ONLY the SWA block varies):
 
 DECISION RULE (fixed in advance, val split, before test eval):
   candidate iff val mAP50-95 > anchor + 0.5 OR val AP50-95_small > anchor + 0.8.
-  Candidates + winner-repro then get seeds 1,2 before any conclusion.
+  Candidates then get seeds 1,2 before any conclusion.
 
 Usage:
   python run_newluggage_swa2.py                    # all runs not yet done
@@ -113,22 +113,21 @@ SWA2_SQRT_A07_B25 = _swa(0.7, 0.3, "sqrt", 2.5, **_NWD_OFF)
 SWA2_SQRT_A08_04  = _swa(0.8, 0.4,  "sqrt", 2.0, **_NWD_OFF)
 SWA2_SQRT_A06_03  = _swa(0.6, 0.3,  "sqrt", 2.0, **_NWD_OFF)
 SWA2_SQRT_A05_025 = _swa(0.5, 0.25, "sqrt", 2.0, **_NWD_OFF)
-SWA2_SQRT_A07_03  = _swa(0.7, 0.3,  "sqrt", 2.0, **_NWD_OFF)   # winner repro
 
-# --- Block C: log shape @ 0.7->0.3 ---
+# --- Block C: log shape sweep ---
 SWA2_LOG_A07_B2 = _swa(0.7, 0.3, "log", 2.0, **_NWD_OFF)
 SWA2_LOG_A07_B1 = _swa(0.7, 0.3, "log", 1.0, **_NWD_OFF)
+SWA2_LOG_A06_03 = _swa(0.6, 0.3, "log", 2.0, **_NWD_OFF)   # log at a 2nd schedule
 
 # --- Block D: sqrt winner + NWD blend (nwd_C corrected 64 -> 4) ---
 SWA2_SQRT_A07_NWD = _swa(0.7, 0.3, "sqrt", 2.0,
                          use_nwd=True, nwd_mode="blend", nwd_weight=0.3, nwd_C=4.0)
 
 # =============================================================================
-# RUNS TO EXECUTE, IN ORDER (winner repro early as a sanity anchor)
+# RUNS TO EXECUTE, IN ORDER
 # =============================================================================
 RUNS = [
-    {"name": "swa2_sqrt_a07_03",  "phase": "B", "label": "sqrt 0.7->0.3 boost2.0 — WINNER REPRO / sanity anchor", "params": SWA2_SQRT_A07_03},
-    # Block A — isolate shape vs boost
+    # Block A — isolate shape vs boost (sqrt @ 0.7->0.3)
     {"name": "swa2_sqrt_a07_b1",  "phase": "A", "label": "sqrt 0.7->0.3 boost1.0 — SHAPE ONLY (is sqrt the win?)", "params": SWA2_SQRT_A07_B1},
     {"name": "swa2_sqrt_a07_b15", "phase": "A", "label": "sqrt 0.7->0.3 boost1.5 — mid dose",                     "params": SWA2_SQRT_A07_B15},
     {"name": "swa2_sqrt_a07_b25", "phase": "A", "label": "sqrt 0.7->0.3 boost2.5 — stronger dose",                "params": SWA2_SQRT_A07_B25},
@@ -136,9 +135,10 @@ RUNS = [
     {"name": "swa2_sqrt_a08_04",  "phase": "B", "label": "sqrt 0.8->0.4 boost2.0 — stronger schedule",            "params": SWA2_SQRT_A08_04},
     {"name": "swa2_sqrt_a06_03",  "phase": "B", "label": "sqrt 0.6->0.3 boost2.0 — milder schedule",              "params": SWA2_SQRT_A06_03},
     {"name": "swa2_sqrt_a05_025", "phase": "B", "label": "sqrt 0.5->0.25 boost2.0 — mildest schedule",            "params": SWA2_SQRT_A05_025},
-    # Block C — log shape
+    # Block C — log shape sweep
     {"name": "swa2_log_a07_b2",   "phase": "C", "label": "log 0.7->0.3 boost2.0 — gentler-than-sqrt shape",       "params": SWA2_LOG_A07_B2},
     {"name": "swa2_log_a07_b1",   "phase": "C", "label": "log 0.7->0.3 boost1.0 — log shape only",                "params": SWA2_LOG_A07_B1},
+    {"name": "swa2_log_a06_03",   "phase": "C", "label": "log 0.6->0.3 boost2.0 — log at a 2nd schedule",         "params": SWA2_LOG_A06_03},
     # Block D — stack
     {"name": "swa2_sqrt_a07_nwd", "phase": "D", "label": "sqrt 0.7->0.3 boost2.0 + NWD blend w0.3 C4.0 (corrected)","params": SWA2_SQRT_A07_NWD},
 ]
