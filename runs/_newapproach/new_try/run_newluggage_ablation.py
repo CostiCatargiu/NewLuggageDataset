@@ -73,6 +73,17 @@ R0A_SWA_A05_025 = dict(alpha_start=0.5, alpha_end=0.25, alpha_min=0.25, alpha_ma
                        small_obj_px=48, small_obj_boost=2.0,
                        **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK)
 
+# Same two SWA schedules, but reshape the area weight from 1/area ('inv') to
+# sqrt(1/area). 'inv' concentrates weight on the tiniest boxes; 'sqrt' spreads
+# emphasis over small+medium (dataset areas span ~28x, p10..p90).
+R0A_SWA_A09_04_SQRT = dict(alpha_start=0.9, alpha_end=0.4, alpha_min=0.4, alpha_max=0.9,
+                           small_obj_px=48, small_obj_boost=2.0, area_weight_mode='sqrt',
+                           **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK)
+R0A_SWA_A07_03_SQRT = dict(alpha_start=0.7, alpha_end=0.3, alpha_min=0.3, alpha_max=0.7,
+                           small_obj_px=48, small_obj_boost=2.0, area_weight_mode='sqrt',
+                           **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK)
+
+
 # =============================================================================
 # PHASE A2 — SWA follow-up: four DISTINCT mechanisms (not more of the same).
 # Success criterion, fixed in advance: AP50-95_small must improve by >= +0.5
@@ -165,33 +176,69 @@ R0D_TAL_TOPK13 = dict(**_SWA_OFF, **_CENTER_OFF, **_CLIP_OFF,
                       tal_topk=13, tal_alpha=0.7, tal_beta=4.0)
 
 # =============================================================================
+# PHASE E — SA-TAL (Scale-Adaptive Task-Aligned Assigner)
+#           Different assigner params for small vs large objects:
+#           small -> higher alpha (lean on cls), lower beta (soft IoU),
+#                    more positives (topk x factor); large -> stock-like.
+#           Built on the SWA-high base so SWA weighting stays active.
+#           NOTE: requires ultralytics/utils/satal.py (ScaleAdaptiveTaskAlignedAssigner).
+# =============================================================================
+# E-1 Moderate scale split: gentle small-object relaxation
+R0E_SATAL_MILD = dict(
+    **_SWA_HIGH, **_CENTER_OFF, **_CLIP_OFF,
+    tal_topk=10, tal_alpha=0.5, tal_beta=6.0,     # large/base behavior
+    use_satal=True,
+    satal_alpha_small=1.5, satal_beta_small=3.0,  # small: cls-heavy, soft IoU
+    satal_alpha_large=1.0, satal_beta_large=6.0,
+    satal_small_area=0.0025, satal_large_area=0.0225,
+    satal_topk_factor=1.5,                        # small objects get 1.5x positives
+)
+# E-2 Aggressive scale split: stronger relaxation + more small-object positives
+R0E_SATAL_STRONG = dict(
+    **_SWA_HIGH, **_CENTER_OFF, **_CLIP_OFF,
+    tal_topk=10, tal_alpha=0.5, tal_beta=6.0,
+    use_satal=True,
+    satal_alpha_small=2.0, satal_beta_small=2.0,  # even more cls-driven, very soft IoU
+    satal_alpha_large=1.0, satal_beta_large=6.0,
+    satal_small_area=0.0025, satal_large_area=0.0225,
+    satal_topk_factor=2.0,                        # small objects get 2x positives
+)
+
+# =============================================================================
+# PHASE N — SUPPLY-NORMALIZED TAL (SNA-TAL)
+#           Per-GT budget k_eff = clamp(round(rho * pool), k_min, topk).
+#           Directly targets the anchor-footprint diagnosis: small objects are
+#           supply-limited and forced onto a diluted positive set (54.3%
+#           selectivity vs 4.3% for large). rho sweep mirrors report table 6:
+#           small-object taken/GT should drop 8.64 -> ~2.5 / 3.9 / 5.8.
+#           Built on SWA-high base to match the Phase-E SATAL comparison.
+#           NOTE: requires use_snatal support in loss.py (Section N).
+# =============================================================================
+_TAL_STOCK_ABG = dict(tal_topk=10, tal_alpha=0.5, tal_beta=6.0)
+R0N_SNATAL_R015 = dict(**_SWA_HIGH, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK_ABG,
+                       use_snatal=True, snatal_rho=0.15, snatal_kmin=1)
+R0N_SNATAL_R025 = dict(**_SWA_HIGH, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK_ABG,
+                       use_snatal=True, snatal_rho=0.25, snatal_kmin=1)
+R0N_SNATAL_R040 = dict(**_SWA_HIGH, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK_ABG,
+                       use_snatal=True, snatal_rho=0.40, snatal_kmin=1)
+
+# =============================================================================
 # RUNS TO EXECUTE, IN ORDER
 # =============================================================================
 RUNS = [
-    # {"name": "r0_default",      "phase": "-", "label": "All 4 sections OFF / stock TAL — anchor",                          "params": R0_DEFAULT},
-    # --- Phase A: SWA alpha schedules ---
-    # {"name": "r0a_swa_a09_04",  "phase": "A", "label": "SWA 0.9->0.4, px48, boost 2.0 — strong/long — C control",          "params": R0A_SWA_A09_04},
-    # {"name": "r0a_swa_a07_03",  "phase": "A", "label": "SWA 0.7->0.3, px48, boost 2.0 — medium",                           "params": R0A_SWA_A07_03},
-    # {"name": "r0a_swa_a05_025", "phase": "A", "label": "SWA 0.5->0.25, px48, boost 2.0 — mild",                            "params": R0A_SWA_A05_025},
-    # --- Phase A2: SWA follow-up, four distinct mechanisms ---
-    {"name": "r0a2_px24_tgt",   "phase": "A2", "label": "SWA 0.9->0.4, px24 (targeted ~18%), boost 2.0 — scope",            "params": R0A2_PX24_TGT},
-    {"name": "r0a2_px24_hi",    "phase": "A2", "label": "SWA const 0.7, px24, boost 4.0 — high contrast, no decay",         "params": R0A2_PX24_HI},
-    {"name": "r0a2_rise",       "phase": "A2", "label": "SWA RISING 0.2->0.8, px36, boost 2.0 — late-phase emphasis",       "params": R0A2_RISE},
-    {"name": "r0a2_dflboost",   "phase": "A2", "label": "DFL-only boost 2.5 @px36, alpha=0 — box-edge precision target",    "params": R0A2_DFLBOOST},
-    # # --- Phase B: center loss, isolated ---
-    # {"name": "r0b_center_w05",  "phase": "B", "label": "Center loss w=0.5->0.01 over 35ep, px48 (SWA weighting off)",      "params": R0B_CENTER_W05},
-    # {"name": "r0b_center_w10",  "phase": "B", "label": "Center loss w=1.0->0.01 over 35ep, px48 (SWA weighting off)",      "params": R0B_CENTER_W10},
-    # # --- Phase C: clipping dose-response on SWA-high base ---
-    # {"name": "r0c_clip_loose",  "phase": "C", "label": "SWA-high + clips 30->20/35->25 (eff 3->2 / 3.5->2.5) — outliers",  "params": R0C_CLIP_LOOSE},
-    # {"name": "r0c_clip_mid",    "phase": "C", "label": "SWA-high + clips 20->12/25->15 (eff 2->1.2 / 2.5->1.5) — tail",    "params": R0C_CLIP_MID},
-    # {"name": "r0c_clip_tight",  "phase": "C", "label": "SWA-high + clips 10->6/12->8 (eff 1->0.6 / 1.2->0.8) — deep",      "params": R0C_CLIP_TIGHT},
-    # {"name": "r0c_clip_solo",   "phase": "C", "label": "Clips ONLY 8->5/10->7 (eff 0.8->0.5 / 1->0.7), no SWA — isolated", "params": R0C_CLIP_SOLO},
-    # --- Phase D: TAL, two axes ---
-    {"name": "r0d_tal_topk13", "phase": "D", "label": "TAL topk=13, 0.7/4.0 \u2014 loose quantity (completes 6/10/13 curve)", "params": R0D_TAL_TOPK13},
-    {"name": "r0d_tal_topk6",   "phase": "D", "label": "TAL topk=6, 0.5/6.0 — quantity axis (fewer, better positives)",    "params": R0D_TAL_TOPK6},
-    {"name": "r0d_tal_beta4",   "phase": "D", "label": "TAL 10, 0.5/4.0 — soften IoU emphasis (ratio 12->8)",              "params": R0D_TAL_BETA4},
-    {"name": "r0d_tal_tood",    "phase": "D", "label": "TAL 10, 1.0/6.0 — TOOD original, raise cls voice (ratio 6)",       "params": R0D_TAL_TOOD},
-    {"name": "r0d_tal_beta8",   "phase": "D", "label": "TAL 10, 0.5/8.0 \u2014 harden IoU emphasis (ratio 12->16)",             "params": R0D_TAL_BETA8},
+    # --- Phase A: SWA alpha schedules (2 configs) ---
+    {"name": "r0a_swa_a09_04",   "phase": "A", "label": "SWA 0.9->0.4, px48, boost 2.0 — strong/long",                     "params": R0A_SWA_A09_04},
+    {"name": "r0a_swa_a07_03",   "phase": "A", "label": "SWA 0.7->0.3, px48, boost 2.0 — medium",                          "params": R0A_SWA_A07_03},
+    # --- Phase A (area-weight shape = sqrt): same schedules, sqrt(1/area) ---
+    {"name": "r0a_swa_a09_04_sqrt", "phase": "A", "label": "SWA 0.9->0.4, px48, boost 2.0, area=sqrt — small+medium spread", "params": R0A_SWA_A09_04_SQRT},
+    {"name": "r0a_swa_a07_03_sqrt", "phase": "A", "label": "SWA 0.7->0.3, px48, boost 2.0, area=sqrt — small+medium spread", "params": R0A_SWA_A07_03_SQRT},
+    # --- Phase E: SA-TAL scale-adaptive assigner (2 configs) ---
+    {"name": "r0e_satal_mild",   "phase": "E", "label": "SA-TAL small a1.5/b3.0 topkx1.5 (on SWA-high) — mild scale split",   "params": R0E_SATAL_MILD},
+    {"name": "r0e_satal_strong", "phase": "E", "label": "SA-TAL small a2.0/b2.0 topkx2.0 (on SWA-high) — strong scale split", "params": R0E_SATAL_STRONG},
+    # --- Phase N: supply-normalized TAL (targets diagnosed dilution) ---
+    {"name": "r0n_snatal_r015",  "phase": "N", "label": "SNA-TAL rho=0.15 (on SWA-high) — aggressive supply cut",             "params": R0N_SNATAL_R015},
+    {"name": "r0n_snatal_r025",  "phase": "N", "label": "SNA-TAL rho=0.25 (on SWA-high) — balanced supply cut",               "params": R0N_SNATAL_R025},
+    {"name": "r0n_snatal_r040",  "phase": "N", "label": "SNA-TAL rho=0.40 (on SWA-high) — mild supply cut",                   "params": R0N_SNATAL_R040},
 ]
 
 
