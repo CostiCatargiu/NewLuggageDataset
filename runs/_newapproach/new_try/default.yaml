@@ -79,7 +79,7 @@ line_width: # (int, optional) line width of the bounding boxes. Scaled to image 
 
 # Export settings ------------------------------------------------------------------------------------------------------
 format: torchscript # (str) format to export to, choices at https://docs.ultralytics.com/modes/export/#export-formats
-keras: False # (bool) use Kera=s
+keras: False # (bool) use Keras
 optimize: False # (bool) TorchScript: optimize for mobile
 int8: False # (bool) CoreML/TF INT8 quantization
 dynamic: False # (bool) ONNX/TF/TensorRT: dynamic axes
@@ -225,6 +225,41 @@ artal_beta_relax: 2.0 # (float) max reduction applied to beta for high-AR boxes
 use_snatal: False # (bool) enable supply-normalized per-GT top-k
 snatal_rho: 0.25 # (float) fraction of each GT's candidate pool to keep (~0.15-0.4)
 snatal_kmin: 1 # (int) minimum positives per GT
+
+# ======================================================================================================================
+# loss_custom_v3(_fixed).py keys — stock + AR-DFL / PEU / LBA. All default OFF/neutral
+# so with none of these set the loss is bit-identical to stock. Keys must be whitelisted
+# here (or in the active cfg) or model.train() silently drops them and every run == anchor.
+# ======================================================================================================================
+
+# --- AR-DFL: per-edge DFL weights (left, top, right, bottom = w, h, w, h). use_ardfl=False -> stock DFL ---
+use_ardfl: False # (bool) enable aspect-ratio-aware per-edge DFL weighting
+ardfl_mode: fixed # (str) 'fixed' (dataset-level w/h weights) | 'per_box' (each GT's own h/w ratio)
+ardfl_w_weight: 1.5 # (float) weight on width edges (left/right) in 'fixed' mode; mean-normalized
+ardfl_h_weight: 0.75 # (float) weight on height edges (top/bottom) in 'fixed' mode; mean-normalized
+ardfl_ratio_power: 1.0 # (float) 'per_box': exponent on each box's h/w edge ratio (>0)
+ardfl_ratio_clip: 3.0 # (float) 'per_box': clamp the per-box ratio to [1/clip, clip] (>=1)
+
+# --- PEU-DFL: attenuate each edge's DFL by its own distribution variance. use_peu=False -> stock DFL ---
+# Two valid modes: detach=True,lambda=0 (redistribution) or detach=False,lambda>0 (Kendall).
+use_peu: False # (bool) enable per-edge uncertainty weighting of DFL
+peu_beta: 0.5 # (float) attenuation strength on log-variance (>=0)
+peu_lambda: 0.0 # (float) Kendall log-variance regularizer; MUST be 0 when peu_detach=True
+peu_detach: True # (bool) True=redistribution mode (detached weights); False=Kendall mode
+peu_norm_by_mu: True # (bool) divide variance by mu^2 so attenuation is scale-free (fixes large-obj damage)
+peu_warmup_epochs: 5 # (int) keep PEU neutral until this epoch (bin dists are near-uniform early); fail-closed
+peu_min_var: 0.05 # (float) variance floor before log (>0)
+peu_w_clip: 3.0 # (float) clamp per-edge weight spread to [1/clip, clip] (>=1)
+peu_center: global # (str) redistribution centring scope: 'global' (legacy, whole batch) | 'edge' (per row)
+
+# --- LBA: level-balanced scale-matching prior on the TAL alignment metric. use_lba=False -> stock TAL ---
+use_lba: False # (bool) enable the FPN-level scale prior on assignment
+lba_strength: 1.0 # (float) exponent applied to the prior; align <- align * prior^strength (>0)
+lba_ref_cells: 4.5 # (float) nominal object size = stride * ref_cells cells per level
+lba_sigma: 1.0 # (float) Gaussian width in octaves of the scale prior (>0)
+lba_size_axis: max # (str) size measure: 'max' = max(w,h) | 'geom' = sqrt(w*h)
+lba_size_gate_px: 0.0 # (float) apply the prior only to GTs larger than this (px); 0 = ungated
+lba_log: True # (bool) track per-FPN-level foreground share for lba_report() telemetry
 
 # Custom config.yaml ---------------------------------------------------------------------------------------------------
 cfg: # (str, optional) for overriding defaults.yaml
