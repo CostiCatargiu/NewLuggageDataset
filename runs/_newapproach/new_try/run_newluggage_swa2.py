@@ -131,6 +131,12 @@ SWA2_SQRT_A07_NWD = _swa(0.7, 0.3, "sqrt", 2.0,
 SWA2_SQRT_A07_04 = _swa(0.7, 0.4, "sqrt", 2.0, **_NWD_OFF)
 SWA2_SQRT_A07_05 = _swa(0.7, 0.5, "sqrt", 2.0, **_NWD_OFF)
 
+# --- Block F: px sweep at the WINNER (sqrt 0.7->0.3 boost2.0). Winner used px48;
+# these boost only the genuinely-tiny set. small_obj_px in **extra overrides the
+# builder's default 48 (cfg.update runs last). ---
+SWA2_SQRT_A07_PX36 = _swa(0.7, 0.3, "sqrt", 2.0, small_obj_px=36, **_NWD_OFF)
+SWA2_SQRT_A07_PX24 = _swa(0.7, 0.3, "sqrt", 2.0, small_obj_px=24, **_NWD_OFF)
+
 # =============================================================================
 # RUNS TO EXECUTE, IN ORDER
 # =============================================================================
@@ -147,12 +153,15 @@ _DONE = [
     {"name": "swa2_log_a07_b1",   "phase": "C", "label": "log 0.7->0.3 boost1.0 — log shape only",                "params": SWA2_LOG_A07_B1},
     {"name": "swa2_log_a06_03",   "phase": "C", "label": "log 0.6->0.3 boost2.0 — log at a 2nd schedule",         "params": SWA2_LOG_A06_03},
     {"name": "swa2_sqrt_a07_nwd", "phase": "D", "label": "sqrt 0.7->0.3 boost2.0 + NWD blend w0.3 C4.0 (corrected)","params": SWA2_SQRT_A07_NWD},
-]
-
-# ACTIVE BATCH — Block E: endpoint sweep around the sqrt 0.7->0.3 winner.
-RUNS = [
+    # Block E — endpoint sweep (done): 0.7->0.3 beat 0.7->0.4 and 0.7->0.5.
     {"name": "swa2_sqrt_a07_04", "phase": "E", "label": "sqrt 0.7->0.4 boost2.0 — higher floor than winner",      "params": SWA2_SQRT_A07_04},
     {"name": "swa2_sqrt_a07_05", "phase": "E", "label": "sqrt 0.7->0.5 boost2.0 — highest floor",                 "params": SWA2_SQRT_A07_05},
+]
+
+# ACTIVE BATCH — Block F: px sweep at the winner (sqrt 0.7->0.3 boost2.0, px48=57.86).
+RUNS = [
+    {"name": "swa2_sqrt_a07_px36", "phase": "F", "label": "sqrt 0.7->0.3 boost2.0 px36 — boost only genuinely-tiny", "params": SWA2_SQRT_A07_PX36},
+    {"name": "swa2_sqrt_a07_px24", "phase": "F", "label": "sqrt 0.7->0.3 boost2.0 px24 — boost only the tiniest",    "params": SWA2_SQRT_A07_PX24},
 ]
 
 
