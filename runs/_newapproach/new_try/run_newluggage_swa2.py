@@ -123,24 +123,36 @@ SWA2_LOG_A06_03 = _swa(0.6, 0.3, "log", 2.0, **_NWD_OFF)   # log at a 2nd schedu
 SWA2_SQRT_A07_NWD = _swa(0.7, 0.3, "sqrt", 2.0,
                          use_nwd=True, nwd_mode="blend", nwd_weight=0.3, nwd_C=4.0)
 
+# --- Block E: endpoint sweep around the winner (sqrt, 0.7 start, boost 2.0) ---
+# The winner is sqrt 0.7->0.3 (57.86). Every 0.7-start run so far ended at 0.3;
+# these raise the FLOOR (more size-emphasis kept into the late refinement phase)
+# to see if a higher alpha_end helps localization at strict IoU. Expect small
+# deltas (+/-0.3) — this fine-tunes the endpoint of a known peak.
+SWA2_SQRT_A07_04 = _swa(0.7, 0.4, "sqrt", 2.0, **_NWD_OFF)
+SWA2_SQRT_A07_05 = _swa(0.7, 0.5, "sqrt", 2.0, **_NWD_OFF)
+
 # =============================================================================
 # RUNS TO EXECUTE, IN ORDER
 # =============================================================================
-RUNS = [
-    # Block A — isolate shape vs boost (sqrt @ 0.7->0.3)
+# Prior batch (already run, kept for reference — they will be SKIPPED if their
+# summary entries exist). The active batch is Block E only.
+_DONE = [
     {"name": "swa2_sqrt_a07_b1",  "phase": "A", "label": "sqrt 0.7->0.3 boost1.0 — SHAPE ONLY (is sqrt the win?)", "params": SWA2_SQRT_A07_B1},
     {"name": "swa2_sqrt_a07_b15", "phase": "A", "label": "sqrt 0.7->0.3 boost1.5 — mid dose",                     "params": SWA2_SQRT_A07_B15},
     {"name": "swa2_sqrt_a07_b25", "phase": "A", "label": "sqrt 0.7->0.3 boost2.5 — stronger dose",                "params": SWA2_SQRT_A07_B25},
-    # Block B — sqrt schedule sweep @ boost 2.0
     {"name": "swa2_sqrt_a08_04",  "phase": "B", "label": "sqrt 0.8->0.4 boost2.0 — stronger schedule",            "params": SWA2_SQRT_A08_04},
     {"name": "swa2_sqrt_a06_03",  "phase": "B", "label": "sqrt 0.6->0.3 boost2.0 — milder schedule",              "params": SWA2_SQRT_A06_03},
     {"name": "swa2_sqrt_a05_025", "phase": "B", "label": "sqrt 0.5->0.25 boost2.0 — mildest schedule",            "params": SWA2_SQRT_A05_025},
-    # Block C — log shape sweep
     {"name": "swa2_log_a07_b2",   "phase": "C", "label": "log 0.7->0.3 boost2.0 — gentler-than-sqrt shape",       "params": SWA2_LOG_A07_B2},
     {"name": "swa2_log_a07_b1",   "phase": "C", "label": "log 0.7->0.3 boost1.0 — log shape only",                "params": SWA2_LOG_A07_B1},
     {"name": "swa2_log_a06_03",   "phase": "C", "label": "log 0.6->0.3 boost2.0 — log at a 2nd schedule",         "params": SWA2_LOG_A06_03},
-    # Block D — stack
     {"name": "swa2_sqrt_a07_nwd", "phase": "D", "label": "sqrt 0.7->0.3 boost2.0 + NWD blend w0.3 C4.0 (corrected)","params": SWA2_SQRT_A07_NWD},
+]
+
+# ACTIVE BATCH — Block E: endpoint sweep around the sqrt 0.7->0.3 winner.
+RUNS = [
+    {"name": "swa2_sqrt_a07_04", "phase": "E", "label": "sqrt 0.7->0.4 boost2.0 — higher floor than winner",      "params": SWA2_SQRT_A07_04},
+    {"name": "swa2_sqrt_a07_05", "phase": "E", "label": "sqrt 0.7->0.5 boost2.0 — highest floor",                 "params": SWA2_SQRT_A07_05},
 ]
 
 
