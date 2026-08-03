@@ -142,6 +142,7 @@ alpha_end: 0.5 # (float) SWA blend alpha at the final epoch (linear anneal)
 alpha_min: 0.3 # (float) lower clamp on the annealed alpha
 alpha_max: 0.9 # (float) upper clamp on the annealed alpha
 area_weight_mode: inv # (str) 'inv' (1/area, legacy) | 'sqrt' | 'log' — shape of the area weight
+dfl_entropy_weight: 0.0 # (float) Section O: w * mean entropy of fg edge distributions added to DFL (0=off, 0.05 = r10_dfl_entropy)
 small_obj_boost_backpack: -1.0 # (float) per-class small-obj boost; <0 -> use scalar small_obj_boost
 small_obj_boost_bag: -1.0 # (float) per-class small-obj boost for bag; <0 -> scalar fallback
 small_obj_boost_trolley: -1.0 # (float) per-class small-obj boost for trolley; <0 -> scalar fallback
