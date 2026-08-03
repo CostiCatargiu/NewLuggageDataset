@@ -108,7 +108,51 @@ def _snatal(rho):
     )
 
 
+def _clip(iou_s, iou_e, dfl_s, dfl_e):
+    """PHASE C — per-sample loss clipping on the PURE STOCK base.
+
+    lossv2updated.py applies  clamp(max = value / 10.0), so the EFFECTIVE cap
+    is one tenth of what is passed here. _ALL_OFF ships 999.0 (eff 99.9, never
+    binds), so all four keys are overridden.
+
+    Calibration: at alpha=0 the per-sample weight is just the TAL score weight
+    (<= ~1), so per-sample losses live in ~0.1-1.2. Caps MUST sit inside that
+    range to fire — the original R0C_CLIP_LOOSE/MID/TIGHT were sized for the
+    SWA-high base (peaks 2.5-3.0) and are inert here. Only R0C_CLIP_SOLO was
+    scaled correctly; it is reproduced below as _CLIP_MID.
+
+    Schedule: _get_gradient_clip_values() anneals start -> end across training
+    (progress = epoch/total_epochs). The epoch is pushed in by the
+    on_train_epoch_start callback below, so the anneal is live.
+    """
+    c = dict(_ALL_OFF)
+    c.update(
+        use_loss_clip=True,
+        iou_clip_start=iou_s, iou_clip_end=iou_e,
+        dfl_clip_start=dfl_s, dfl_clip_end=dfl_e,
+    )
+    return c
+
+
+# C-1 VERY LOOSE — trims only the extreme tail. THE VALIDITY CHECK: if the
+#     [CLIP] rate prints ~0% after one epoch, every config below is inert too
+#     and the whole phase is void. Run this one first.
+_CLIP_VLOOSE = _clip(12.0, 10.0, 15.0, 12.0)   # eff iou 1.2->1.0 | dfl 1.5->1.2
+# C-2 LOOSE — cuts the outlier shoulder.
+_CLIP_LOOSE  = _clip(10.0,  7.0, 12.0,  9.0)   # eff iou 1.0->0.7 | dfl 1.2->0.9
+# C-3 MID — this is R0C_CLIP_SOLO, the only original config scaled for no-SWA.
+_CLIP_MID    = _clip( 8.0,  5.0, 10.0,  7.0)   # eff iou 0.8->0.5 | dfl 1.0->0.7
+# C-4 TIGHT — bites into the body of the distribution. Upper dose, not a
+#     candidate; included so the dose-response has a known-bad end point.
+_CLIP_TIGHT  = _clip( 5.0,  3.0,  7.0,  5.0)   # eff iou 0.5->0.3 | dfl 0.7->0.5
+
+
 RUNS = [
+    # --- Phase 0: in-session anchor. Without this every delta is measured
+    #     against an external number from a different script execution.
+    {"name": "as_anchor",       "phase": "0",
+     "label": "_ALL_OFF, pure stock TAL — in-session reference (must land ~57.43)",
+     "params": dict(_ALL_OFF)},
     {"name": "as_satal_mild",   "phase": "E",
      "label": "SATAL small a1.5/b3.0 topkx1.5 — gentle scale split (SWA OFF)",
      "params": _satal(1.5, 3.0, 1.5)},
@@ -121,6 +165,25 @@ RUNS = [
     {"name": "as_snatal_r040",  "phase": "N",
      "label": "SNATAL rho=0.40 k_min=2 geometric pool — mild (SWA OFF)",
      "params": _snatal(0.40)},
+    # --- Phase C: per-sample loss-clipping dose-response, isolated ---------
+    # Never executed in any prior round: the four R0C_* configs were defined
+    # in run_newluggage_ablationfirst_tal_clip.py but left commented out of
+    # RUNS, and their caps were sized for SWA-high anyway.
+    # Doubles as the robust-loss / loss-truncation arm: clipping caps the
+    # influence of outlier or mislabelled boxes (label audit: 0.97% class
+    # swaps, box jitter unmeasured).
+    {"name": "as_clip_vloose",  "phase": "C",
+     "label": "clip eff iou 1.2->1.0 / dfl 1.5->1.2 — tail only (VALIDITY CHECK, run first)",
+     "params": _CLIP_VLOOSE},
+    {"name": "as_clip_loose",   "phase": "C",
+     "label": "clip eff iou 1.0->0.7 / dfl 1.2->0.9 — outlier shoulder",
+     "params": _CLIP_LOOSE},
+    {"name": "as_clip_mid",     "phase": "C",
+     "label": "clip eff iou 0.8->0.5 / dfl 1.0->0.7 — R0C_CLIP_SOLO reproduced",
+     "params": _CLIP_MID},
+    {"name": "as_clip_tight",   "phase": "C",
+     "label": "clip eff iou 0.5->0.3 / dfl 0.7->0.5 — upper dose, expect a loss",
+     "params": _CLIP_TIGHT},
 ]
 
 
