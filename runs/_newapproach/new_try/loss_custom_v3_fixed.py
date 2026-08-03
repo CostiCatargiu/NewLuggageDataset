@@ -182,6 +182,43 @@ class CustomLossCfg:
         self.lba_size_gate_px = float(g("lba_size_gate_px", 0.0))
         self.lba_log = bool(g("lba_log", True))
 
+        # --- Section P: POSITIVE-CONFIDENCE BOOST (cls) -----------------------
+        # Derived from the anchor's confusion matrix, NOT from class counts:
+        #   bag row      -> backpack 0.03, trolley 0.02, background 0.25
+        #   bag column   -> correct 0.68, MISSED (pred background) 0.24
+        # i.e. bag is not confused with other classes, it is under-scored and
+        # falls below threshold. Same signature globally: AR50_small 0.962 vs
+        # R50_small 0.727 — small objects are FOUND but not SCORED.
+        # So: scale ONLY the POSITIVE bce term at fg anchors, per class and per
+        # size. The negative term stays stock, so nothing is suppressed; this
+        # can only push found-but-underscored detections up.
+        #
+        # NOT class-imbalance weighting (that scales both terms by inverse
+        # frequency and is the CONTROL arm below). Weights here come from the
+        # per-cell recall gaps: trolley 0.87 needs nothing, backpack 0.80 a
+        # little, bag 0.68 the most.
+        #
+        # UNITS: pos_boost_small_px is in MODEL pixels (the loss's coordinate
+        # space at imgsz), NOT label pixels. The dataset is 512px labels
+        # trained at 640 -> a "48px small" object in the dataset analysis is
+        # 60px here. Default 60.0 == the analysis' 48px small bin.
+        self.use_pos_boost = bool(g("use_pos_boost", False))
+        self.pos_boost_backpack = float(g("pos_boost_backpack", 1.0))
+        self.pos_boost_bag = float(g("pos_boost_bag", 1.5))
+        self.pos_boost_trolley = float(g("pos_boost_trolley", 1.0))
+        self.pos_boost_small = float(g("pos_boost_small", 1.5))
+        self.pos_boost_small_px = float(g("pos_boost_small_px", 60.0))
+        self.pos_boost_clip = float(g("pos_boost_clip", 3.0))
+        self.pos_boost_log = bool(g("pos_boost_log", True))
+
+        # --- CONTROL for Section P: plain inverse-frequency class weighting ---
+        # Rarer classes ARE often the under-scored ones, so a P gain must be
+        # shown to exceed what plain frequency weighting buys. Scales BOTH bce
+        # terms by sqrt-dampened inverse frequency (train counts 11491 / 9490 /
+        # 21557 -> ~[0.99, 1.09, 0.72] after mean-normalisation).
+        self.use_class_weight = bool(g("use_class_weight", False))
+        self.class_weight_counts = [11491.0, 9490.0, 21557.0]
+
         self._validate()
 
     def _validate(self):
@@ -237,8 +274,29 @@ class CustomLossCfg:
             if self.lba_size_axis not in ("max", "geom"):
                 raise ValueError("lba_size_axis must be 'max' or 'geom'")
 
+        # --- Section P + its control ---
+        if self.use_pos_boost and self.use_class_weight:
+            raise ValueError(
+                "use_pos_boost and use_class_weight are the MECHANISM and its "
+                "CONTROL — run them as separate arms, not together."
+            )
+        if self.use_pos_boost:
+            b = (self.pos_boost_backpack, self.pos_boost_bag,
+                 self.pos_boost_trolley, self.pos_boost_small)
+            if min(b) <= 0:
+                raise ValueError("pos_boost_* must all be > 0")
+            if max(b) == 1.0:
+                raise ValueError(
+                    "use_pos_boost=True but every boost is 1.0 — that is stock BCE."
+                )
+            if self.pos_boost_clip < 1.0:
+                raise ValueError("pos_boost_clip must be >= 1.0")
+            if self.pos_boost_small_px < 0:
+                raise ValueError("pos_boost_small_px must be >= 0 (MODEL pixels)")
+
     def is_stock(self):
-        return not (self.use_ardfl or self.use_peu or self.use_lba)
+        return not (self.use_ardfl or self.use_peu or self.use_lba
+                    or self.use_pos_boost or self.use_class_weight)
 
     def banner(self):
         out = ["=" * 62, "  CUSTOM v3 loss  (stock + AR-DFL / PEU / LBA)", "=" * 62,
@@ -268,6 +326,13 @@ class CustomLossCfg:
             out.append(f"    strength / sigma:   {self.lba_strength} / {self.lba_sigma}")
             out.append(f"    ref_cells / axis:   {self.lba_ref_cells} / {self.lba_size_axis}")
             out.append(f"    size gate (px):     {self.lba_size_gate_px or 'off'}")
+        out.append(f"  POS-BOOST (cls):      {self.use_pos_boost}")
+        if self.use_pos_boost:
+            out.append(f"    bp / bag / tr:      {self.pos_boost_backpack} / "
+                       f"{self.pos_boost_bag} / {self.pos_boost_trolley}")
+            out.append(f"    small x{self.pos_boost_small} below {self.pos_boost_small_px}px "
+                       f"(MODEL px)  clip {self.pos_boost_clip}")
+        out.append(f"  CLASS-WEIGHT (ctrl):  {self.use_class_weight}")
         out.append("=" * 62)
         return "\n".join(out)
 
@@ -486,6 +551,100 @@ def lba_report(reset=True):
     if _LAST_LBA_HOST is None:
         return None
     return _lba_report_from(_LAST_LBA_HOST._lba_state, reset)
+
+
+def _new_posboost_state():
+    return {"n": 0, "score_sum": None, "score_cnt": None, "w_sum": 0.0, "w_n": 0.0}
+
+
+def _cls_loss_pos_boost(bce_fn, pred_scores, target_scores, fg_mask, cfg,
+                        target_bboxes_px=None, state=None):
+    """Class-weighted / positive-boosted BCE. Returns the UNNORMALISED sum.
+
+    Section P (use_pos_boost): scales ONLY the positive bce term at fg anchors,
+    by class and by size. Implementation note: BCE per element decomposes as
+        bce = -[ t*log(p) + (1-t)*log(1-p) ]
+    and at an fg anchor the assigned class column carries the positive part
+    (t = the TAL soft label > 0) while every other column is pure negative.
+    Scaling the loss at (fg anchor, assigned class) therefore scales the
+    positive term — no other column is touched, so nothing is suppressed.
+
+    Control (use_class_weight): sqrt-dampened inverse-frequency weights applied
+    to ALL columns (both terms), i.e. ordinary class-imbalance weighting.
+
+    Neutral when both flags are off: returns exactly bce.sum().
+    """
+    bce = bce_fn(pred_scores, target_scores.to(pred_scores.dtype))   # (b, A, nc)
+
+    if cfg.use_class_weight:
+        cnt = torch.tensor(cfg.class_weight_counts, device=bce.device, dtype=bce.dtype)
+        inv = 1.0 / cnt
+        w = (inv / inv.mean()).sqrt()
+        w = w / w.mean()
+        return (bce * w.view(1, 1, -1)).sum()
+
+    if not cfg.use_pos_boost or not fg_mask.any():
+        return bce.sum()
+
+    # per-fg-anchor assigned class = argmax of its soft target row
+    lab = target_scores[fg_mask].argmax(dim=-1)                       # (M,)
+    cls_b = torch.tensor([cfg.pos_boost_backpack, cfg.pos_boost_bag,
+                          cfg.pos_boost_trolley], device=bce.device, dtype=bce.dtype)
+    if cls_b.numel() < pred_scores.shape[-1]:                         # >3 classes: pad 1.0
+        cls_b = torch.cat([cls_b, torch.ones(pred_scores.shape[-1] - cls_b.numel(),
+                                             device=bce.device, dtype=bce.dtype)])
+    boost = cls_b[lab]                                                # (M,)
+
+    if target_bboxes_px is not None and cfg.pos_boost_small > 0 and cfg.pos_boost_small_px > 0:
+        tb = target_bboxes_px[fg_mask]
+        side = torch.maximum(tb[:, 2] - tb[:, 0], tb[:, 3] - tb[:, 1])  # MODEL px
+        boost = boost * torch.where(side < cfg.pos_boost_small_px,
+                                    boost.new_tensor(cfg.pos_boost_small),
+                                    boost.new_tensor(1.0))
+    boost = boost.clamp(max=cfg.pos_boost_clip)
+
+    # scale only the assigned-class column at fg anchors
+    w = torch.ones_like(bce)
+    fw = w[fg_mask]                                                   # (M, nc)
+    fw.scatter_(1, lab.unsqueeze(-1), boost.unsqueeze(-1))
+    w[fg_mask] = fw
+
+    if cfg.pos_boost_log and state is not None:
+        with torch.no_grad():
+            p = pred_scores[fg_mask].sigmoid().gather(1, lab.unsqueeze(-1)).squeeze(-1)
+            nc = pred_scores.shape[-1]
+            s = torch.zeros(nc, device=bce.device, dtype=bce.dtype)
+            c = torch.zeros(nc, device=bce.device, dtype=bce.dtype)
+            s.index_add_(0, lab, p.to(bce.dtype))
+            c.index_add_(0, lab, torch.ones_like(p, dtype=bce.dtype))
+            state["score_sum"] = s if state["score_sum"] is None else state["score_sum"] + s
+            state["score_cnt"] = c if state["score_cnt"] is None else state["score_cnt"] + c
+            state["w_sum"] += float(boost.sum())
+            state["w_n"] += float(boost.numel())
+            state["n"] += 1
+
+    return (bce * w).sum()
+
+
+def _posboost_report_from(state, reset=True):
+    """Mean predicted score at fg anchors, per class — the direct readout of
+    whether Section P is actually raising confidence on true positives."""
+    if not state["n"] or state["score_cnt"] is None:
+        return None
+    cnt = state["score_cnt"].clamp(min=1)
+    out = {"fg_score": (state["score_sum"] / cnt).tolist(),
+           "fg_count": state["score_cnt"].tolist(),
+           "mean_boost": state["w_sum"] / max(state["w_n"], 1.0)}
+    if reset:
+        state.update(_new_posboost_state())
+    return out
+
+
+def posboost_report(reset=True):
+    """Module-level shim (last-constructed criterion), same pattern as lba_report."""
+    if _LAST_LBA_HOST is None:
+        return None
+    return _posboost_report_from(_LAST_LBA_HOST._posboost_state, reset)
 
 
 class _LBAMixin:
@@ -795,7 +954,9 @@ class v8DetectionLoss:
 
         # F5: per-instance level-occupancy diagnostics
         self._lba_state = _new_lba_state()
-        if self.cfg.lba_log:
+        # Section P: per-instance fg-score diagnostics
+        self._posboost_state = _new_posboost_state()
+        if self.cfg.lba_log or self.cfg.use_pos_boost:
             global _LAST_LBA_HOST
             _LAST_LBA_HOST = self
 
@@ -816,6 +977,10 @@ class v8DetectionLoss:
     def lba_gate_report(self, reset=True):
         """Gate pass-rate since the last call (this instance), or None."""
         return _lba_gate_report_from(self._lba_state, reset)
+
+    def posboost_report(self, reset=True):
+        """Mean fg score per class since the last call (this instance), or None."""
+        return _posboost_report_from(self._posboost_state, reset)
 
     def preprocess(self, targets, batch_size, scale_tensor):
         """Preprocesses the target counts and matches with the input batch size to output a tensor."""
@@ -894,7 +1059,14 @@ class v8DetectionLoss:
 
         # Cls loss
         # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        # Section P / control route through _cls_loss_pos_boost; with both
+        # flags off this is exactly self.bce(...).sum() (stock).
+        # NOTE: target_bboxes is still in MODEL PIXELS here (it is divided
+        # by stride only inside the box-loss branch below) — P needs that.
+        loss[1] = _cls_loss_pos_boost(
+            self.bce, pred_scores, target_scores, fg_mask, self.cfg,
+            target_bboxes_px=target_bboxes, state=self._posboost_state
+        ) / target_scores_sum  # BCE
 
         # Bbox loss
         if fg_mask.sum():
@@ -1484,3 +1656,4 @@ class DetectObjLoss(v8DetectionLoss):
 
 # NOTE: a second, byte-equivalent E2EDetectLoss used to sit here and shadowed the
 # one defined above (audit bug B4). Removed — the baseline's definition stands.
+
