@@ -12,51 +12,47 @@ CONTEXT (30+ prior runs):
   quality, not classification calibration. This round attacks only the
   regression path, with three new ideas plus improved versions of NWD/DFL.
 
-NEW MECHANISMS IN THIS ROUND:
+ORIGINAL MECHANISMS IN THIS ROUND (see RECONCILED note below):
 
-  r9b_iarw       [Section F, NEW-9] IoU-Aware Regression Weighting.
-                  Per-anchor regression boost proportional to (1-IoU).detach():
-                  loose boxes get amplified, tight boxes left alone. Unlike area
-                  weighting (assumes small=hard), this MEASURES which predictions
-                  need work. Self-correcting: as the box improves, boost fades.
-                  The STRONGEST candidate — novel, directly targets the deficit.
+  r9b_iarw       [Section F, NEW-9] IoU-Aware Regression Weighting (iarw_gamma).
+                  Per-anchor regression boost proportional to (1-IoU).detach().
+                  NOT implemented in loss2.py -> removed; run == anchor.
 
   r9b_nwd_adapt  [NEW-5b/5c] Adaptive NWD with annealing.
-                  Fixes from R9: (a) continuous smallness ramp instead of flat
-                  on/off, (b) lower ratio 0.3 (was 0.5), (c) anneal from full
-                  NWD early to 10% at end. NWD smooths the loss landscape where
-                  IoU is cliff-like for tiny boxes; annealing lets CIoU's tight
-                  optimum dominate for final convergence.
+                  loss2.py implements a PLAIN NWD blend only; the adaptive /
+                  anneal knobs (nwd_adaptive, nwd_anneal, nwd_anneal_min) are
+                  removed. Surviving lever: use_nwd + nwd_mode='blend' +
+                  nwd_weight + nwd_C.
 
-  r9b_dfl_gated  [NEW-3b] IoU-gated DFL boost.
-                  Fixes from R9: the flat ×2.5 DFL boost is modulated by (1-IoU)
-                  per anchor. Small objects with IoU=0.9 get boost ×1.15; those
-                  with IoU=0.3 get ×2.05. Focuses edge sharpening where needed.
+  r9b_dfl_gated  [NEW-3b] IoU-gated DFL boost (dfl_small_boost + dfl_iou_gated).
+                  NOT in loss2.py -> removed; run == anchor at px36.
 
-  r9b_iarw_nwd   IARW + adaptive NWD. The two mechanisms target orthogonal
-                  aspects: IARW redistributes regression effort by quality gap;
-                  NWD smooths the loss surface shape. They compound safely
-                  because NWD changes the loss, IARW rescales it. WITH weight
-                  renormalization so composition doesn't shift magnitude.
+  r9b_iarw_nwd   IARW + NWD. iarw_gamma removed (not in loss2.py); only the
+                  plain NWD blend survives (use_nwd + nwd_weight + nwd_C).
 
-  r9b_iarw_dfl   IARW + IoU-gated DFL. IARW boosts both IoU and DFL loss on
-                  loose predictions; IoU-gated DFL additionally sharpens edge
-                  distributions for small objects specifically. They compound
-                  because IARW is per-prediction quality-based, DFL boost is
-                  per-prediction quality×size-based.
+  r9b_iarw_dfl   IARW + IoU-gated DFL. Both mechanisms (iarw_gamma,
+                  dfl_small_boost, dfl_iou_gated) are not in loss2.py -> removed;
+                  run == anchor at px36.
 
-REQUIRES: loss.py with NEW-3b (dfl_iou_gated), NEW-5b/5c (nwd_adaptive,
-  nwd_anneal, nwd_anneal_min), and NEW-9 (iarw_gamma) params whitelisted
-  in the cfg patch.
+RECONCILED TO loss2.py (the only loss implementation present in this repo):
+  - NWD keys renamed: nwd_ratio -> nwd_weight, nwd_c -> nwd_C; NWD gated by
+    use_nwd (default False). loss2.py has only a plain NWD blend.
+  - cls_loss -> cls_mode ('bce' | 'qfl'); vfl_* removed.
+  - Removed (no loss2.py impl): iarw_gamma, dfl_small_boost, dfl_iou_gated,
+    nwd_adaptive, nwd_anneal, nwd_anneal_min, weight_renorm, area_*.
+  CONSEQUENCE: only NWD-blend runs (r9b_nwd_adapt, r9b_iarw_nwd) stay live;
+  the IARW / DFL-gated runs collapse to the anchor until loss2.py implements
+  them. CAUTION: loss2.py nwd_C is STRIDE-NORMALIZED (~4.0), not pixels — the
+  legacy 64.0 saturates NWD (~inert); retune to ~2-6.
 
 VERIFY AT LAUNCH (config banner):
-  r9b_anchor     : iarw_gamma=0 | nwd=0 | dfl_boost=1 | all NEW paths inert
-  r9b_iarw       : iarw_gamma=2.0, everything else stock
-  r9b_iarw_lo    : iarw_gamma=1.0, conservative version
-  r9b_nwd_adapt  : nwd_ratio=0.3 adaptive+anneal->0.1, iarw=0
-  r9b_dfl_gated  : dfl_small_boost=2.5 iou_gated=1, iarw=0
-  r9b_iarw_nwd   : iarw_gamma=2.0 + nwd_ratio=0.3 adaptive+anneal
-  r9b_iarw_dfl   : iarw_gamma=2.0 + dfl_small_boost=2.0 iou_gated=1
+  r9b_anchor     : cls_mode bce | use_nwd False | nwd_weight/C 0.0/64.0
+  r9b_iarw       : == anchor (iarw_gamma removed)
+  r9b_iarw_lo    : == anchor (iarw_gamma removed)
+  r9b_nwd_adapt  : use_nwd True nwd_mode blend nwd_weight/C 0.3/64.0
+  r9b_dfl_gated  : == anchor at px36 (dfl_small_boost/iou_gated removed)
+  r9b_iarw_nwd   : use_nwd True nwd_mode blend nwd_weight/C 0.3/64.0
+  r9b_iarw_dfl   : == anchor at px36 (iarw/dfl_small_boost/iou_gated removed)
 
 DECISION RULE (same as R9, fixed before any eval):
   A mechanism is a CANDIDATE only if val mAP50-95 > anchor + 0.5 OR
@@ -104,18 +100,20 @@ SEED = 0
 # Shared OFF blocks — every run states EVERY custom param explicitly, so the
 # saved ablation_params.json is ground truth (the eval JSONs never were).
 # =============================================================================
+# RECONCILED TO loss2.py:
+#  - Removed (no loss2.py impl): weight_renorm, area_* , dfl_small_boost,
+#    dfl_iou_gated, nwd_adaptive, nwd_anneal, nwd_anneal_min, iarw_gamma, vfl_*.
+#  - Renamed to loss2.py names: nwd_ratio -> nwd_weight, nwd_c -> nwd_C,
+#    cls_loss -> cls_mode. NWD is gated by use_nwd in loss2.py.
+#  CONSEQUENCE: the IARW, IoU-gated-DFL and adaptive/anneal NWD mechanisms are
+#  NOT in loss2.py, so runs built around them collapse toward the anchor. Only
+#  the plain NWD blend (use_nwd + nwd_weight + nwd_C) survives as a live lever.
 _SWA_OFF = dict(
     alpha_start=0.0, alpha_end=0.0, alpha_min=0.0, alpha_max=0.0,
     small_obj_boost=1.0,
-    # NEW-1/NEW-2: inert at alpha=0 (renorm is identity, area weight unused)
-    weight_renorm=1, area_mode="fixed", area_ref_px=64.0, area_gamma=0.5,
-    area_w_cap=3.0,
 )
-_TARGETED_OFF = dict(
-    dfl_small_boost=1.0, dfl_iou_gated=0,
-    nwd_ratio=0.0, nwd_c=64.0, nwd_adaptive=0, nwd_anneal=0, nwd_anneal_min=0.1,
-)
-_IARW_OFF = dict(iarw_gamma=0.0)
+# NWD off block: loss2.py gates NWD on use_nwd (default False).
+_TARGETED_OFF = dict(use_nwd=False, nwd_weight=0.0, nwd_C=64.0)
 _CENTER_OFF = dict(
     center_loss_weight_init=0.0, center_loss_weight_min=0.0,
     center_loss_decay_epochs=35,
@@ -125,7 +123,8 @@ _CLIP_OFF = dict(
     dfl_clip_start=999.0, dfl_clip_end=999.0,
 )
 _TAL_STOCK = dict(tal_topk=10, tal_alpha=0.5, tal_beta=6.0)
-_CLS_BCE = dict(cls_loss="bce", vfl_alpha=0.75, vfl_gamma=2.0)
+# loss2.py uses cls_mode ('bce' | 'qfl'); no VFL, so vfl_* are removed.
+_CLS_BCE = dict(cls_mode="bce")
 
 # =============================================================================
 # RUN CONFIGS
@@ -133,104 +132,85 @@ _CLS_BCE = dict(cls_loss="bce", vfl_alpha=0.75, vfl_gamma=2.0)
 
 # Fresh anchor — every NEW path inert; the comparison basis for this round.
 R9B_ANCHOR = dict(
-    **_SWA_OFF, small_obj_px=48,  # px inert here (boost=1, dfl=1, nwd=0, iarw=0)
-    **_TARGETED_OFF, **_IARW_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
+    **_SWA_OFF, small_obj_px=48,  # px inert here (boost=1, nwd off)
+    **_TARGETED_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
 # ---------------------------------------------------------------------------
 # 1) IARW — IoU-Aware Regression Weighting (Section F, NEW-9)
-#    THE primary candidate. Per-anchor regression boost = 1 + gamma*(1-IoU):
-#      IoU=0.3 -> boost 2.4x   (loose box: try harder)
-#      IoU=0.7 -> boost 1.6x   (OK box: moderate push)
-#      IoU=0.9 -> boost 1.2x   (tight box: leave alone)
-#    Applied to BOTH IoU loss and DFL loss. Self-correcting: as the box
-#    tightens, the boost fades. Doesn't assume small=hard — measures directly.
-#    gamma=2.0 is a moderate value; higher values (3.0) focus more aggressively.
+#    NOTE: iarw_gamma is NOT implemented in loss2.py and was removed. This run
+#    now equals the anchor and no longer tests IARW until loss2.py adds it.
 # ---------------------------------------------------------------------------
 R9B_IARW = dict(
     **_SWA_OFF, small_obj_px=48,
-    **_TARGETED_OFF, iarw_gamma=2.0,
-    **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
+    **_TARGETED_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
-# Conservative IARW: gamma=1.0 (weaker boost for comparison)
+# Conservative IARW variant — same note as above (iarw_gamma removed).
 R9B_IARW_LO = dict(
     **_SWA_OFF, small_obj_px=48,
-    **_TARGETED_OFF, iarw_gamma=1.0,
-    **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
+    **_TARGETED_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
 # ---------------------------------------------------------------------------
-# 2) ADAPTIVE NWD WITH ANNEALING (Section A'', NEW-5b/5c)
-#    Fixes from R9's flat r=0.5:
-#      - ratio 0.3 (gentler: NWD is a stabilizer, not a replacement)
-#      - adaptive: tiny objects get full ratio, near-threshold get ~0 (continuous)
-#      - anneal: full NWD early -> 10% of ratio at end of training
-#    NWD smooths the cliff-like CIoU landscape for 20-40px-wide tall boxes;
-#    annealing ensures CIoU's tighter optimum dominates for final convergence.
+# 2) NWD BLEND (Section A'')
+#    NOTE: loss2.py implements a plain NWD blend only. The adaptive/anneal
+#    knobs (nwd_adaptive, nwd_anneal, nwd_anneal_min) are NOT implemented and
+#    were removed; dfl_small_boost/dfl_iou_gated also removed. What remains is
+#    use_nwd=True + nwd_mode='blend' + nwd_weight + nwd_C. CAUTION: loss2.py's
+#    nwd_C is STRIDE-NORMALIZED (default 4.0), not pixels — the old 64.0 will
+#    saturate NWD (~inert); retune nwd_C to ~2-6.
 # ---------------------------------------------------------------------------
 R9B_NWD_ADAPT = dict(
     **_SWA_OFF, small_obj_px=48,
-    dfl_small_boost=1.0, dfl_iou_gated=0,
-    nwd_ratio=0.3, nwd_c=64.0, nwd_adaptive=1, nwd_anneal=1, nwd_anneal_min=0.1,
-    **_IARW_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
+    use_nwd=True, nwd_mode="blend", nwd_weight=0.3, nwd_C=64.0,
+    **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
 # ---------------------------------------------------------------------------
 # 3) IoU-GATED DFL BOOST (Section A', NEW-3b)
-#    Fixes from R9's flat x2.5:
-#      - IoU-gated: boost modulated by (1-IoU), so well-localized small objects
-#        are left alone. IoU=0.3 -> ×2.05; IoU=0.9 -> ×1.15.
-#      - px=36 (genuinely small only, ~bottom 25-30% of instances)
+#    NOTE: dfl_small_boost and dfl_iou_gated are NOT in loss2.py and were
+#    removed. This run now equals the anchor until loss2.py implements them.
 # ---------------------------------------------------------------------------
 R9B_DFL_GATED = dict(
     **_SWA_OFF, small_obj_px=36,
-    dfl_small_boost=2.5, dfl_iou_gated=1,
-    nwd_ratio=0.0, nwd_c=64.0, nwd_adaptive=0, nwd_anneal=0, nwd_anneal_min=0.1,
-    **_IARW_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
+    **_TARGETED_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
 # ---------------------------------------------------------------------------
-# 4) COMPOSITION: IARW + Adaptive NWD
-#    IARW redistributes regression effort by per-prediction quality gap.
-#    NWD smooths the loss surface shape for small objects.
-#    Orthogonal: NWD changes WHAT is optimized; IARW changes HOW MUCH.
-#    weight_renorm=1 ensures composition doesn't shift total magnitude.
+# 4) COMPOSITION: IARW + NWD blend
+#    NOTE: iarw_gamma and the adaptive/anneal NWD knobs are NOT in loss2.py and
+#    were removed; only the plain NWD blend survives (use_nwd + nwd_weight +
+#    nwd_C). Same nwd_C caution as run 2.
 # ---------------------------------------------------------------------------
 R9B_IARW_NWD = dict(
     **_SWA_OFF, small_obj_px=48,
-    dfl_small_boost=1.0, dfl_iou_gated=0,
-    nwd_ratio=0.3, nwd_c=64.0, nwd_adaptive=1, nwd_anneal=1, nwd_anneal_min=0.1,
-    iarw_gamma=2.0,
+    use_nwd=True, nwd_mode="blend", nwd_weight=0.3, nwd_C=64.0,
     **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
 # ---------------------------------------------------------------------------
 # 5) COMPOSITION: IARW + IoU-gated DFL
-#    IARW boosts both IoU and DFL for loose predictions globally.
-#    IoU-gated DFL additionally sharpens edge distributions for SMALL objects.
-#    IARW is quality-only; DFL gated is quality×size. They compound cleanly.
-#    Lower DFL boost (2.0) since IARW already amplifies loose-box DFL.
+#    NOTE: iarw_gamma, dfl_small_boost and dfl_iou_gated are NOT in loss2.py and
+#    were removed. This run now equals the anchor until loss2.py implements
+#    those mechanisms.
 # ---------------------------------------------------------------------------
 R9B_IARW_DFL = dict(
     **_SWA_OFF, small_obj_px=36,
-    dfl_small_boost=2.0, dfl_iou_gated=1,
-    nwd_ratio=0.0, nwd_c=64.0, nwd_adaptive=0, nwd_anneal=0, nwd_anneal_min=0.1,
-    iarw_gamma=2.0,
-    **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
+    **_TARGETED_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
 # =============================================================================
 # RUNS TO EXECUTE, IN ORDER (anchor first — everything is judged against it)
 # =============================================================================
 RUNS = [
-    {"name": "r9b_anchor",    "phase": "-",    "label": "Fresh anchor — all NEW paths inert",                                 "params": R9B_ANCHOR},
-    {"name": "r9b_iarw",      "phase": "F",    "label": "IARW gamma=2.0 — IoU-aware regression weighting (primary candidate)","params": R9B_IARW},
-    {"name": "r9b_iarw_lo",   "phase": "F",    "label": "IARW gamma=1.0 — conservative variant",                              "params": R9B_IARW_LO},
-    {"name": "r9b_nwd_adapt", "phase": "A''",  "label": "Adaptive NWD r=0.3 + anneal — improved loss surface for small",       "params": R9B_NWD_ADAPT},
-    {"name": "r9b_dfl_gated", "phase": "A'",   "label": "IoU-gated DFL boost 2.5 @px36 — targeted edge sharpening",           "params": R9B_DFL_GATED},
-    {"name": "r9b_iarw_nwd",  "phase": "F+A''","label": "IARW 2.0 + adaptive NWD 0.3 — quality redistribution + surface fix", "params": R9B_IARW_NWD},
-    {"name": "r9b_iarw_dfl",  "phase": "F+A'", "label": "IARW 2.0 + IoU-gated DFL 2.0 @px36 — quality + edge compound",      "params": R9B_IARW_DFL},
+    {"name": "r9b_anchor",    "phase": "-",    "label": "Fresh anchor — all optional paths inert",                            "params": R9B_ANCHOR},
+    {"name": "r9b_iarw",      "phase": "F",    "label": "IARW (iarw_gamma removed in loss2.py -> == anchor)",                 "params": R9B_IARW},
+    {"name": "r9b_iarw_lo",   "phase": "F",    "label": "IARW lo (iarw_gamma removed in loss2.py -> == anchor)",             "params": R9B_IARW_LO},
+    {"name": "r9b_nwd_adapt", "phase": "A''",  "label": "NWD blend weight=0.3 @px48 (adaptive/anneal removed in loss2.py)",   "params": R9B_NWD_ADAPT},
+    {"name": "r9b_dfl_gated", "phase": "A'",   "label": "px36 (dfl_small_boost/iou_gated removed in loss2.py -> == anchor)",  "params": R9B_DFL_GATED},
+    {"name": "r9b_iarw_nwd",  "phase": "F+A''","label": "NWD blend weight=0.3 @px48 (iarw removed in loss2.py)",             "params": R9B_IARW_NWD},
+    {"name": "r9b_iarw_dfl",  "phase": "F+A'", "label": "px36 (iarw/dfl_small_boost/iou_gated removed in loss2.py -> anchor)","params": R9B_IARW_DFL},
     # After this round: seeds 1,2 for the anchor + any candidate passing the
     # decision rule in the header. Add entries like:
     # {"name": "r9b_anchor_s1", "phase": "-", "label": "anchor seed 1", "params": R9B_ANCHOR, "seed": 1},

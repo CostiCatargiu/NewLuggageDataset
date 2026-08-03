@@ -11,40 +11,45 @@ WHY THESE FOUR, given v6/r0/r7/r8 (~30 runs):
   * Diagnosed deficit, stable across all rounds: AR50_small ~0.96 but
     AP50-95_small ~0.51 -> small objects are FOUND but badly RANKED and
     loosely BOXED. The four runs attack exactly that, one lever each:
-      r9_vfl        RANKING   — IoU-aware classification (score~IoU calib)
-      r9_dflboost   EDGES     — DFL-only boost for small objects; the r0a2
-                                run silently no-op'd (bit-identical to
-                                r0_default2), so this mechanism has NEVER
-                                actually been tested
+      r9_vfl        RANKING   — IoU-aware classification (cls_mode='qfl')
+      r9_dflboost   EDGES     — DFL-only boost for small objects (originally
+                                dfl_small_boost). NOT in loss2.py -> removed;
+                                run now equals the anchor at px36.
       r9_nwd        SURFACE   — NWD blend: changes the SHAPE of the loss for
                                 tiny tall boxes where IoU is cliff-like; the
                                 only run that isn't a gradient rescale
-      r9_area_fixed WEIGHTING — the one live positive from r8 (area_sqrt,
-                                +0.46 / +0.59 small) re-tested as the clean
-                                deterministic implementation (fixed-ref sqrt,
-                                batch-independent, renormalized)
+      r9_area_fixed WEIGHTING — originally fixed-ref area weighting (area_mode/
+                                area_ref_px/area_gamma/area_w_cap). Those knobs
+                                are NOT in loss2.py -> removed; what remains is
+                                the constant SWA alpha=0.5 schedule.
   * All four are SINGLE-mechanism runs (r7_stack: composition without
     renormalization cost -4.3 — nothing is stacked here).
   * Clips OFF everywhere: r0/v6 showed clipping is null standalone, and a cap
     would silently absorb the DFL boost (watch clip-rate log = 0.00%).
 
-REQUIRES: the NEW-param loss.py (weight_renorm / area_mode / dfl_small_boost /
-  nwd_ratio / cls_loss) with all keys — incl. the STRING keys cls_loss and
-  area_mode — whitelisted in the cfg patch.
+RECONCILED TO loss2.py (the only loss implementation present in this repo):
+  - NWD keys renamed: nwd_ratio -> nwd_weight, nwd_c -> nwd_C; NWD is gated by
+    use_nwd (default False).
+  - cls_loss -> cls_mode ('bce' | 'qfl'); loss2.py has no VFL, so 'vfl' maps to
+    'qfl' and vfl_alpha/vfl_gamma are removed (QFL strength is qfl_beta).
+  - Removed (no loss2.py impl): weight_renorm, area_mode, area_ref_px,
+    area_gamma, area_w_cap, dfl_small_boost.
+  CAUTION: loss2.py's nwd_C is STRIDE-NORMALIZED (default ~4.0), not pixels —
+  the legacy 64.0 saturates NWD (~inert). Retune nwd_C to ~2-6 for r9_nwd.
 
 VERIFY AT LAUNCH (config banner, first lines of console):
-  r9_anchor     : cls_loss: bce | dfl_small_boost: 1.0 | nwd_ratio/c: 0.0
-  r9_vfl        : cls_loss: vfl  (vfl_alpha=0.75 vfl_gamma=2.0)
-  r9_dflboost   : dfl_small_boost: 2.5, small_obj_px: 36
-  r9_nwd        : nwd_ratio/c: 0.5 / 64.0px, small_obj_px: 48
-  r9_area_fixed : area_mode: fixed  ref=64.0px gamma=0.5 cap=3.0, alpha 0.5/0.5
+  r9_anchor     : cls_mode: bce | use_nwd: False | nwd_weight/C: 0.0 / 64.0
+  r9_vfl        : cls_mode: qfl  (qfl_beta=2.0)
+  r9_dflboost   : small_obj_px: 36  (== anchor; dfl_small_boost removed)
+  r9_nwd        : use_nwd: True nwd_mode: blend nwd_weight/C: 0.5 / 64.0, px48
+  r9_area_fixed : alpha 0.5/0.5 const SWA (area_* removed), small_obj_px: 48
 If a banner shows a default instead, the key was dropped by cfg validation —
 ABORT, do not burn the run (r0a2_dflboost lesson).
 
-ANCHOR REPRODUCIBILITY CHECK: r9_anchor uses settings at which every NEW code
-path is mathematically inert (alpha=0 -> renorm identity; boost=1, nwd=0,
-bce). With the same seed/data/imgsz as r8_anchor it should land within normal
-determinism tolerance of it; a large gap means the environment changed again.
+ANCHOR REPRODUCIBILITY CHECK: r9_anchor uses settings at which every optional
+path is inert (alpha=0; use_nwd False; cls_mode bce). With the same
+seed/data/imgsz as r8_anchor it should land within normal determinism
+tolerance of it; a large gap means the environment changed again.
 
 DECISION RULE (fixed in advance, val-split, before any test eval):
   A mechanism is a CANDIDATE only if val mAP50-95 > anchor + 0.5 OR
@@ -95,11 +100,13 @@ SEED = 0
 _SWA_OFF = dict(
     alpha_start=0.0, alpha_end=0.0, alpha_min=0.0, alpha_max=0.0,
     small_obj_boost=1.0,
-    # NEW-1/NEW-2: inert at alpha=0 (renorm is identity, area weight unused)
-    weight_renorm=1, area_mode="fixed", area_ref_px=64.0, area_gamma=0.5,
-    area_w_cap=3.0,
+    # NOTE: weight_renorm / area_mode / area_ref_px / area_gamma / area_w_cap
+    # are NOT implemented in loss2.py and have been removed.
 )
-_TARGETED_OFF = dict(dfl_small_boost=1.0, nwd_ratio=0.0, nwd_c=64.0)
+# NOTE: dfl_small_boost is NOT in loss2.py (removed). NWD keys renamed to the
+# loss2.py names: nwd_ratio -> nwd_weight, nwd_c -> nwd_C. loss2.py gates NWD on
+# use_nwd (default False), so the OFF block sets use_nwd=False.
+_TARGETED_OFF = dict(use_nwd=False, nwd_weight=0.0, nwd_C=64.0)
 _CENTER_OFF = dict(
     center_loss_weight_init=0.0, center_loss_weight_min=0.0,
     center_loss_decay_epochs=35,
@@ -109,7 +116,8 @@ _CLIP_OFF = dict(
     dfl_clip_start=999.0, dfl_clip_end=999.0,
 )
 _TAL_STOCK = dict(tal_topk=10, tal_alpha=0.5, tal_beta=6.0)
-_CLS_BCE = dict(cls_loss="bce", vfl_alpha=0.75, vfl_gamma=2.0)
+# loss2.py uses cls_mode ('bce' | 'qfl'); it has no VFL, so vfl_* are removed.
+_CLS_BCE = dict(cls_mode="bce")
 
 # =============================================================================
 # RUN CONFIGS
@@ -122,14 +130,17 @@ R9_ANCHOR = dict(
     **_TARGETED_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
-# 1) RANKING — Varifocal classification, everything else stock.
+# 1) RANKING — IoU-aware classification, everything else stock.
 #    Positives weighted by their soft TAL score (localization quality), so the
 #    classifier learns to rank by IoU. Targets the AP50-95 vs AR50 gap without
-#    touching regression at all. Standard VFL hyps (0.75 / 2.0).
+#    touching regression at all.
+#    NOTE: loss2.py has no Varifocal loss; cls_mode='qfl' (Quality Focal Loss)
+#    is its IoU-aware option, so cls_loss='vfl' -> cls_mode='qfl' and vfl_alpha/
+#    vfl_gamma are removed (loss2.py's QFL strength is qfl_beta, default 2.0).
 R9_VFL = dict(
     **_SWA_OFF, small_obj_px=48,
     **_TARGETED_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK,
-    cls_loss="vfl", vfl_alpha=0.75, vfl_gamma=2.0,
+    cls_mode="qfl",
 )
 
 # 2) EDGES — DFL-only boost for genuinely small objects.
@@ -139,9 +150,11 @@ R9_VFL = dict(
 #    that boosted ~57%. Boost 2.5 on DFL only, alpha=0 so no area blending:
 #    isolates "sharper edge distributions for small boxes" from everything
 #    Section A already falsified. Clips OFF so the boost cannot be absorbed.
+# NOTE: dfl_small_boost is NOT implemented in loss2.py and was removed. With it
+# gone this config equals the anchor and no longer tests the DFL-only boost.
 R9_DFLBOOST = dict(
     **_SWA_OFF, small_obj_px=36,
-    dfl_small_boost=2.5, nwd_ratio=0.0, nwd_c=64.0,
+    use_nwd=False, nwd_weight=0.0, nwd_C=64.0,
     **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
@@ -152,9 +165,14 @@ R9_DFLBOOST = dict(
 #    cliff-like for 20-40px-wide tall boxes, rather than rescaling gradients.
 #    px=48 deliberately broader than r9_dflboost: NWD is a smoothing, not a
 #    dose, so covering the whole small bin is the honest test.
+# NOTE: NWD IS implemented in loss2.py (use_nwd + nwd_mode='blend' + nwd_weight
+# + nwd_C). Renamed: nwd_ratio -> nwd_weight, nwd_c -> nwd_C; use_nwd=True turns
+# it on. dfl_small_boost removed (not in loss2.py). CAUTION: loss2.py's nwd_C is
+# in STRIDE-NORMALIZED coords (default 4.0), not pixels — the old 64.0 pixel
+# constant saturates NWD (~1 = inert). Retune nwd_C to ~2-6 for a real test.
 R9_NWD = dict(
     **_SWA_OFF, small_obj_px=48,
-    dfl_small_boost=1.0, nwd_ratio=0.5, nwd_c=64.0,
+    use_nwd=True, nwd_mode="blend", nwd_weight=0.5, nwd_C=64.0,
     **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
@@ -167,11 +185,14 @@ R9_NWD = dict(
 #    redistribution toward smaller boxes. boost=1: one mechanism only.
 #    If THIS fails to replicate the r8 gain, area weighting closes for good;
 #    if it holds, it is finally attributable to a defined, reproducible rule.
+# NOTE: the fixed-ref area-weighting knobs (weight_renorm, area_mode,
+# area_ref_px, area_gamma, area_w_cap) are NOT implemented in loss2.py and were
+# removed. loss2.py's related knob is area_weight_mode ('inv'|'sqrt'|'log') on
+# BboxLoss; the closest surviving mechanism here is the constant SWA alpha
+# schedule (alpha 0.5) which still redistributes weight toward smaller boxes.
 R9_AREA_FIXED = dict(
     alpha_start=0.5, alpha_end=0.5, alpha_min=0.5, alpha_max=0.5,
     small_obj_px=48, small_obj_boost=1.0,
-    weight_renorm=1, area_mode="fixed", area_ref_px=64.0, area_gamma=0.5,
-    area_w_cap=3.0,
     **_TARGETED_OFF, **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
 )
 
@@ -179,11 +200,11 @@ R9_AREA_FIXED = dict(
 # RUNS TO EXECUTE, IN ORDER (anchor first — everything is judged against it)
 # =============================================================================
 RUNS = [
-    {"name": "r9_anchor",     "phase": "-",  "label": "Fresh anchor — all NEW paths inert; repro check vs r8_anchor",        "params": R9_ANCHOR},
-    # {"name": "r9_vfl",        "phase": "E",  "label": "Varifocal cls (0.75/2.0) — IoU-aware ranking, regression stock",      "params": R9_VFL},
-    {"name": "r9_dflboost",   "phase": "A'", "label": "DFL-only boost 2.5 @px36, alpha=0, clips off — edge precision",       "params": R9_DFLBOOST},
-    {"name": "r9_nwd",        "phase": "A''","label": "NWD blend r=0.5 c=64 @px48 — loss-surface change for tiny boxes",     "params": R9_NWD},
-    {"name": "r9_area_fixed", "phase": "A",  "label": "Fixed-ref sqrt area weight, alpha=0.5 const, renorm — r8 replication","params": R9_AREA_FIXED},
+    {"name": "r9_anchor",     "phase": "-",  "label": "Fresh anchor — all optional paths inert; repro check vs r8_anchor",   "params": R9_ANCHOR},
+    # {"name": "r9_vfl",        "phase": "E",  "label": "QFL cls (qfl_beta=2.0) — IoU-aware ranking, regression stock",        "params": R9_VFL},
+    {"name": "r9_dflboost",   "phase": "A'", "label": "px36 (dfl_small_boost removed -> == anchor in loss2.py)",             "params": R9_DFLBOOST},
+    {"name": "r9_nwd",        "phase": "A''","label": "NWD blend weight=0.5 C=64 @px48 — loss-surface change for tiny boxes","params": R9_NWD},
+    {"name": "r9_area_fixed", "phase": "A",  "label": "Const SWA alpha=0.5 (area_* removed in loss2.py) — size reweighting", "params": R9_AREA_FIXED},
     # After this round: seeds 1,2 for the anchor + any candidate passing the
     # decision rule in the header. Add entries like:
     # {"name": "r9_anchor_s1", "phase": "-", "label": "anchor seed 1", "params": R9_ANCHOR, "seed": 1},

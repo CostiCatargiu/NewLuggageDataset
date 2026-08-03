@@ -4,18 +4,23 @@
     {
       "name": "r0_default2",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0,
+        "alpha_end": 0,
+        "alpha_min": 0,
+        "alpha_max": 0,
+        "small_obj_px": 0,
+        "small_obj_boost": 1,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 6.0
+        "tal_beta": 6
       },
       "metrics": {
         "mAP50_all": 0.8269961964673794,
@@ -149,18 +154,23 @@
     {
       "name": "r0a_swa_a05_0252",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0.5,
+        "alpha_end": 0.25,
+        "alpha_min": 0.25,
+        "alpha_max": 0.5,
+        "small_obj_px": 48,
+        "small_obj_boost": 2,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 6.0
+        "tal_beta": 6
       },
       "metrics": {
         "mAP50_all": 0.8295609702923281,
@@ -294,18 +304,23 @@
     {
       "name": "r0a_swa_a07_032",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0.7,
+        "alpha_end": 0.3,
+        "alpha_min": 0.3,
+        "alpha_max": 0.7,
+        "small_obj_px": 48,
+        "small_obj_boost": 2,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 6.0
+        "tal_beta": 6
       },
       "metrics": {
         "mAP50_all": 0.825753482004049,
@@ -439,18 +454,23 @@
     {
       "name": "r0a_swa_a09_042",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0.9,
+        "alpha_end": 0.4,
+        "alpha_min": 0.4,
+        "alpha_max": 0.9,
+        "small_obj_px": 48,
+        "small_obj_boost": 2,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 6.0
+        "tal_beta": 6
       },
       "metrics": {
         "mAP50_all": 0.8307387988266318,
@@ -584,18 +604,23 @@
     {
       "name": "r0b_center_w052",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0,
+        "alpha_end": 0,
+        "alpha_min": 0,
+        "alpha_max": 0,
+        "small_obj_px": 48,
+        "small_obj_boost": 1,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 6.0
+        "tal_beta": 6,
+        "center_loss_weight_init": 0.5,
+        "center_loss_weight_min": 0.01,
+        "center_loss_decay_epochs": 35
       },
       "metrics": {
         "mAP50_all": 0.8237436257817455,
@@ -729,18 +754,23 @@
     {
       "name": "r0a2_dflboost",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0,
+        "alpha_end": 0,
+        "alpha_min": 0,
+        "alpha_max": 0,
+        "small_obj_px": 36,
+        "small_obj_boost": 1,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 6.0
+        "tal_beta": 6
       },
       "metrics": {
         "mAP50_all": 0.8269961964673794,
@@ -874,18 +904,23 @@
     {
       "name": "r0a2_px24_hi",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0.7,
+        "alpha_end": 0.7,
+        "alpha_min": 0.7,
+        "alpha_max": 0.7,
+        "small_obj_px": 24,
+        "small_obj_boost": 4,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 6.0
+        "tal_beta": 6
       },
       "metrics": {
         "mAP50_all": 0.8253002962553388,
@@ -1019,18 +1054,23 @@
     {
       "name": "r0a2_px24_tgt",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0.9,
+        "alpha_end": 0.4,
+        "alpha_min": 0.4,
+        "alpha_max": 0.9,
+        "small_obj_px": 24,
+        "small_obj_boost": 2,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 6.0
+        "tal_beta": 6
       },
       "metrics": {
         "mAP50_all": 0.8314852312623667,
@@ -1164,18 +1204,23 @@
     {
       "name": "r0a2_rise",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0.2,
+        "alpha_end": 0.8,
+        "alpha_min": 0.2,
+        "alpha_max": 0.8,
+        "small_obj_px": 36,
+        "small_obj_boost": 2,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 6.0
+        "tal_beta": 6
       },
       "metrics": {
         "mAP50_all": 0.8267570131510942,
@@ -1309,18 +1354,23 @@
     {
       "name": "r0d_tal_beta4",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0,
+        "alpha_end": 0,
+        "alpha_min": 0,
+        "alpha_max": 0,
+        "small_obj_px": 0,
+        "small_obj_boost": 1,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 4.0
+        "tal_beta": 4
       },
       "metrics": {
         "mAP50_all": 0.8316366254084228,
@@ -1454,18 +1504,23 @@
     {
       "name": "r0d_tal_beta8",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0,
+        "alpha_end": 0,
+        "alpha_min": 0,
+        "alpha_max": 0,
+        "small_obj_px": 0,
+        "small_obj_boost": 1,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
         "tal_alpha": 0.5,
-        "tal_beta": 8.0
+        "tal_beta": 8
       },
       "metrics": {
         "mAP50_all": 0.8231272890141095,
@@ -1599,18 +1654,23 @@
     {
       "name": "r0d_tal_tood",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0,
+        "alpha_end": 0,
+        "alpha_min": 0,
+        "alpha_max": 0,
+        "small_obj_px": 0,
+        "small_obj_boost": 1,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 10,
-        "tal_alpha": 1.0,
-        "tal_beta": 6.0
+        "tal_alpha": 1,
+        "tal_beta": 6
       },
       "metrics": {
         "mAP50_all": 0.8302223017796497,
@@ -1744,18 +1804,23 @@
     {
       "name": "r0d_tal_topk133",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0,
+        "alpha_end": 0,
+        "alpha_min": 0,
+        "alpha_max": 0,
+        "small_obj_px": 0,
+        "small_obj_boost": 1,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 13,
         "tal_alpha": 0.7,
-        "tal_beta": 4.0
+        "tal_beta": 4
       },
       "metrics": {
         "mAP50_all": 0.8253659159440714,
@@ -1889,18 +1954,23 @@
     {
       "name": "r0d_tal_topk6",
       "split": "test_full_dataset",
-      "config": {
-        "use_satal": false,
-        "satal_alpha_small": 1.2,
-        "satal_beta_small": 4.5,
-        "satal_alpha_large": 1.0,
-        "satal_beta_large": 6.0,
-        "satal_small_area": 0.0025,
-        "satal_large_area": 0.0225,
-        "satal_topk_factor": 1.3,
+      "params": {
+        "alpha_start": 0,
+        "alpha_end": 0,
+        "alpha_min": 0,
+        "alpha_max": 0,
+        "small_obj_px": 0,
+        "small_obj_boost": 1,
+        "center_loss_weight_init": 0,
+        "center_loss_weight_min": 0,
+        "center_loss_decay_epochs": 35,
+        "iou_clip_start": 999,
+        "iou_clip_end": 999,
+        "dfl_clip_start": 999,
+        "dfl_clip_end": 999,
         "tal_topk": 6,
         "tal_alpha": 0.5,
-        "tal_beta": 6.0
+        "tal_beta": 6
       },
       "metrics": {
         "mAP50_all": 0.8272590103029489,

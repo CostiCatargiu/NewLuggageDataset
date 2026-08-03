@@ -10,54 +10,51 @@ WHY THIS ROUND IS DIFFERENT
   REWEIGHTING of the same CIoU+DFL signal. Reweighting is zero-sum under
   weight_renorm and cannot add localization information -> the plateau.
 
-  Round 10 changes the REGRESSION SIGNAL ITSELF:
+  Round 10 ORIGINALLY changed the REGRESSION SIGNAL ITSELF (see RECONCILED note):
 
-  r10_alpha_iou   [NEW-10] alpha-IoU (power-IoU). loss = 1 - IoU^alpha (+CIoU
-                  penalty). Concentrates gradient in the HIGH-IoU regime, which
-                  is exactly where AP75/AP90 live. One knob, directly targets
-                  the strict-threshold deficit. alpha=3.0.
+  r10_alpha_iou   [NEW-10] alpha-IoU (power-IoU), alpha=3.0. NOT in loss2.py ->
+                  removed; run == anchor.
 
-  r10_l1_smooth   [NEW-11] Pixel-space Smooth-L1 residual auxiliary on L/T/R/B.
-                  (1-IoU) gradient FLATTENS as the box tightens; Smooth-L1 keeps
-                  a non-vanishing gradient near the optimum -> supplies the
-                  "last few pixels" signal. small-object gated, added post-clip.
+  r10_l1_smooth   [NEW-11] Pixel-space Smooth-L1 residual auxiliary (l1_aux_*).
+                  NOT in loss2.py -> removed; run == anchor.
 
-  r10_dfl_entropy [NEW-12] DFL distribution sharpening. Penalizes the entropy of
-                  each side's softmax bin distribution so loose/multi-modal edge
-                  distributions become sharp & unimodal -> crisper decoded edges.
-                  Shapes the PREDICTION, not the loss weight. small-gated.
+  r10_dfl_entropy [NEW-12] DFL distribution sharpening (dfl_entropy_*). NOT in
+                  loss2.py -> removed; run == anchor.
 
-  r10_nwd_fixedc  [NEW-13] Adaptive NWD with SIZE-ADAPTIVE temperature. The R9
-                  NWD used a fixed c=64px, which saturates (nwd~1 -> inert) for
-                  the small boxes it targets. Here c = 0.5*sqrt(area_px), so NWD
-                  stays discriminative in the small regime. Combined with the
-                  R9b adaptive+anneal ratio schedule.
+  r10_nwd_fixedc  [NEW-13] NWD blend. The size-adaptive-c / adaptive / anneal
+                  knobs (nwd_c_adaptive, nwd_c_k, nwd_adaptive, nwd_anneal,
+                  nwd_anneal_min) are NOT in loss2.py -> removed. Surviving
+                  lever: use_nwd + nwd_mode='blend' + nwd_weight + nwd_C.
 
-  r10_tightness   [NEW-14] Asymmetric tightness penalty. Loose small boxes spill
-                  OVER the GT; charge over-extended sides (normalized by object
-                  diagonal) to pull boxes to hug the object. small-gated.
+  r10_tightness   [NEW-14] Asymmetric tightness penalty (tightness_*). NOT in
+                  loss2.py -> removed; run == anchor.
 
-  r10_combo       alpha-IoU 2.0 + Smooth-L1 0.05 + DFL-entropy 0.03. These are
-                  orthogonal: alpha-IoU reshapes the overlap gradient, L1 adds
-                  sub-pixel residual gradient, entropy sharpens the DFL bins.
+  r10_combo       alpha-IoU + Smooth-L1 + DFL-entropy. None are in loss2.py ->
+                  removed; run == anchor.
 
-REQUIRES (loss.py, this version): NEW-10..14 params. You MUST also whitelist the
-  new keys in whatever ultralytics cfg patch already whitelists iarw_gamma/
-  nwd_ratio, or model.train() will drop them and every run silently == anchor:
-    alpha_iou, l1_aux_weight, l1_aux_beta, l1_aux_small_only, l1_balanced,
-    l1_balanced_alpha, l1_balanced_gamma, dfl_entropy_weight,
-    dfl_entropy_small_only, nwd_c_adaptive, nwd_c_k, tightness_gamma,
-    tightness_small_only
+RECONCILED TO loss2.py (the only loss implementation present in this repo):
+  - NWD keys renamed: nwd_ratio -> nwd_weight, nwd_c -> nwd_C; NWD gated by
+    use_nwd (default False). loss2.py has only a plain NWD blend.
+  - cls_loss -> cls_mode ('bce' | 'qfl'); vfl_* removed.
+  - Removed (no loss2.py impl): alpha_iou, l1_aux_weight, l1_aux_beta,
+    l1_aux_small_only, l1_balanced, l1_balanced_alpha, l1_balanced_gamma,
+    dfl_entropy_weight, dfl_entropy_small_only, nwd_c_adaptive, nwd_c_k,
+    nwd_adaptive, nwd_anneal, nwd_anneal_min, tightness_gamma,
+    tightness_small_only, iarw_gamma, dfl_small_boost, dfl_iou_gated,
+    weight_renorm, area_*.
+  CONSEQUENCE: only r10_nwd_fixedc stays a live lever (plain NWD blend); every
+  other R10 run collapses to the anchor until loss2.py implements those signals.
+  CAUTION: loss2.py nwd_C is STRIDE-NORMALIZED (~4.0), not pixels — the legacy
+  64.0 saturates NWD (~inert); retune to ~2-6.
 
-VERIFY AT LAUNCH (loss.py config banner must show):
-  r10_anchor     : alpha_iou=1.0 l1_aux_weight=0.0 dfl_entropy=0.0
-                   nwd_c_adaptive=0 tightness_gamma=0.0   (all inert)
-  r10_alpha_iou  : alpha_iou=3.0, everything else off
-  r10_l1_smooth  : l1_aux_weight=0.05 Smooth-L1, everything else off
-  r10_dfl_entropy: dfl_entropy=0.05, everything else off
-  r10_nwd_fixedc : nwd_ratio=0.3 adaptive+anneal + nwd_c_adaptive=1
-  r10_tightness  : tightness_gamma=0.5, everything else off
-  r10_combo      : alpha_iou=2.0 + l1_aux_weight=0.05 + dfl_entropy=0.03
+VERIFY AT LAUNCH (config banner):
+  r10_anchor     : cls_mode bce | use_nwd False | nwd_weight/C 0.0/64.0 (inert)
+  r10_alpha_iou  : == anchor (alpha_iou removed)
+  r10_l1_smooth  : == anchor (l1_aux_* removed)
+  r10_dfl_entropy: == anchor (dfl_entropy_* removed)
+  r10_nwd_fixedc : use_nwd True nwd_mode blend nwd_weight/C 0.3/64.0
+  r10_tightness  : == anchor (tightness_* removed)
+  r10_combo      : == anchor (alpha_iou + l1 + dfl_entropy removed)
 
 DECISION RULE (fixed before any eval, same as R9):
   candidate iff val mAP50-95 > anchor+0.5 OR val AP50-95_small > anchor+0.8.
@@ -101,26 +98,22 @@ SEED = 0
 # =============================================================================
 # Shared OFF blocks — every run states EVERY custom param explicitly.
 # =============================================================================
+# RECONCILED TO loss2.py:
+#  Round 10's regression-signal mechanisms are NOT implemented in loss2.py and
+#  were removed: alpha_iou, l1_aux_*, l1_balanced*, dfl_entropy_*, tightness_*,
+#  nwd_adaptive, nwd_anneal, nwd_anneal_min, nwd_c_adaptive, nwd_c_k, iarw_gamma,
+#  dfl_small_boost, dfl_iou_gated, weight_renorm, area_*, vfl_*.
+#  Renamed to loss2.py names: nwd_ratio -> nwd_weight, nwd_c -> nwd_C,
+#  cls_loss -> cls_mode. NWD is gated by use_nwd.
+#  CONSEQUENCE: only the plain NWD blend (r10_nwd_fixedc) survives as a live
+#  lever; every other R10 run collapses to the anchor until loss2.py implements
+#  the corresponding mechanism.
 _SWA_OFF = dict(
     alpha_start=0.0, alpha_end=0.0, alpha_min=0.0, alpha_max=0.0,
     small_obj_boost=1.0,
-    weight_renorm=1, area_mode="fixed", area_ref_px=64.0, area_gamma=0.5,
-    area_w_cap=3.0,
 )
-_TARGETED_OFF = dict(
-    dfl_small_boost=1.0, dfl_iou_gated=0,
-    nwd_ratio=0.0, nwd_c=64.0, nwd_adaptive=0, nwd_anneal=0, nwd_anneal_min=0.1,
-)
-_IARW_OFF = dict(iarw_gamma=0.0)
-# --- Round 10 OFF block (all new mechanisms inert) ---
-_R10_OFF = dict(
-    alpha_iou=1.0,
-    l1_aux_weight=0.0, l1_aux_beta=2.0, l1_aux_small_only=1,
-    l1_balanced=0, l1_balanced_alpha=0.5, l1_balanced_gamma=1.5,
-    dfl_entropy_weight=0.0, dfl_entropy_small_only=1,
-    nwd_c_adaptive=0, nwd_c_k=0.5,
-    tightness_gamma=0.0, tightness_small_only=1,
-)
+# NWD off block: loss2.py gates NWD on use_nwd (default False).
+_TARGETED_OFF = dict(use_nwd=False, nwd_weight=0.0, nwd_C=64.0)
 _CENTER_OFF = dict(
     center_loss_weight_init=0.0, center_loss_weight_min=0.0,
     center_loss_decay_epochs=35,
@@ -130,14 +123,15 @@ _CLIP_OFF = dict(
     dfl_clip_start=999.0, dfl_clip_end=999.0,
 )
 _TAL_STOCK = dict(tal_topk=10, tal_alpha=0.5, tal_beta=6.0)
-_CLS_BCE = dict(cls_loss="bce", vfl_alpha=0.75, vfl_gamma=2.0)
+# loss2.py uses cls_mode ('bce' | 'qfl'); no VFL, so vfl_* are removed.
+_CLS_BCE = dict(cls_mode="bce")
 
 
 def _base(**overrides):
-    """Fully-inert config; overrides flip on exactly the mechanism under test."""
+    """Fully-inert config (loss2.py params only); overrides flip a mechanism."""
     cfg = dict(
         **_SWA_OFF, small_obj_px=48,
-        **_TARGETED_OFF, **_IARW_OFF, **_R10_OFF,
+        **_TARGETED_OFF,
         **_CENTER_OFF, **_CLIP_OFF, **_TAL_STOCK, **_CLS_BCE,
     )
     cfg.update(overrides)
@@ -147,28 +141,30 @@ def _base(**overrides):
 # =============================================================================
 # RUN CONFIGS
 # =============================================================================
+# NOTE: mechanisms not implemented in loss2.py were dropped, so the runs below
+# that relied on them (alpha_iou / L1 / DFL-entropy / tightness / combo) now
+# equal the anchor. Only r10_nwd_fixedc keeps a live lever (plain NWD blend).
 R10_ANCHOR      = _base()                                        # all inert
-R10_ALPHA_IOU   = _base(alpha_iou=3.0)                           # NEW-10
-R10_L1_SMOOTH   = _base(l1_aux_weight=0.05, l1_balanced=0,       # NEW-11
-                        l1_aux_beta=2.0, l1_aux_small_only=1)
-R10_DFL_ENTROPY = _base(dfl_entropy_weight=0.05,                 # NEW-12
-                        dfl_entropy_small_only=1)
-R10_NWD_FIXEDC  = _base(nwd_ratio=0.3, nwd_c=64.0,               # NEW-13 (+5b/5c)
-                        nwd_adaptive=1, nwd_anneal=1, nwd_anneal_min=0.1,
-                        nwd_c_adaptive=1, nwd_c_k=0.5, small_obj_px=48)
-R10_TIGHTNESS   = _base(tightness_gamma=0.5, tightness_small_only=1)  # NEW-14
-R10_COMBO       = _base(alpha_iou=2.0,                           # NEW-10+11+12
-                        l1_aux_weight=0.05, l1_aux_beta=2.0, l1_aux_small_only=1,
-                        dfl_entropy_weight=0.03, dfl_entropy_small_only=1)
+R10_ALPHA_IOU   = _base()   # alpha_iou not in loss2.py -> == anchor
+R10_L1_SMOOTH   = _base()   # l1_aux_* not in loss2.py -> == anchor
+R10_DFL_ENTROPY = _base()   # dfl_entropy_* not in loss2.py -> == anchor
+# NWD blend IS in loss2.py. Adaptive/anneal/size-adaptive-c knobs are NOT and
+# were dropped; what remains is use_nwd + nwd_mode='blend' + nwd_weight + nwd_C.
+# CAUTION: loss2.py nwd_C is STRIDE-NORMALIZED (default 4.0), not pixels — the
+# old 64.0 saturates NWD (~inert); retune nwd_C to ~2-6.
+R10_NWD_FIXEDC  = _base(use_nwd=True, nwd_mode="blend", nwd_weight=0.3,
+                        nwd_C=64.0, small_obj_px=48)
+R10_TIGHTNESS   = _base()   # tightness_* not in loss2.py -> == anchor
+R10_COMBO       = _base()   # alpha_iou + l1 + dfl_entropy not in loss2.py -> == anchor
 
 RUNS = [
-    {"name": "r10_anchor",      "phase": "-",    "label": "Fresh anchor — all NEW-10..14 inert",                 "params": R10_ANCHOR},
-    {"name": "r10_alpha_iou",   "phase": "R10",  "label": "alpha-IoU 3.0 — power-IoU, high-IoU gradient focus",  "params": R10_ALPHA_IOU},
-    {"name": "r10_l1_smooth",   "phase": "R10",  "label": "Smooth-L1 pixel aux 0.05 (small) — sub-pixel signal", "params": R10_L1_SMOOTH},
-    {"name": "r10_dfl_entropy", "phase": "R10",  "label": "DFL entropy sharpen 0.05 (small) — crisper edges",    "params": R10_DFL_ENTROPY},
-    {"name": "r10_nwd_fixedc",  "phase": "R10",  "label": "Adaptive NWD 0.3 + size-adaptive c — corrected NWD",  "params": R10_NWD_FIXEDC},
-    {"name": "r10_tightness",   "phase": "R10",  "label": "Asymmetric tightness 0.5 (small) — anti-spillover",   "params": R10_TIGHTNESS},
-    {"name": "r10_combo",       "phase": "R10",  "label": "alpha-IoU 2.0 + L1 0.05 + DFL-ent 0.03 — orthogonal", "params": R10_COMBO},
+    {"name": "r10_anchor",      "phase": "-",    "label": "Fresh anchor — all optional paths inert",             "params": R10_ANCHOR},
+    {"name": "r10_alpha_iou",   "phase": "R10",  "label": "alpha_iou removed in loss2.py -> == anchor",          "params": R10_ALPHA_IOU},
+    {"name": "r10_l1_smooth",   "phase": "R10",  "label": "l1_aux_* removed in loss2.py -> == anchor",           "params": R10_L1_SMOOTH},
+    {"name": "r10_dfl_entropy", "phase": "R10",  "label": "dfl_entropy_* removed in loss2.py -> == anchor",      "params": R10_DFL_ENTROPY},
+    {"name": "r10_nwd_fixedc",  "phase": "R10",  "label": "NWD blend weight=0.3 C=64 (adaptive-c removed in loss2.py)","params": R10_NWD_FIXEDC},
+    {"name": "r10_tightness",   "phase": "R10",  "label": "tightness_* removed in loss2.py -> == anchor",        "params": R10_TIGHTNESS},
+    {"name": "r10_combo",       "phase": "R10",  "label": "alpha_iou+l1+dfl_entropy removed in loss2.py -> == anchor","params": R10_COMBO},
 ]
 
 
