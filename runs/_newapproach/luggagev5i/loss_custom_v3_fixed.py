@@ -24,12 +24,60 @@ from .tal import bbox2dist
 # at "neutral" settings. Nothing here rewrites stock arithmetic.
 #
 # MECHANISMS
-#   use_ardfl  per-edge DFL weights  (w,h,w,h)
-#   use_peu    per-edge attenuation by the DFL distribution's own variance
-#   use_lba    level-balanced assignment prior on the TAL alignment metric
+#   use_ardfl        per-edge DFL weights  (w,h,w,h)                    [CLOSED]
+#   use_peu          per-edge attenuation by the DFL distribution's own
+#                    variance                                           [CLOSED]
+#   use_lba          level-balanced assignment prior on the TAL metric   [CLOSED]
+#   use_pos_boost    Section P: positive-only cls boost, per class x size  [NEW]
+#   use_freq_weight  the Section P CONTROL: inverse-frequency class weights
 #
 # Only one of use_ardfl / use_peu may be on at a time — both rewrite the same
-# per-edge DFL reduction, so together they are unattributable.
+# per-edge DFL reduction, so together they are unattributable. Likewise
+# use_pos_boost and use_freq_weight are the mechanism and its control: separate
+# arms, never together. All combinations are enforced in CustomLossCfg._validate.
+#
+# -----------------------------------------------------------------------------
+# ROUND 1 RESULTS (test split, vs the v3_anchor2 = stock baseline at 57.63):
+#   ardfl_w  57.41  ardfl_h 57.02  dflgain17 56.91  peu 56.53
+#   lba2     57.57 (large +1.37, small -0.37)   lba_gated 57.33
+# Readings, all with controls:
+#   * DFL channel TRIPLE-eliminated: reshaping per-edge emphasis loses in both
+#     directions (w-heavy, h-heavy) AND raising the gain uniformly loses too.
+#   * PEU killed with attribution: it scored BELOW its own static imitation
+#     (ardfl_h) and below its magnitude control (dflgain17), so the ADAPTIVE
+#     component — the mechanism's distinguishing feature — was worth about
+#     -0.5 on its own. Its norm_by_mu also INVERTED the intended attenuation
+#     (measured weights l 0.711 t 1.171 r 0.689 b 1.429): variance scales as
+#     ~mu^1.1 on this data, so dividing by mu^2 over-corrects and up-weights
+#     the long edges. The scale-free exponent is ~1, not 2.
+#   * LBA works as designed — telemetry confirmed s32 fg share 3.8% -> 13.0%
+#     at convergence, correcting the s32 metric bias the footprint diagnostic
+#     measured (SEL BIAS 0.30), with the per-class gain landing exactly where
+#     that diagnostic predicted (trolley-large, whose s32 bias was worst at
+#     0.18). But the gain and the cost are the SAME effect: the anchors large
+#     objects gain are taken from small/medium (s8 fg -12%), and gating to
+#     large removed both (+1.37 -> +0.31). Anchor assignment is zero-sum.
+#
+# SECTION P — why the classification channel is next.
+# Every round-1 mechanism operated on box regression or anchor assignment.
+# None touched the cls score. The anchor's confusion matrix says that is where
+# the error mass is:
+#     bag ROW    -> backpack 0.03, trolley 0.02, background 0.25
+#     bag COLUMN -> correct 0.68, MISSED (predicted background) 0.24
+# i.e. bag is not confused with the other classes, it is UNDER-SCORED and falls
+# below threshold. The same signature holds globally: AR50_small 0.962 vs
+# R50_small 0.727 — small objects are FOUND but not SCORED. (A cross-class
+# penalty, e.g. the sibling lineage's Section L, would fire on 3% of the
+# problem and was dropped on this evidence.)
+# So Section P scales ONLY the positive bce term at fg anchors, by class and by
+# size, with weights read off the per-cell recall gaps (trolley 0.87 -> 1.0,
+# backpack 0.80 -> 1.0, bag 0.68 -> 1.5; small x1.5). The negative term stays
+# stock, so nothing is suppressed. Unlike LBA it is NOT zero-sum: raising a
+# logit takes nothing from any other anchor.
+# UNITS: pos_boost_small_px is in MODEL pixels. The dataset is 512px labels
+# trained at imgsz=640 (1.25x), so the analysis' 48px 'small' bin is 60px here.
+# The same trap already bit the LBA gate (96 model-px = 77 label-px, i.e. mid
+# 'medium', not the large boundary it was assumed to be).
 #
 # -----------------------------------------------------------------------------
 # FIX/IMPROVEMENT PATCH (review round):
@@ -78,6 +126,21 @@ from .tal import bbox2dist
 # New hyp keys added by this patch:
 #   peu_center ('global'|'edge'), ardfl_mode ('fixed'|'per_box'),
 #   ardfl_ratio_power (default 1.0), ardfl_ratio_clip (default 3.0)
+#
+# New hyp keys added by Section P (whitelist in cfg/default.yaml):
+#   use_pos_boost, pos_boost_backpack, pos_boost_bag, pos_boost_trolley,
+#   pos_boost_small, pos_boost_small_px, pos_boost_clip, pos_boost_log,
+#   use_freq_weight
+#   NB the control is use_freq_weight, NOT use_class_weight: default.yaml
+#   already carries an inert 'use_class_weighting' key from the sibling
+#   lineage which THIS FILE NEVER READS, and two near-identical names is how
+#   a run becomes uninterpretable six weeks later.
+#
+# Telemetry: lba_report() / lba_gate_report() / peu_report() / posboost_report()
+#   — module-level shims read the last-constructed criterion; with
+#   E2EDetectLoss call the per-instance methods instead. posboost_report()
+#   returns per-class MEAN fg SCORE, which is the direct readout of whether
+#   Section P is raising confidence at all: check it before reading mAP.
 # -----------------------------------------------------------------------------
 
 _EPOCH = {"epoch": 0, "total": 0, "set": False}
@@ -212,12 +275,16 @@ class CustomLossCfg:
         self.pos_boost_log = bool(g("pos_boost_log", True))
 
         # --- CONTROL for Section P: plain inverse-frequency class weighting ---
+        # NAMED use_freq_weight, NOT use_class_weight: default.yaml already
+        # carries an inert 'use_class_weighting' key from the SATAL lineage
+        # (this file never reads it) and two near-identical names is exactly
+        # how a run becomes uninterpretable later.
         # Rarer classes ARE often the under-scored ones, so a P gain must be
         # shown to exceed what plain frequency weighting buys. Scales BOTH bce
         # terms by sqrt-dampened inverse frequency (train counts 11491 / 9490 /
         # 21557 -> ~[0.99, 1.09, 0.72] after mean-normalisation).
-        self.use_class_weight = bool(g("use_class_weight", False))
-        self.class_weight_counts = [11491.0, 9490.0, 21557.0]
+        self.use_freq_weight = bool(g("use_freq_weight", False))
+        self.freq_weight_counts = [11491.0, 9490.0, 21557.0]
 
         self._validate()
 
@@ -275,9 +342,9 @@ class CustomLossCfg:
                 raise ValueError("lba_size_axis must be 'max' or 'geom'")
 
         # --- Section P + its control ---
-        if self.use_pos_boost and self.use_class_weight:
+        if self.use_pos_boost and self.use_freq_weight:
             raise ValueError(
-                "use_pos_boost and use_class_weight are the MECHANISM and its "
+                "use_pos_boost and use_freq_weight are the MECHANISM and its "
                 "CONTROL — run them as separate arms, not together."
             )
         if self.use_pos_boost:
@@ -296,10 +363,10 @@ class CustomLossCfg:
 
     def is_stock(self):
         return not (self.use_ardfl or self.use_peu or self.use_lba
-                    or self.use_pos_boost or self.use_class_weight)
+                    or self.use_pos_boost or self.use_freq_weight)
 
     def banner(self):
-        out = ["=" * 62, "  CUSTOM v3 loss  (stock + AR-DFL / PEU / LBA)", "=" * 62,
+        out = ["=" * 62, "  CUSTOM v3 loss  (stock + AR-DFL / PEU / LBA / POS-BOOST)", "=" * 62,
                f"  neutral (== stock):   {self.is_stock()}"]
         out.append(f"  AR-DFL:               {self.use_ardfl}")
         if self.use_ardfl:
@@ -332,7 +399,7 @@ class CustomLossCfg:
                        f"{self.pos_boost_bag} / {self.pos_boost_trolley}")
             out.append(f"    small x{self.pos_boost_small} below {self.pos_boost_small_px}px "
                        f"(MODEL px)  clip {self.pos_boost_clip}")
-        out.append(f"  CLASS-WEIGHT (ctrl):  {self.use_class_weight}")
+        out.append(f"  CLASS-WEIGHT (ctrl):  {self.use_freq_weight}")
         out.append("=" * 62)
         return "\n".join(out)
 
@@ -569,15 +636,15 @@ def _cls_loss_pos_boost(bce_fn, pred_scores, target_scores, fg_mask, cfg,
     Scaling the loss at (fg anchor, assigned class) therefore scales the
     positive term — no other column is touched, so nothing is suppressed.
 
-    Control (use_class_weight): sqrt-dampened inverse-frequency weights applied
+    Control (use_freq_weight): sqrt-dampened inverse-frequency weights applied
     to ALL columns (both terms), i.e. ordinary class-imbalance weighting.
 
     Neutral when both flags are off: returns exactly bce.sum().
     """
     bce = bce_fn(pred_scores, target_scores.to(pred_scores.dtype))   # (b, A, nc)
 
-    if cfg.use_class_weight:
-        cnt = torch.tensor(cfg.class_weight_counts, device=bce.device, dtype=bce.dtype)
+    if cfg.use_freq_weight:
+        cnt = torch.tensor(cfg.freq_weight_counts, device=bce.device, dtype=bce.dtype)
         inv = 1.0 / cnt
         w = (inv / inv.mean()).sqrt()
         w = w / w.mean()

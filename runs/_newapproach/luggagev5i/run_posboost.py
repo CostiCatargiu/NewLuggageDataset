@@ -124,8 +124,8 @@ RUNS = [
     # "aimed by the confusion matrix" claim is dead and the finding is just
     # "weight the rare class".
     {"name": "v3_clsweight", "kind": "control",
-     "label": "CONTROL inverse-frequency class weighting (both bce terms)",
-     "params": dict(use_class_weight=True)},
+     "label": "CONTROL inverse-frequency class weighting, use_freq_weight (both bce terms)",
+     "params": dict(use_freq_weight=True)},
 ]
 
 

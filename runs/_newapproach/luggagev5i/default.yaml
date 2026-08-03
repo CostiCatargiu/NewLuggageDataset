@@ -262,6 +262,29 @@ lba_size_axis: max # (str) size measure: 'max' = max(w,h) | 'geom' = sqrt(w*h)
 lba_size_gate_px: 0.0 # (float) apply the prior only to GTs larger than this (px); 0 = ungated
 lba_log: True # (bool) track per-FPN-level foreground share for lba_report() telemetry
 
+# --- Section P: positive-confidence boost on cls. use_pos_boost=False -> stock BCE ---
+# Aimed by the anchor's CONFUSION MATRIX, not by class counts: bag is missed
+# (pred background) 0.24 of the time but confused with backpack/trolley only
+# 0.03/0.02 -> it is UNDER-SCORED, not misclassified. Same signature globally:
+# AR50_small 0.962 vs R50_small 0.727. Scales ONLY the positive bce term at fg
+# anchors, so nothing is suppressed.
+use_pos_boost: False # (bool) enable the positive-only cls boost (per class x size)
+pos_boost_backpack: 1.0 # (float) backpack positives (recall cell 0.80); 1.0 = untouched
+pos_boost_bag: 1.5 # (float) bag positives (recall cell 0.68 — the worst cell)
+pos_boost_trolley: 1.0 # (float) trolley positives (recall cell 0.87 — fine as is)
+pos_boost_small: 1.5 # (float) extra multiplier for small GTs of any class
+pos_boost_small_px: 60.0 # (float) 'small' threshold in MODEL px (512px labels @640 -> 48px label = 60 here)
+pos_boost_clip: 3.0 # (float) cap on the combined class x size multiplier (>=1)
+pos_boost_log: True # (bool) track per-class mean fg score for posboost_report() telemetry
+
+# --- CONTROL for Section P: plain inverse-frequency class weighting -------------------
+# Rare classes ARE often the under-scored ones, so a pos_boost gain must beat
+# what ordinary imbalance weighting buys. Scales BOTH bce terms by sqrt-damped
+# inverse frequency (train 11491/9490/21557 -> ~[1.06, 1.17, 0.77]).
+# NOTE the name: use_freq_weight, NOT use_class_weight — 'use_class_weighting'
+# above is an inert SATAL-lineage key that loss_custom_v3 never reads.
+use_freq_weight: False # (bool) inverse-frequency class weighting; the pos_boost control
+
 # Custom config.yaml ---------------------------------------------------------------------------------------------------
 cfg: # (str, optional) for overriding defaults.yaml
 
