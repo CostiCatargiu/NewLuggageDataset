@@ -1,0 +1,303 @@
+# Ultralytics  AGPL-3.0 License - https://ultralytics.com/license
+
+# Global configuration YAML with settings and hyperparameters for YOLO training, validation, prediction and export
+# For documentation see https://docs.ultralytics.com/usage/cfg/
+
+task: detect # (str) YOLO task, i.e. detect, segment, classify, pose, obb
+mode: train # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
+
+# Train settings -------------------------------------------------------------------------------------------------------
+model: # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml
+data: # (str, optional) path to data file, i.e. coco8.yaml
+epochs: 100 # (int) number of epochs to train for
+time: # (float, optional) number of hours to train for, overrides epochs if supplied
+patience: 100 # (int) epochs to wait for no observable improvement for early stopping of training
+batch: 16 # (int) number of images per batch (-1 for AutoBatch)
+imgsz: 640 # (int | list) input images size as int for train and val modes, or list[h,w] for predict and export modes
+save: True # (bool) save train checkpoints and predict results
+save_period: -1 # (int) Save checkpoint every x epochs (disabled if < 1)
+cache: False # (bool) True/ram, disk or False. Use cache for data loading
+device: # (int | str | list, optional) device to run on, i.e. cuda device=0 or device=0,1,2,3 or device=cpu
+workers: 8 # (int) number of worker threads for data loading (per RANK if DDP)
+project: # (str, optional) project name
+name: # (str, optional) experiment name, results saved to 'project/name' directory
+exist_ok: False # (bool) whether to overwrite existing experiment
+pretrained: True # (bool | str) whether to use a pretrained model (bool) or a model to load weights from (str)
+optimizer: auto # (str) optimizer to use, choices=[SGD, Adam, Adamax, AdamW, NAdam, RAdam, RMSProp, auto]
+verbose: True # (bool) whether to print verbose output
+seed: 0 # (int) random seed for reproducibility
+deterministic: True # (bool) whether to enable deterministic mode
+single_cls: False # (bool) train multi-class data as single-class
+rect: False # (bool) rectangular training if mode='train' or rectangular validation if mode='val'
+cos_lr: False # (bool) use cosine learning rate scheduler
+close_mosaic: 10 # (int) disable mosaic augmentation for final epochs (0 to disable)
+resume: False # (bool) resume training from last checkpoint
+amp: True # (bool) Automatic Mixed Precision (AMP) training, choices=[True, False], True runs AMP check
+fraction: 1.0 # (float) dataset fraction to train on (default is 1.0, all images in train set)
+profile: False # (bool) profile ONNX and TensorRT speeds during training for loggers
+freeze: None # (int | list, optional) freeze first n layers, or freeze list of layer indices during training
+multi_scale: False # (bool) Whether to use multiscale during training
+# Segmentation
+overlap_mask: True # (bool) merge object masks into a single image mask during training (segment train only)
+mask_ratio: 4 # (int) mask downsample ratio (segment train only)
+# Classification
+dropout: 0.0 # (float) use dropout regularization (classify train only)
+
+# Val/Test settings ----------------------------------------------------------------------------------------------------
+val: True # (bool) validate/test during training
+split: val # (str) dataset split to use for validation, i.e. 'val', 'test' or 'train'
+save_json: False # (bool) save results to JSON file
+save_hybrid: False # (bool) save hybrid version of labels (labels + additional predictions)
+conf: # (float, optional) object confidence threshold for detection (default 0.25 predict, 0.001 val)
+iou: 0.7 # (float) intersection over union (IoU) threshold for NMS
+max_det: 300 # (int) maximum number of detections per image
+half: False # (bool) use half precision (FP16)
+dnn: False # (bool) use OpenCV DNN for ONNX inference
+plots: True # (bool) save plots and images during train/val
+
+# Predict settings -----------------------------------------------------------------------------------------------------
+source: # (str, optional) source directory for images or videos
+vid_stride: 1 # (int) video frame-rate stride
+stream_buffer: False # (bool) buffer all streaming frames (True) or return the most recent frame (False)
+visualize: False # (bool) visualize model features
+augment: False # (bool) apply image augmentation to prediction sources
+agnostic_nms: False # (bool) class-agnostic NMS
+classes: # (int | list[int], optional) filter results by class, i.e. classes=0, or classes=[0,2,3]
+retina_masks: False # (bool) use high-resolution segmentation masks
+embed: # (list[int], optional) return feature vectors/embeddings from given layers
+
+# Visualize settings ---------------------------------------------------------------------------------------------------
+show: False # (bool) show predicted images and videos if environment allows
+save_frames: False # (bool) save predicted individual video frames
+save_txt: False # (bool) save results as .txt file
+save_conf: False # (bool) save results with confidence scores
+save_crop: False # (bool) save cropped images with results
+show_labels: True # (bool) show prediction labels, i.e. 'person'
+show_conf: True # (bool) show prediction confidence, i.e. '0.99'
+show_boxes: True # (bool) show prediction boxes
+line_width: # (int, optional) line width of the bounding boxes. Scaled to image size if None.
+
+# Export settings ------------------------------------------------------------------------------------------------------
+format: torchscript # (str) format to export to, choices at https://docs.ultralytics.com/modes/export/#export-formats
+keras: False # (bool) use Keras
+optimize: False # (bool) TorchScript: optimize for mobile
+int8: False # (bool) CoreML/TF INT8 quantization
+dynamic: False # (bool) ONNX/TF/TensorRT: dynamic axes
+simplify: True # (bool) ONNX: simplify model using `onnxslim`
+opset: # (int, optional) ONNX: opset version
+workspace: None # (float, optional) TensorRT: workspace size (GiB), `None` will let TensorRT auto-allocate memory
+nms: False # (bool) CoreML: add NMS
+
+# Hyperparameters ------------------------------------------------------------------------------------------------------
+lr0: 0.01 # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
+lrf: 0.01 # (float) final learning rate (lr0 * lrf)
+momentum: 0.937 # (float) SGD momentum/Adam beta1
+weight_decay: 0.0005 # (float) optimizer weight decay 5e-4
+warmup_epochs: 3.0 # (float) warmup epochs (fractions ok)
+warmup_momentum: 0.8 # (float) warmup initial momentum
+warmup_bias_lr: 0.0 # 0.1 # (float) warmup initial bias lr
+box: 7.5 # (float) box loss gain
+cls: 0.5 # (float) cls loss gain (scale with pixels)
+dfl: 1.5 # (float) dfl loss gain
+pose: 12.0 # (float) pose loss gain
+kobj: 1.0 # (float) keypoint obj loss gain
+nbs: 64 # (int) nominal batch size
+hsv_h: 0.015 # (float) image HSV-Hue augmentation (fraction)
+hsv_s: 0.7 # (float) image HSV-Saturation augmentation (fraction)
+hsv_v: 0.4 # (float) image HSV-Value augmentation (fraction)
+degrees: 0.0 # (float) image rotation (+/- deg)
+translate: 0.1 # (float) image translation (+/- fraction)
+scale: 0.5 # (float) image scale (+/- gain)
+shear: 0.0 # (float) image shear (+/- deg)
+perspective: 0.0 # (float) image perspective (+/- fraction), range 0-0.001
+flipud: 0.0 # (float) image flip up-down (probability)
+fliplr: 0.5 # (float) image flip left-right (probability)
+bgr: 0.0 # (float) image channel BGR (probability)
+
+mosaic: 1.0 # (float) image mosaic (probability)
+mixup: 0.0 # (float) image mixup (probability)
+copy_paste: 0.1 # (float) segment copy-paste (probability)
+
+copy_paste_mode: "flip" # (str) the method to do copy_paste augmentation (flip, mixup)
+auto_augment: randaugment # (str) auto augmentation policy for classification (randaugment, autoaugment, augmix)
+erasing: 0.4 # (float) probability of random erasing during classification training (0-0.9), 0 means no erasing, must be less than 1.0.
+crop_fraction: 1.0 # (float) image crop fraction for classification (0.1-1), 1.0 means no crop, must be greater than 0.
+
+# =====================================================================================================================
+# Custom luggage loss (loss2.py = SATAL-SWA-Plus-NWD v3) ---------------------------------------------------------------
+# =====================================================================================================================
+# Registering these keys is what lets Ultralytics accept them as train() arguments
+# (unknown keys are otherwise rejected with "'x' is not a valid YOLO argument").
+# The ablation script (run_newluggage_ablation.py) turns features on via train() overrides.
+# ALL values below are the exact defaults loss2.py uses when a key is absent, so this
+# file changes nothing by itself — it only makes the keys legal to pass.
+# IMPORTANT: keep the types shown (booleans False/True, floats with a decimal like 1.0,
+# ints without one). Leave a value blank to pass Python None.
+
+# --- Section A/A2: SWA (Size-Weight-Adaptive) size-aware box weighting ---
+small_obj_px: 36 # (float) v6i re-fit (was 70). 36^2=1296px^2 ~0.6x v6i mean object area, matching the v5i small-obj scope
+small_obj_boost: 1.5 # (float) scalar multiplier on the area weight for small boxes
+alpha_start: 0.9 # (float) SWA blend alpha at epoch 0 (area vs score weight)
+alpha_end: 0.5 # (float) SWA blend alpha at the final epoch (linear anneal)
+alpha_min: 0.3 # (float) lower clamp on the annealed alpha
+alpha_max: 0.9 # (float) upper clamp on the annealed alpha
+area_weight_mode: inv # (str) 'inv' (1/area, legacy) | 'sqrt' | 'log' — shape of the area weight
+dfl_entropy_weight: 0.0 # (float) Section O: w * mean entropy of fg edge distributions added to DFL (0=off, 0.05 = r10_dfl_entropy)
+small_obj_boost_backpack: -1.0 # (float) per-class small-obj boost; <0 -> use scalar small_obj_boost
+small_obj_boost_bag: -1.0 # (float) per-class small-obj boost for bag; <0 -> scalar fallback
+small_obj_boost_trolley: -1.0 # (float) per-class small-obj boost for trolley; <0 -> scalar fallback
+swa_smooth: False # (bool) continuous small-obj boost instead of a hard step
+swa_boost_power: 0.5 # (float) exponent for the smooth boost (swa_smooth only)
+
+# --- Section B: auxiliary center loss (weight_init=0.0 -> off) ---
+center_loss_weight_init: 0.0 # (float) initial center-loss weight; 0.0 disables it
+center_loss_weight_min: 0.01 # (float) floor for the decayed center-loss weight
+center_loss_decay_epochs: 35 # (int) epochs over which the center-loss weight decays
+center_loss_mode: small # (str) 'small' (small objects only) | 'crowd' (neighbor-weighted)
+center_crowd_iou: 0.1 # (float) neighbor IoU threshold for 'crowd' mode
+
+# --- Section C: adaptive per-sample loss clipping (use_loss_clip=True keeps legacy behavior) ---
+use_loss_clip: False # (bool) v6i: default OFF (was True) so the file is neutral; enable per-run via override
+iou_clip_start: 20.0 # (float) IoU-loss clip at epoch 0
+iou_clip_end: 10.0 # (float) IoU-loss clip at the final epoch
+dfl_clip_start: 10.0 # (float) DFL-loss clip at epoch 0
+dfl_clip_end: 5.0 # (float) DFL-loss clip at the final epoch
+
+# --- Section D: TAL (Task-Aligned Assigner) base parameters ---
+tal_topk: 10 # (int) top-k candidate anchors per GT
+tal_alpha: 0.5 # (float) TAL classification exponent
+tal_beta: 6.0 # (float) TAL localization (IoU) exponent
+
+# --- Section E: SA-TAL (scale-adaptive assigner). use_satal=False -> stock TAL ---
+use_satal: False # (bool) enable the scale-adaptive assigner
+satal_alpha_small: 1.5 # (float) SATAL alpha for small objects
+satal_beta_small: 3.0 # (float) SATAL beta for small objects
+satal_alpha_large: 0.5 # (float) v6i fix (was 1.0): match stock tal_alpha so the LARGE branch is a true control (t=1 -> stock TAL)
+satal_beta_large: 6.0 # (float) SATAL beta for large objects
+satal_small_area: 0.005 # (float) v6i re-fit (was 0.0025): object_area / letterboxed-640^2; v6i mean object ~0.0052
+satal_large_area: 0.030 # (float) v6i re-fit (was 0.0225): keeps a comparable small->large span in 640^2 space
+satal_topk_factor: 1.5 # (float) topk multiplier for small objects
+
+# --- Section F: class weighting (inverse frequency) ---
+use_class_weighting: False # (bool) v6i: default OFF (was True) so the file is neutral; enable per-run via override
+class_weight_mode: sqrt # (str) 'sqrt' (gentle) | 'linear' (aggressive) dampening
+
+# --- Section G: classification loss mode ---
+cls_mode: bce # (str) 'bce' | 'qfl' (Quality Focal Loss modulation)
+qfl_beta: 2.0 # (float) QFL focusing exponent (cls_mode='qfl' only)
+
+# --- Section H: NWD (Normalized Wasserstein Distance). use_nwd=False -> off ---
+use_nwd: False # (bool) enable NWD box loss
+nwd_mode: blend # (str) 'blend' | 'pure' | 'small_only'
+nwd_weight: 0.5 # (float) NWD weight in blend mode, [0,1]
+nwd_C: 4.0 # (float) NWD normalization constant (stride-normalized coords, ~2-6)
+nwd_small_threshold: 32.0 # (float) area threshold (stride-norm coords^2) for 'small_only' mode
+
+# --- Section I: alternative box-regression metric. 'ciou' -> stock ---
+box_loss_type: ciou # (str) 'ciou' | 'mpdiou' | 'wiou' | 'focaler'
+wiou_alpha: 1.9 # (float) WIoU v3 non-monotonic focusing alpha
+wiou_delta: 3.0 # (float) WIoU v3 delta
+wiou_momentum: 0.02 # (float) WIoU v3 running IoU-loss-mean EMA momentum
+focaler_d: 0.0 # (float) Focaler-IoU lower bound
+focaler_u: 0.95 # (float) Focaler-IoU upper bound
+
+# --- Section J: class-confusion repulsion. use_repulsion=False -> off ---
+use_repulsion: False # (bool) penalize predicted boxes overlapping a different-class GT
+repulsion_weight: 0.3 # (float) weight of the repulsion term
+
+# --- Section K: size-aware classification weighting. use_cls_swa=False -> off ---
+use_cls_swa: False # (bool) boost fg cls loss for small objects
+cls_swa_boost: 1.75 # (float) cls-loss multiplier for small objects
+
+# --- Section L: bag asymmetric penalty. use_bag_penalty=False -> off ---
+use_bag_penalty: False # (bool) upweight the negative bag logit at other-class fg anchors
+bag_penalty_weight: 2.0 # (float) multiplier on the bag negative BCE term
+bag_class_id: 1 # (int) class index of "bag" (dataset order: backpack=0, bag=1, trolley=2)
+
+# --- Section M: AR-aware TAL. use_artal=False -> stock TAL ---
+use_artal: False # (bool) relax TAL beta per-GT for tall/narrow boxes
+artal_ar_thresh: 1.7 # (float) v6i re-fit (was 2.0): median AR fell 2.69->1.54, knee moved just above the v6i median
+artal_ar_scale: 1.2 # (float) v6i re-fit (was 2.0): keeps the ramp meaningful over v6i's compressed AR range
+artal_beta_relax: 2.0 # (float) max reduction applied to beta for high-AR boxes
+
+# --- Section N: supply-normalized TAL. use_snatal=False -> stock TAL ---
+# Per-GT budget k_eff = clamp(round(rho * candidate_pool), k_min, tal_topk).
+# Targets the anchor-footprint diagnosis (small objects supply-limited/diluted).
+use_snatal: False # (bool) enable supply-normalized per-GT top-k
+snatal_rho: 0.25 # (float) fraction of each GT's candidate pool to keep (~0.15-0.4)
+snatal_kmin: 2 # (int) v6i fix (was 1): matches snatal_kmin=2 used in the run scripts; avoids single-anchor GTs
+
+# --- Section O: level-balanced TAL (LB-TAL) — per-pyramid-level top-k. use_lbtal=False -> stock TAL ---
+# THE mechanism the anchor-footprint diagnostic pointed to: metric is already
+# level-neutral (SEL BIAS ~1 at P3/P4), so the fix is allocating topk PER LEVEL
+# instead of one global pooled draw. Re-allocates the SAME budget (capped at
+# tal_topk) — no supply cut, no metric change. Requires set_strides() (wired in
+# the loss). Mutually exclusive with SATAL/AR-TAL/SNA-TAL (loss raises if >1 on).
+use_lbtal: False # (bool) enable per-level top-k allocation
+lbtal_mode: proportional # (str) 'proportional' (k_level ~ live candidate share) | 'fixed' | 'uniform'
+lbtal_level_topk: # (dict|list, optional) 'fixed' mode budget, e.g. {8: 6, 16: 3, 32: 2}; blank = None
+lbtal_min_level_k: 1 # (int) minimum top-k budget guaranteed to each pyramid level
+
+# ======================================================================================================================
+# loss_custom_v3(_fixed).py keys — stock + AR-DFL / PEU / LBA. All default OFF/neutral
+# so with none of these set the loss is bit-identical to stock. Keys must be whitelisted
+# here (or in the active cfg) or model.train() silently drops them and every run == anchor.
+# ======================================================================================================================
+
+# --- AR-DFL: per-edge DFL weights (left, top, right, bottom = w, h, w, h). use_ardfl=False -> stock DFL ---
+use_ardfl: False # (bool) enable aspect-ratio-aware per-edge DFL weighting
+ardfl_mode: fixed # (str) 'fixed' (dataset-level w/h weights) | 'per_box' (each GT's own h/w ratio)
+ardfl_w_weight: 1.21 # (float) v6i re-fit (was 1.5): h/w fell 2.69->1.54, so w/h=1.54 mean-normalized -> 1.21/0.79
+ardfl_h_weight: 0.79 # (float) v6i re-fit (was 0.75): pairs with ardfl_w_weight for w/h=1.54 (prefer ardfl_mode=per_box to avoid re-fit)
+ardfl_ratio_power: 1.0 # (float) 'per_box': exponent on each box's h/w edge ratio (>0)
+ardfl_ratio_clip: 3.0 # (float) 'per_box': clamp the per-box ratio to [1/clip, clip] (>=1)
+
+# --- PEU-DFL: attenuate each edge's DFL by its own distribution variance. use_peu=False -> stock DFL ---
+# Two valid modes: detach=True,lambda=0 (redistribution) or detach=False,lambda>0 (Kendall).
+use_peu: False # (bool) enable per-edge uncertainty weighting of DFL
+peu_beta: 0.5 # (float) attenuation strength on log-variance (>=0)
+peu_lambda: 0.0 # (float) Kendall log-variance regularizer; MUST be 0 when peu_detach=True
+peu_detach: True # (bool) True=redistribution mode (detached weights); False=Kendall mode
+peu_norm_by_mu: True # (bool) divide variance by mu^2 so attenuation is scale-free (fixes large-obj damage)
+peu_warmup_epochs: 5 # (int) keep PEU neutral until this epoch (bin dists are near-uniform early); fail-closed
+peu_min_var: 0.05 # (float) variance floor before log (>0)
+peu_w_clip: 3.0 # (float) clamp per-edge weight spread to [1/clip, clip] (>=1)
+peu_center: global # (str) redistribution centring scope: 'global' (legacy, whole batch) | 'edge' (per row)
+
+# --- LBA: level-balanced scale-matching prior on the TAL alignment metric. use_lba=False -> stock TAL ---
+use_lba: False # (bool) enable the FPN-level scale prior on assignment
+lba_strength: 1.0 # (float) exponent applied to the prior; align <- align * prior^strength (>0)
+lba_ref_cells: 4.5 # (float) nominal object size = stride * ref_cells cells per level
+lba_sigma: 1.0 # (float) Gaussian width in octaves of the scale prior (>0)
+lba_size_axis: max # (str) size measure: 'max' = max(w,h) | 'geom' = sqrt(w*h)
+lba_size_gate_px: 0.0 # (float) apply the prior only to GTs larger than this (px); 0 = ungated
+lba_log: True # (bool) track per-FPN-level foreground share for lba_report() telemetry
+
+# --- Section P: positive-confidence boost on cls. use_pos_boost=False -> stock BCE ---
+# Aimed by the anchor's CONFUSION MATRIX, not by class counts: bag is missed
+# (pred background) 0.24 of the time but confused with backpack/trolley only
+# 0.03/0.02 -> it is UNDER-SCORED, not misclassified. Same signature globally:
+# AR50_small 0.962 vs R50_small 0.727. Scales ONLY the positive bce term at fg
+# anchors, so nothing is suppressed.
+use_pos_boost: False # (bool) enable the positive-only cls boost (per class x size)
+pos_boost_backpack: 1.0 # (float) backpack positives (recall cell 0.80); 1.0 = untouched
+pos_boost_bag: 1.5 # (float) bag positives (recall cell 0.68 — the worst cell)
+pos_boost_trolley: 1.0 # (float) trolley positives (recall cell 0.87 — fine as is)
+pos_boost_small: 1.5 # (float) extra multiplier for small GTs of any class
+pos_boost_small_px: 60.0 # (float) 'small' threshold in MODEL px (512px labels @640 -> 48px label = 60 here)
+pos_boost_clip: 3.0 # (float) cap on the combined class x size multiplier (>=1)
+pos_boost_log: True # (bool) track per-class mean fg score for posboost_report() telemetry
+
+# --- CONTROL for Section P: plain inverse-frequency class weighting -------------------
+# Rare classes ARE often the under-scored ones, so a pos_boost gain must beat
+# what ordinary imbalance weighting buys. Scales BOTH bce terms by sqrt-damped
+# inverse frequency (train 11491/9490/21557 -> ~[1.06, 1.17, 0.77]).
+# NOTE the name: use_freq_weight, NOT use_class_weight — 'use_class_weighting'
+# above is an inert SATAL-lineage key that loss_custom_v3 never reads.
+use_freq_weight: False # (bool) inverse-frequency class weighting; the pos_boost control
+
+# Custom config.yaml ---------------------------------------------------------------------------------------------------
+cfg: # (str, optional) for overriding defaults.yaml
+
+# Tracker settings ------------------------------------------------------------------------------------------------------
+tracker: botsort.yaml # (str) tracker type, choices=[botsort.yaml, bytetrack.yaml]
