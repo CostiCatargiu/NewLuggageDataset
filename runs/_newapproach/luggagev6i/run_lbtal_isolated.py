@@ -159,6 +159,51 @@ def _snatal(rho):
     )
 
 
+def _cls_swa(boost):
+    """cls-SWA: boost the CLASSIFICATION bce for small-object fg anchors.
+
+    Section K of loss2. Unlike SWA (which reweights BOX loss and only moved
+    small +0.64, within noise, because small-object LOCALIZATION is already good
+    — AR50_small 0.95, IoU 0.806), cls-SWA attacks the actual small-object
+    bottleneck: SCORING. The baseline shows small objects are FOUND but DROPPED
+    (AR50_small 0.951 vs R50_small 0.703). cls-SWA raises the cls-loss pressure
+    on small positives so their confidence rises and more survive the operating
+    threshold. Small = area_feat < (small_obj_px/stride)^2, with small_obj_px=36
+    (v6i-refit), so 'small' is the v6i small minority, not the majority.
+
+    WATCH R50_small (best-F1 recall), not just mAP — if it climbs from 0.703
+    toward AR50_small 0.951, the loss closed the scoring gap. mAP may move less
+    than recall because this is a ranking/threshold fix, not a localization one.
+
+    CRITICAL: _ALL_OFF sets small_obj_px=0, which makes cls-SWA's small test
+    (area < (0/stride)^2) NEVER fire -> the run would be a silent no-op == the
+    anchor. So we MUST set small_obj_px here. 36 is the v6i-refit (36^2=1296px^2
+    ~0.6x mean object area) — the v6i small minority, matching Section A's scope.
+    """
+    return dict(_ALL_OFF, use_cls_swa=True, cls_swa_boost=boost,
+                small_obj_px=36)
+
+
+def _swa(a0, a1, boost, px=48, mode="sqrt"):
+    """SWA (Section A) box-loss weighting — the sqrt0703 winner is _swa(0.7,0.3,2.0).
+
+    NOTE: SWA and cls-SWA share the small_obj_px key. When STACKING them below,
+    both use the SAME px, so 'small' means one consistent thing across box+cls.
+    sqrt0703 used px=48; the isolated cls-SWA runs use px=36. For a clean combo,
+    pick ONE px for both (px48 keeps the sqrt0703 winner unchanged).
+    """
+    return dict(
+        _ALL_OFF,
+        alpha_start=a0, alpha_end=a1, alpha_min=a1, alpha_max=a0,
+        small_obj_px=px, small_obj_boost=boost, area_weight_mode=mode,
+    )
+
+
+def _combo(**overrides):
+    """Merge extra keys onto _ALL_OFF for stacked mechanisms."""
+    return dict(_ALL_OFF, **overrides)
+
+
 RUNS = [
     # =========================================================================
     # PRIMARY — LB-TAL (the contribution). Per-level top-k allocation, the
@@ -179,6 +224,21 @@ RUNS = [
     {"name": "lb_fixed_442", "batch": BATCH,
      "label": "LB-TAL fixed {8:4,16:4,32:2} — flatter, more to P4/P5",
      "params": _lbtal("fixed", level_topk={8: 4, 16: 4, 32: 2})},
+
+    # =========================================================================
+    # SECOND SMALL-OBJECT CANDIDATE — cls-SWA (Section K). SCORING-side, not
+    # assignment. Directly targets the diagnosed 0.95->0.70 "found but not
+    # scored" gap by boosting the classification loss on small-object positives.
+    # Complementary to LB-TAL (assignment) and independent of SWA (box weight,
+    # which the dose-response showed does NOT move small). READ R50_small.
+    # =========================================================================
+    {"name": "clsswa_b175", "batch": BATCH,
+     "label": "cls-SWA boost 1.75 (px36) — scoring-side small-object fix",
+     "params": _cls_swa(1.75)},
+
+    {"name": "clsswa_b20", "batch": BATCH,
+     "label": "cls-SWA boost 2.0 (px36) — stronger scoring pressure",
+     "params": _cls_swa(2.0)},
 
     # =========================================================================
     # COMPARISON ARMS — SATAL & SNA-TAL, v6i re-fitted. NOT the contribution;
@@ -204,6 +264,68 @@ RUNS = [
     {"name": "cmp_snatal_r040", "batch": BATCH,
      "label": "[cmp] SNA-TAL rho=0.40 k_min=2 geometric pool — mild cut (predicted ~flat/neg)",
      "params": _snatal(0.40)},
+
+    # =========================================================================
+    # COMBINED RUNS — DO NOT RUN UNTIL THE ISOLATED NUMBERS ARE IN.
+    # =========================================================================
+    # Uncomment these ONLY after you have each mechanism's isolated v6i delta,
+    # so a combined result is attributable (e.g. "SWA +0.87, cls-SWA +X, LB-TAL
+    # +Y, together +Z"). Stacking before isolating gives a number with no
+    # attribution — the confound this project's methodology exists to avoid.
+    #
+    # COMPATIBILITY:
+    #   * SWA (box) + cls-SWA (cls) + LB-TAL (assignment) touch THREE DIFFERENT
+    #     loss stages, so all three stack cleanly — no mutual-exclusion.
+    #   * Only ONE assigner may be on: LB-TAL here excludes SATAL/SNA-TAL/AR-TAL.
+    #   * px CONSISTENCY: SWA and cls-SWA share small_obj_px. The combos below
+    #     fix BOTH to px48 (keeps the sqrt0703 winner intact) OR px36 — pick one
+    #     and keep it identical across the two SWA-family terms, else "small"
+    #     means two different things in the same run.
+    #   * WHICH LB-TAL variant: fill in the winning lbtal_mode/level_topk from
+    #     the isolated LB-TAL runs before enabling the LB-TAL combos.
+    #
+    # ---- Tier 1: the two proven-so-far small boosters (box + cls) ----------
+    # {"name": "cmb_swa0703_clsswa175", "batch": BATCH,
+    #  "label": "COMBO SWA sqrt0.7->0.3 b2.0 px48 + cls-SWA 1.75 (px48) — box+cls small boost",
+    #  "params": _combo(
+    #      alpha_start=0.7, alpha_end=0.3, alpha_min=0.3, alpha_max=0.7,
+    #      area_weight_mode="sqrt", small_obj_boost=2.0,
+    #      use_cls_swa=True, cls_swa_boost=1.75,
+    #      small_obj_px=48)},   # ONE px for both SWA and cls-SWA
+    #
+    # {"name": "cmb_swa0703_clsswa20", "batch": BATCH,
+    #  "label": "COMBO SWA sqrt0.7->0.3 b2.0 px48 + cls-SWA 2.0 (px48)",
+    #  "params": _combo(
+    #      alpha_start=0.7, alpha_end=0.3, alpha_min=0.3, alpha_max=0.7,
+    #      area_weight_mode="sqrt", small_obj_boost=2.0,
+    #      use_cls_swa=True, cls_swa_boost=2.0,
+    #      small_obj_px=48)},
+    #
+    # ---- Tier 2: add the winning LB-TAL assigner on top --------------------
+    # REPLACE lbtal_mode / lbtal_level_topk with the isolated LB-TAL winner.
+    # {"name": "cmb_lbtal_clsswa175", "batch": BATCH,
+    #  "label": "COMBO LB-TAL(winner) + cls-SWA 1.75 (px36) — assignment + scoring",
+    #  "params": _combo(
+    #      use_lbtal=True, lbtal_mode="proportional", lbtal_level_topk=None,
+    #      use_cls_swa=True, cls_swa_boost=1.75, small_obj_px=36)},
+    #
+    # {"name": "cmb_lbtal_swa0703", "batch": BATCH,
+    #  "label": "COMBO LB-TAL(winner) + SWA sqrt0.7->0.3 b2.0 px48 — assignment + box",
+    #  "params": _combo(
+    #      use_lbtal=True, lbtal_mode="proportional", lbtal_level_topk=None,
+    #      alpha_start=0.7, alpha_end=0.3, alpha_min=0.3, alpha_max=0.7,
+    #      area_weight_mode="sqrt", small_obj_boost=2.0, small_obj_px=48)},
+    #
+    # ---- Tier 3: the full small-object stack (box + cls + assignment) -------
+    # The paper's "all combined" row — only after each part is validated.
+    # {"name": "cmb_all_small", "batch": BATCH,
+    #  "label": "COMBO SWA + cls-SWA + LB-TAL(winner) — full small-object stack",
+    #  "params": _combo(
+    #      use_lbtal=True, lbtal_mode="proportional", lbtal_level_topk=None,
+    #      alpha_start=0.7, alpha_end=0.3, alpha_min=0.3, alpha_max=0.7,
+    #      area_weight_mode="sqrt", small_obj_boost=2.0,
+    #      use_cls_swa=True, cls_swa_boost=1.75,
+    #      small_obj_px=48)},   # ONE px shared by SWA + cls-SWA
 ]
 
 
