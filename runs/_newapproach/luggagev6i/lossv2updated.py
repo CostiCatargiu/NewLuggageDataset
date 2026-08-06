@@ -1163,6 +1163,55 @@ class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
 
 
 # =============================================================================
+# Section P telemetry — ported from loss_custom_v3_fixed.py
+# =============================================================================
+
+
+def _new_posboost_state():
+    return {"n": 0, "score_sum": None, "score_cnt": None, "w_sum": 0.0, "w_n": 0.0}
+
+
+_LAST_POSBOOST_HOST = None       # set by v8DetectionLoss.__init__
+
+
+def posboost_report(reset=True):
+    """Module-level shim reading the last-constructed criterion.
+
+        from ultralytics.utils.loss import posboost_report
+        print(posboost_report())
+        -> {'fg_score': [backpack, bag, trolley], 'fg_count': [...],
+            'mean_boost': float}
+
+    Call it from an on_fit_epoch_end callback. fg_score is the mean predicted
+    score at foreground anchors per class: if Section P is working, bag's entry
+    rises relative to the others.
+    """
+    if _LAST_POSBOOST_HOST is None:
+        return None
+    return _posboost_report_from(_LAST_POSBOOST_HOST._posboost_state, reset)
+
+
+def _posboost_report_from(state, reset=True):
+    """Mean predicted score at fg anchors, per class.
+
+    This is the direct readout of whether Section P is doing what it is meant
+    to: raising confidence on TRUE positives. It answers the question that
+    mAP cannot — mAP moves for many reasons and the expected effect here
+    (~0.2-0.5 pp) sits near seed noise (0.12 pp measured), whereas fg_score is
+    a direct measurement of the quantity the mechanism targets.
+    """
+    if not state["n"] or state["score_cnt"] is None:
+        return None
+    cnt = state["score_cnt"].clamp(min=1)
+    out = {"fg_score": (state["score_sum"] / cnt).tolist(),
+           "fg_count": state["score_cnt"].tolist(),
+           "mean_boost": state["w_sum"] / max(state["w_n"], 1.0)}
+    if reset:
+        state.update(_new_posboost_state())
+    return out
+
+
+# =============================================================================
 # MAIN DETECTION LOSS CLASS
 # =============================================================================
 
@@ -1175,6 +1224,10 @@ class v8DetectionLoss:
     optional mechanisms default OFF; see the module docstring for the full
     list of hyperparameters.
     """
+
+    def posboost_report(self, reset=True):
+        """Per-instance Section P telemetry — see module-level posboost_report."""
+        return _posboost_report_from(self._posboost_state, reset)
 
     def __init__(self, model, tal_topk=10):
         """Initialize v8DetectionLoss with parameters from model.args."""
@@ -1330,6 +1383,60 @@ class v8DetectionLoss:
         self.use_bag_penalty = getattr(h, 'use_bag_penalty', False)
         self.bag_penalty_weight = getattr(h, 'bag_penalty_weight', 2.0)
         self.bag_class_id = getattr(h, 'bag_class_id', 1)  # dataset order: backpack, bag, trolley
+
+        # =====================================================================
+        # Section P: positive-only cls boost, per class x size
+        # =====================================================================
+        # PORTED from loss_custom_v3_fixed.py so it can be combined with the
+        # mechanisms that live only here (SWA/area weighting, LB-TAL, NWD, QFL).
+        # The two files read disjoint hyperparameter sets, so before this port
+        # sqrt0703 + pos_boost was unreachable: no installed loss.py read both.
+        #
+        # Motivation (v6i val footprint): AR50_small ~0.95 but R50_small ~0.70 —
+        # ~25 pp of small objects are detected and then score below the
+        # F1-optimal threshold. That is a CONFIDENCE failure, not an assignment
+        # or localisation one, and nothing in 18 prior runs touched it.
+        #
+        # Mechanism: BCE decomposes per element as -[t*log(p) + (1-t)*log(1-p)].
+        # At an fg anchor the ASSIGNED class column carries the positive term
+        # (t = TAL soft label > 0) while every other column is pure negative.
+        # Scaling only (fg anchor, assigned class) therefore amplifies the
+        # positive term and suppresses nothing.
+        #
+        # UNITS: pos_boost_small_px is in MODEL pixels, matching
+        # target_bboxes_px. v6i labels are already 640-wide, so 60.0 here is
+        # 60 px at imgsz=640 — do NOT reuse the 48/96 COCO-style size bins.
+        self.use_pos_boost = bool(getattr(h, 'use_pos_boost', False))
+        self.pos_boost_backpack = float(getattr(h, 'pos_boost_backpack', 1.0))
+        self.pos_boost_bag = float(getattr(h, 'pos_boost_bag', 1.5))
+        self.pos_boost_trolley = float(getattr(h, 'pos_boost_trolley', 1.0))
+        self.pos_boost_small = float(getattr(h, 'pos_boost_small', 1.5))
+        self.pos_boost_small_px = float(getattr(h, 'pos_boost_small_px', 60.0))
+        self.pos_boost_clip = float(getattr(h, 'pos_boost_clip', 3.0))
+        self.pos_boost_log = bool(getattr(h, 'pos_boost_log', True))
+        self._posboost_state = _new_posboost_state()
+        global _LAST_POSBOOST_HOST
+        _LAST_POSBOOST_HOST = self
+
+        if self.use_pos_boost:
+            _b = (self.pos_boost_backpack, self.pos_boost_bag,
+                  self.pos_boost_trolley, self.pos_boost_small)
+            if any(x <= 0 for x in _b):
+                raise ValueError("pos_boost_* must all be > 0")
+            if all(x == 1.0 for x in _b):
+                raise ValueError(
+                    "use_pos_boost=True but every boost is 1.0 — that is stock BCE.")
+            if self.pos_boost_clip < 1.0:
+                raise ValueError("pos_boost_clip must be >= 1.0")
+            if self.pos_boost_small_px < 0:
+                raise ValueError("pos_boost_small_px must be >= 0 (MODEL pixels)")
+            if self.use_class_weighting:
+                # Both scale the cls loss by class. Stacking them makes any
+                # result unattributable and double-counts the bag correction.
+                raise ValueError(
+                    "use_pos_boost and use_class_weighting both scale cls loss "
+                    "by class — enable exactly one (pos_boost targets the "
+                    "positive term only; class weighting scales both terms).")
 
         # =====================================================================
         # Section M: AR-aware TAL assigner — see class docstring
@@ -1521,6 +1628,11 @@ class v8DetectionLoss:
             print(f"  [J] repulsion:       {self.use_repulsion}" + (f" (w={self.repulsion_weight})" if self.use_repulsion else ""))
             print(f"  [K] cls_swa:         {self.use_cls_swa}" + (f" (boost={self.cls_swa_boost}, area<{self.small_obj_px}px² criterion)" if self.use_cls_swa else ""))
             print(f"  [L] bag_penalty:     {self.use_bag_penalty}" + (f" (w={self.bag_penalty_weight}, cls={self.bag_class_id})" if self.use_bag_penalty else ""))
+            print(f"  [P] pos_boost:       {self.use_pos_boost}" + (
+                f" (bp/bag/tr={self.pos_boost_backpack}/{self.pos_boost_bag}/"
+                f"{self.pos_boost_trolley}, small x{self.pos_boost_small} below "
+                f"{self.pos_boost_small_px}px MODEL, clip {self.pos_boost_clip})"
+                if self.use_pos_boost else ""))
             print(f"  [M] artal:           {self.use_artal}" + (f" (thresh={self.artal_ar_thresh}, scale={self.artal_ar_scale}, relax={self.artal_beta_relax})" if self.use_artal else ""))
             print(f"  [N] snatal:          {self.use_snatal}" + (f" (rho={self.snatal_rho}, k_min={self.snatal_kmin}, geometric pool)" if self.use_snatal else ""))
             print(f"  [O2] lbtal:          {self.use_lbtal}" + (f" (mode={self.lbtal_mode}, level_topk={self.lbtal_level_topk}, min_k={self.lbtal_min_level_k}, qgate={self.lbtal_quality_gate}, per-level top-k)" if self.use_lbtal else ""))
@@ -1874,6 +1986,53 @@ class v8DetectionLoss:
                                 area_feat.new_tensor(float(self.cls_swa_boost)),
                                 area_feat.new_tensor(1.0)).to(dtype)
             weight[fg_mask] = weight[fg_mask] * boost.unsqueeze(-1)
+
+        # ── Section P: positive-only cls boost, per class x size ──
+        # Scales ONLY the (fg anchor, assigned class) cell, which is where the
+        # positive BCE term lives. Every other column at that anchor is a pure
+        # negative term and is left untouched, so nothing is suppressed.
+        if self.use_pos_boost and fg_mask.any() and target_labels_for_fg.numel() > 0:
+            lab = target_labels_for_fg                                   # (M,)
+            cls_b = torch.tensor(
+                [self.pos_boost_backpack, self.pos_boost_bag, self.pos_boost_trolley],
+                device=bce.device, dtype=dtype)
+            if cls_b.numel() < nc:            # >3 classes: pad neutral
+                cls_b = torch.cat([cls_b, torch.ones(nc - cls_b.numel(),
+                                                     device=bce.device, dtype=dtype)])
+            elif cls_b.numel() > nc:
+                cls_b = cls_b[:nc]
+            boost = cls_b[lab]                                           # (M,)
+
+            if (target_bboxes_px is not None and self.pos_boost_small > 0
+                    and self.pos_boost_small_px > 0):
+                tb = target_bboxes_px[fg_mask]                            # (M,4) MODEL px
+                side = torch.maximum(tb[:, 2] - tb[:, 0], tb[:, 3] - tb[:, 1])
+                boost = boost * torch.where(side < self.pos_boost_small_px,
+                                            boost.new_tensor(self.pos_boost_small),
+                                            boost.new_tensor(1.0))
+            boost = boost.clamp(max=self.pos_boost_clip)
+
+            if weight.shape[-1] != nc:        # may still be the (b,A,1) form
+                weight = weight.expand(bs, num_anchors, nc).clone()
+            fg_w = weight[fg_mask]                                        # (M, nc)
+            fg_w.scatter_(1, lab.unsqueeze(-1),
+                          fg_w.gather(1, lab.unsqueeze(-1)) * boost.unsqueeze(-1))
+            weight[fg_mask] = fg_w
+
+            if self.pos_boost_log:
+                with torch.no_grad():
+                    st = self._posboost_state
+                    p = pred_scores[fg_mask].sigmoid().gather(
+                        1, lab.unsqueeze(-1)).squeeze(-1)
+                    s = torch.zeros(nc, device=bce.device, dtype=dtype)
+                    c = torch.zeros(nc, device=bce.device, dtype=dtype)
+                    s.index_add_(0, lab, p.to(dtype))
+                    c.index_add_(0, lab, torch.ones_like(p, dtype=dtype))
+                    st["score_sum"] = s if st["score_sum"] is None else st["score_sum"] + s
+                    st["score_cnt"] = c if st["score_cnt"] is None else st["score_cnt"] + c
+                    st["w_sum"] += float(boost.sum())
+                    st["w_n"] += float(boost.numel())
+                    st["n"] += 1
 
         # ── Section L: bag asymmetric penalty (negative term only) ──
         if self.use_bag_penalty and fg_mask.any() and target_labels_for_fg.numel() > 0:

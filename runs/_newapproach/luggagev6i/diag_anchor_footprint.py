@@ -123,6 +123,52 @@ SIZE_BINS = (48.0, 96.0)           # small < 48 <= medium <= 96 < large
 SNA_RHO = (0.15, 0.25, 0.40)       # supply-normalised budgets to simulate
 SNA_KMIN = 2                       # MUST match snatal_kmin in the run scripts
 MARGINAL_IOU = 0.30                # a selected anchor below this is "marginal"
+
+# --- ASSIGNER UNDER TEST -----------------------------------------------------
+# Which allocation scheme to measure. Keep WEIGHTS FIXED and change only this
+# between runs: the alignment metric depends on the model, so comparing
+# different checkpoints would confound the budget effect with the predictions
+# the budget is computed from. One checkpoint, three schemes.
+#
+#   'stock'     stock TaskAlignedAssigner — global top-k (the baseline you have)
+#   'uniform'   LB-TAL uniform — ceil(topk/3) per level  -> P3/P4/P5 = 4/4/4
+#   'coarse244' LB-TAL fixed {8:2,16:4,32:4}             -> 2/4/4
+#   'balcap'    LB-TAL balanced_capped (== coarse244 at topk=10)
+#   'prop'      LB-TAL proportional (live candidate share)
+#   'p4wide'    LB-TAL fixed {8:4,16:7,32:1} — see below
+#   'custom'    LB-TAL fixed FIXED_BUDGET (edit the dict directly)
+#
+# WHY 'p4wide' EXISTS. Measured s16 supply vs selection, same weights:
+#              cand/GT   sel stock   sel LB-TAL   limited by
+#   small        2.46      1.08        2.08       SUPPLY (only 2.46 exist)
+#   medium      10.63      3.39        3.87       budget
+#   large      125.28      7.96        3.92       budget
+# Large lost HALF its P4 supply purely because the budget is 4 — the single
+# biggest change in the cross-tab, and the reason cmb_lbU_swa0703 collapsed.
+# Small cannot be affected by the P4 budget at all: it is supply-capped at
+# 2.46. So raising P4 repairs large and medium while provably leaving small
+# untouched — unlike the quality gate, which reaches the same goal by pruning
+# after the fact and risks stripping small's P4 picks.
+# P5 drops to 1 because it is unfillable: small has 0.62 candidates there and
+# selects 0.01 of them (their alignment metric is ~0), medium 2.71.
+#
+# Suggested sequence, editing ONLY this line between runs:
+#   ASSIGNER = "stock"      -> reproduces diag_anchor_footprin_results.txt
+#   ASSIGNER = "uniform"    -> does the P3 cap cut small-object supply?
+#   ASSIGNER = "coarse244"  -> the harder cut (P3=2)
+#   ASSIGNER = "p4wide"     -> does raising P4 repair large without moving small?
+#   ASSIGNER = "uniform" + QUALITY_GATE = 0.5  -> the alternative repair
+ASSIGNER = "stock"
+
+# Used when ASSIGNER = 'custom'. Keys are STRIDES, not level indices.
+# Sum > TAL_TOPK is fine — the per-GT cap re-ranks globally and trims back.
+FIXED_BUDGET = {8: 4, 16: 7, 32: 1}
+
+TAL_TOPK = 10                      # tal_topk for the assigner under test
+QUALITY_GATE = 0.0                 # lbtal_quality_gate (0 = off); needs the
+                                   # GLOBAL-reference gate from lossv2updated.py
+OUT_TAG = ""                       # "" -> auto from ASSIGNER; sets the output
+                                   # filename suffix so runs don't overwrite
 # =============================================================================
 
 CLASS_NAMES_FALLBACK = {0: "class0", 1: "class1", 2: "class2"}
@@ -144,7 +190,67 @@ def candidates_in_gts(anc_points, gt_bboxes, eps=1e-9):
     return deltas.view(b, n, -1, 4).amin(3).gt(eps)
 
 
+ASSIGNER_PRESETS = {
+    # name       -> (lbtal_mode, level_topk, description)
+    "stock":     (None, None, "stock TaskAlignedAssigner — global top-k"),
+    "uniform":   ("uniform", None, "LB-TAL uniform — ceil(topk/3) per level"),
+    "coarse244": ("fixed", {8: 2, 16: 4, 32: 4}, "LB-TAL fixed 2/4/4 (== balanced_capped @ topk10)"),
+    "balcap":    ("balanced_capped", None, "LB-TAL balanced_capped"),
+    "prop":      ("proportional", None, "LB-TAL proportional (live candidate share)"),
+    "p4wide":    ("fixed", {8: 4, 16: 7, 32: 1},
+                  "LB-TAL fixed 4/7/1 — P3 at the measured peak, P4 restored for "
+                  "large/medium, P5 dropped (unfillable)"),
+    "custom":    ("fixed", "FIXED_BUDGET", "LB-TAL fixed, budget from FIXED_BUDGET"),
+}
+
+
+def build_assigner(crit, preset, topk, gate, nc):
+    """Return (assigner, needs_strides, label).
+
+    Swaps in LevelBalancedTaskAlignedAssigner so ONE checkpoint can be measured
+    under several allocation schemes. Holding WEIGHTS fixed and varying only the
+    assigner is deliberate: the alignment metric depends on the model, so
+    comparing different checkpoints would confound the budget effect with the
+    predictions the budget is computed from.
+    """
+    if preset == "stock" and gate <= 0.0:
+        a = crit.assigner
+        return a, False, f"{type(a).__name__} (stock)"
+
+    mode, level_topk, _ = ASSIGNER_PRESETS[preset]
+    if mode is None:
+        mode = "uniform"
+    if level_topk == "FIXED_BUDGET":
+        level_topk = dict(FIXED_BUDGET)
+    if level_topk is not None:
+        # Strides arrive from torch.unique().tolist() as FLOATS. int keys hash
+        # equal to their float counterparts so {8: 4}[8.0] works, but a dict
+        # that has round-tripped through YAML/JSON with STRING keys would miss
+        # every lookup and silently fall back to min_level_k=1 — i.e. a budget
+        # of 1/1/1 while the banner still claims otherwise. Normalise and let
+        # the printed banner confirm what actually took effect.
+        level_topk = {float(k): int(v) for k, v in level_topk.items()}
+    try:
+        from ultralytics.utils.loss import LevelBalancedTaskAlignedAssigner as LB
+    except ImportError:
+        sys.exit("LevelBalancedTaskAlignedAssigner not found in the installed "
+                 "ultralytics/utils/loss.py — install lossv2updated.py first.")
+    base = crit.assigner
+    a = LB(topk=topk, num_classes=nc,
+           alpha=float(getattr(base, "alpha", 0.5)),
+           beta=float(getattr(base, "beta", 6.0)),
+           level_topk_mode=mode, level_topk=level_topk,
+           min_level_k=1, quality_gate=gate)
+    label = f"LB-TAL[{mode}]" + (f" gate={gate}" if gate > 0 else "")
+    return a, True, label
+
+
 def main():
+    if ASSIGNER not in ASSIGNER_PRESETS:
+        sys.exit(f"ASSIGNER={ASSIGNER!r} not recognised. "
+                 f"Pick one of: {', '.join(sorted(ASSIGNER_PRESETS))}")
+    tag = OUT_TAG or (ASSIGNER + (f"_gate{QUALITY_GATE:g}" if QUALITY_GATE > 0 else ""))
+
     os.makedirs(OUT_DIR, exist_ok=True)
 
     from ultralytics import YOLO
@@ -171,8 +277,9 @@ def main():
     print(f"reg_max={reg_max}  nc={nc}  strides={stride.tolist()}")
 
     crit = model.init_criterion()
-    assigner = crit.assigner
-    topk = int(getattr(assigner, "topk", 10))
+    topk = int(TAL_TOPK or getattr(crit.assigner, "topk", 10))
+    assigner, needs_strides, asg_label = build_assigner(
+        crit, ASSIGNER, topk, QUALITY_GATE, int(nc))
 
     # ---- FIX 3: the banner printed by init_criterion() is NOT the checkpoint's
     # config. Flag it loudly so nobody misreads footprint_report.txt later.
@@ -186,13 +293,13 @@ def main():
     print("       none of the SWA / clip / cls-weight keys. The line that")
     print("       matters is the assigner line printed next.")
     print("!" * 78)
-    print(f"assigner={type(assigner).__name__}  topk={topk}  "
-          f"alpha={getattr(assigner,'alpha','?')}  beta={getattr(assigner,'beta','?')}")
-    if type(assigner).__name__ != "TaskAlignedAssigner":
-        print(f"  [WARN] assigner is NOT stock TaskAlignedAssigner. This script is")
-        print(f"         meant to measure the BASELINE pathology — re-run with all")
-        print(f"         of use_lba / use_satal / use_snatal / use_artal set False,")
-        print(f"         unless you are deliberately verifying a mechanism moved it.")
+    print(f"ASSIGNER UNDER TEST: {ASSIGNER}  ->  {asg_label}")
+    print(f"  {ASSIGNER_PRESETS[ASSIGNER][2]}")
+    print(f"  topk={topk}  alpha={getattr(assigner,'alpha','?')}  "
+          f"beta={getattr(assigner,'beta','?')}  gate={QUALITY_GATE}")
+    print(f"  weights are FIXED across schemes — only the allocation changes.")
+    if ASSIGNER != "stock" and type(assigner).__name__ == "TaskAlignedAssigner":
+        print(f"  [WARN] asked for {ASSIGNER!r} but got stock TaskAlignedAssigner.")
     print(f"size bins (max side @{IMG_SIZE}px): small < {SIZE_BINS[0]:.0f} "
           f"<= medium <= {SIZE_BINS[1]:.0f} < large")
     print(f"SNA simulation: k_eff = clamp(rho*pool, {SNA_KMIN}, {topk})")
@@ -234,6 +341,15 @@ def main():
     BUCKETS = ("small", "medium", "large")
     sel_pool = {b: [] for b in BUCKETS}    # per-GT candidate pool (all levels)
     sel_taken = {b: [] for b in BUCKETS}   # per-GT positives assigned
+
+    # ---- SIZE x LEVEL cross-tab ---------------------------------------------
+    # The cell sections 1 and 4 do not have: section 1 is per-level across all
+    # sizes, section 4 is per-size across all levels. Both are MARGINALS. The
+    # question "does capping P3 cut small-object supply?" needs the joint
+    # distribution — how many positives a SMALL GT draws from P3 specifically.
+    xt_cand = {b: defaultdict(float) for b in BUCKETS}   # bucket -> stride -> cand
+    xt_sel = {b: defaultdict(float) for b in BUCKETS}    # bucket -> stride -> sel
+    xt_n = {b: 0.0 for b in BUCKETS}                     # bucket -> #GTs
     q_iou = {b: [] for b in BUCKETS}       # per-fg-anchor IoU
     q_dist = {b: [] for b in BUCKETS}      # per-fg-anchor |anc-gtc| / sqrt(wh)
 
@@ -270,6 +386,11 @@ def main():
 
             pred_bboxes = crit.bbox_decode(anchor_points, pred_distri)
 
+            # LB-TAL needs the per-anchor stride every forward pass, otherwise
+            # it silently falls back to stock global top-k and warns once.
+            if needs_strides:
+                assigner.set_strides(stride_tensor)
+
             out = assigner(
                 pred_scores.detach().sigmoid(),
                 (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
@@ -292,6 +413,19 @@ def main():
 
             tot_c = torch.zeros_like(valid_gt, dtype=torch.long)   # pool, all levels
             tot_s = torch.zeros_like(valid_gt, dtype=torch.long)   # positives, all levels
+
+            # size buckets computed BEFORE the level loop so the cross-tab can
+            # accumulate per (size, level) inside it
+            gw = (gt_bboxes[..., 2] - gt_bboxes[..., 0]).clamp(min=1e-6)
+            gh = (gt_bboxes[..., 3] - gt_bboxes[..., 1]).clamp(min=1e-6)
+            gmax = torch.maximum(gw, gh)                                 # (b, n) px
+            bmask = {
+                "small": valid_gt & (gmax < SIZE_BINS[0]),
+                "medium": valid_gt & (gmax >= SIZE_BINS[0]) & (gmax <= SIZE_BINS[1]),
+                "large": valid_gt & (gmax > SIZE_BINS[1]),
+            }
+            for bname, m in bmask.items():
+                xt_n[bname] += float(m.sum())
 
             for s in stride.tolist():
                 lvl = (s_per_anchor == s)                                # (a,)
@@ -317,6 +451,12 @@ def main():
                 n_gt_zero[s] += float((cvals == 0).sum())
                 fp_samples[s].append(cvals.cpu().numpy())
 
+                # ---- SIZE x LEVEL cross-tab --------------------------------
+                for bname, m in bmask.items():
+                    if m.any():
+                        xt_cand[bname][s] += float(c_per_gt[m].sum())
+                        xt_sel[bname][s] += float(s_per_gt[m].sum())
+
                 cls_ids = gt_labels.squeeze(-1).long()                   # (b, n)
                 for ci in range(nc):
                     m = valid_gt & (cls_ids == ci)
@@ -325,14 +465,6 @@ def main():
                         sel_c[ci][s] += float(s_per_gt[m].sum())
 
             # ---- selectivity per GT, bucketed by max side -------------------
-            gw = (gt_bboxes[..., 2] - gt_bboxes[..., 0]).clamp(min=1e-6)
-            gh = (gt_bboxes[..., 3] - gt_bboxes[..., 1]).clamp(min=1e-6)
-            gmax = torch.maximum(gw, gh)                                 # (b, n) px
-            bmask = {
-                "small": valid_gt & (gmax < SIZE_BINS[0]),
-                "medium": valid_gt & (gmax >= SIZE_BINS[0]) & (gmax <= SIZE_BINS[1]),
-                "large": valid_gt & (gmax > SIZE_BINS[1]),
-            }
             for bname, m in bmask.items():
                 if m.any():
                     sel_pool[bname].append(tot_c[m].float().cpu().numpy())
@@ -503,6 +635,73 @@ def main():
     add("  small objects are training on a diluted positive set.")
     add("")
 
+    add("4b) SIZE x LEVEL — where does each size bucket actually draw from?")
+    add("-" * 78)
+    add("  THE CELL SECTIONS 1 AND 4 DO NOT HAVE. Section 1 is per-level across")
+    add("  all sizes; section 4 is per-size across all levels — both marginals.")
+    add("  This is the joint distribution, and it is what decides whether a")
+    add("  per-level cap helps or starves a size bucket.")
+    add("")
+    add(f"{'size':<9}{'level':>7}{'cand/GT':>10}{'sel/GT':>9}{'take %':>9}"
+        f"{'sel share':>11}")
+    add("-" * 78)
+    xtab = {}
+    for b in ("small", "medium", "large"):
+        n_b = xt_n[b] or 1.0
+        tot_sel_b = sum(xt_sel[b].values()) or 1.0
+        xtab[b] = {"n_gt": int(xt_n[b]), "levels": {}}
+        for s in strides:
+            c = xt_cand[b][s] / n_b
+            sv = xt_sel[b][s] / n_b
+            take = (xt_sel[b][s] / xt_cand[b][s] * 100.0) if xt_cand[b][s] > 0 else 0.0
+            share = xt_sel[b][s] / tot_sel_b * 100.0
+            add(f"{b if s == strides[0] else '':<9}{int(s):>7}{c:>10.2f}{sv:>9.2f}"
+                f"{take:>8.1f}%{share:>10.1f}%")
+            xtab[b]["levels"][int(s)] = {
+                "cand_per_gt": c, "sel_per_gt": sv,
+                "take_pct": take, "sel_share_pct": share}
+        xtab[b]["sel_per_gt_total"] = tot_sel_b / n_b
+        add(f"{'':<9}{'TOTAL':>7}{sum(xt_cand[b].values())/n_b:>10.2f}"
+            f"{tot_sel_b/n_b:>9.2f}")
+        add("")
+    add("  READ THIS AGAINST THE BUDGET THE SCHEME ALLOWS:")
+    add(f"    stock      global top-{topk}, no per-level ceiling")
+    add(f"    uniform    P3/P4/P5 = {-(-topk//3)}/{-(-topk//3)}/{-(-topk//3)}"
+        f"  (sum {3*(-(-topk//3))} > topk -> per-GT cap re-ranks globally)")
+    add("    coarse244  P3/P4/P5 = 2/4/4  (sum 10 = topk -> cap never fires)")
+    add("")
+    add("  If 'sel/GT' at s8 for SMALL drops when moving stock -> uniform, the")
+    add("  per-level cap is REMOVING small-object positives, not adding them.")
+    add("  Section 5 says those positives are good (mean IoU ~0.81, 1.3% < 0.3),")
+    add("  so a drop there is a loss of useful signal, not a cleanup.")
+    add("  Cross-check s32: if 'cand/GT' is ~1 the coarse budget cannot be")
+    add("  filled at all and the scheme's real effect is the P3 cap alone.")
+    add("")
+    # ---- self-check: the cross-tab must reproduce BOTH marginals -------------
+    # Guards against a mis-indexed accumulator silently producing a plausible
+    # but wrong table. Row sums must match section 4's taken/GT; column sums
+    # must match section 1's sel/GT.
+    add("  SELF-CHECK (cross-tab vs the marginals it must reproduce):")
+    ok = True
+    for b in ("small", "medium", "large"):
+        if not sel_taken[b]:
+            continue
+        row = sum(xt_sel[b].values()) / (xt_n[b] or 1.0)
+        ref = float(np.concatenate(sel_taken[b]).mean())
+        good = abs(row - ref) < 1e-6
+        ok &= good
+        add(f"    row {b:<7} {row:8.4f} vs section-4 taken/GT {ref:8.4f}   "
+            f"{'OK' if good else 'MISMATCH'}")
+    for s in strides:
+        col = sum(xt_sel[b][s] for b in BUCKETS) / (n_gt_total or 1.0)
+        ref = sel[s] / (n_gt_total or 1.0)
+        good = abs(col - ref) < 1e-6
+        ok &= good
+        add(f"    col s{int(s):<6} {col:8.4f} vs section-1 sel/GT     {ref:8.4f}   "
+            f"{'OK' if good else 'MISMATCH'}")
+    add(f"    -> {'consistent' if ok else 'INCONSISTENT — do not trust 4b'}")
+    add("")
+
     add(f"5) POSITIVE-SET QUALITY — are the forced extras actually bad?")
     add("-" * 78)
     add(f"{'size':<9}{'mean IoU':>10}{'p10 IoU':>9}{'worst':>8}"
@@ -552,22 +751,29 @@ def main():
     report = "\n".join(lines)
     print("\n" + report)
 
-    with open(os.path.join(OUT_DIR, "footprint_report.txt"), "w") as f:
+    rep_path = os.path.join(OUT_DIR, f"footprint_report_{tag}.txt")
+    json_path = os.path.join(OUT_DIR, f"footprint_stats_{tag}.json")
+    with open(rep_path, "w") as f:
         f.write(report + "\n")
-    with open(os.path.join(OUT_DIR, "footprint_stats.json"), "w") as f:
+    with open(json_path, "w") as f:
         json.dump({
             "weights": WEIGHTS, "data_yaml": DATA_YAML, "split": SPLIT,
             "imgsz": IMG_SIZE, "batches": BATCHES,
-            "assigner": type(assigner).__name__, "topk": topk,
+            "assigner_preset": ASSIGNER, "assigner": type(assigner).__name__,
+            "assigner_label": asg_label, "quality_gate": QUALITY_GATE,
+            "topk": topk,
             "n_gt": int(n_gt_total), "n_fg": int(n_fg_total),
             "size_bins_px": list(SIZE_BINS), "sna_kmin": SNA_KMIN,
             "marginal_iou": MARGINAL_IOU,
             "per_level": per_level, "per_class": per_class,
-            "per_size": per_size, "sna_simulation": sna,
+            "per_size": per_size, "size_x_level": xtab, "sna_simulation": sna,
         }, f, indent=2)
 
-    print(f"\nsaved -> {OUT_DIR}/footprint_report.txt")
-    print(f"saved -> {OUT_DIR}/footprint_stats.json")
+    print(f"\nsaved -> {rep_path}")
+    print(f"saved -> {json_path}")
+    print(f"\nassigner measured: {ASSIGNER}  ({asg_label})")
+    print("Next: edit ASSIGNER at the top and re-run. Compare section 4b across")
+    print("      stock / uniform / coarse244 with the SAME weights.")
 
 
 if __name__ == "__main__":
