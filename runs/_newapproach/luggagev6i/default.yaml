@@ -237,7 +237,7 @@ use_lbtal: False # (bool) enable per-level top-k allocation
 lbtal_mode: proportional # (str) 'proportional' | 'fixed' | 'uniform' | 'balanced_capped' (protects large)
 lbtal_level_topk: # (dict|list, optional) 'fixed' mode budget, e.g. {8: 6, 16: 3, 32: 2}; blank = None
 lbtal_min_level_k: 1 # (int) minimum top-k budget guaranteed to each pyramid level
-lbtal_quality_gate: 0.0 # (float) 0=off; >0 keeps per-level picks with metric >= gate*per-level-best (drops weak coarse positives)
+lbtal_quality_gate: 0.0 # (float) 0=off; >0 keeps per-level picks with metric >= gate*GT-global-best across levels (drops weak coarse positives)
 
 # ======================================================================================================================
 # loss_custom_v3(_fixed).py keys — stock + AR-DFL / PEU / LBA. All default OFF/neutral

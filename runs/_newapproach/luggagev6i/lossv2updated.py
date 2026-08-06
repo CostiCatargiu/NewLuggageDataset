@@ -1109,13 +1109,31 @@ class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
                 continue
             tk_metrics, tk_idxs = torch.topk(m_lvl, k_eff, dim=-1, largest=largest)  # (b,n,k_eff)
             valid = tk_metrics > self.eps                          # drop empty slots
-            # Quality gate: within this level, keep a pick only if its metric is
-            # >= quality_gate * (this GT's best metric AT THIS LEVEL). Drops the
-            # weakest per-level positives so extra (esp. coarse) budget admits
-            # only good boxes. Off when quality_gate == 0.
-            if self.quality_gate > 0.0:
-                lvl_max = tk_metrics[:, :, :1].clamp_min(self.eps)  # (b,n,1) best-at-level
-                valid = valid & (tk_metrics >= self.quality_gate * lvl_max)
+            # Quality gate: keep a per-level pick only if its metric is
+            # >= quality_gate * (this GT's best metric ACROSS ALL LEVELS).
+            #
+            # NOTE: this is deliberately GLOBAL, not per-level. A per-level
+            # reference (tk_metrics[:, :, :1]) is near-inert: torch.topk returns
+            # sorted, so slot 0 trivially satisfies m >= gate*m for gate < 1 and
+            # every level keeps its top-1 unconditionally — including a coarse
+            # level whose picks are uniformly mediocre. Only within-level spread
+            # got pruned, which is not the intent ("drop weak coarse positives").
+            # Against the global best, a level that is wholesale worse than the
+            # finest level is actually trimmed.
+            #
+            # Safety: the globally-best anchor always passes (m == gmax >=
+            # gate*gmax for gate <= 1) and is by construction its own level's
+            # top-1, so with min_level_k >= 1 every real GT retains >= 1
+            # positive. Padded GTs have all-zero metrics and are already
+            # excluded by the `tk_metrics > eps` test above.
+            if self.quality_gate > 0.0 and largest:
+                gmax = metrics.amax(dim=-1, keepdim=True).clamp_min(self.eps)  # (b,n,1)
+                valid = valid & (tk_metrics >= self.quality_gate * gmax)
+            elif self.quality_gate > 0.0:
+                # largest=False inverts "best"; global scaling is not meaningful
+                # there, so fall back to the level-local reference.
+                lvl_ref = tk_metrics[:, :, :1].clamp_min(self.eps)
+                valid = valid & (tk_metrics >= self.quality_gate * lvl_ref)
             tk_idxs = tk_idxs.masked_fill(~valid, 0)
             ones = torch.ones_like(tk_idxs[:, :, :1], dtype=torch.int8)
             for j in range(k_eff):
