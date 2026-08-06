@@ -999,12 +999,19 @@ class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
 
     def __init__(self, topk=10, num_classes=80, alpha=0.5, beta=6.0,
                  level_topk_mode="proportional", level_topk=None,
-                 min_level_k=1, eps=1e-9):
+                 min_level_k=1, quality_gate=0.0, eps=1e-9):
         super().__init__(topk=topk, num_classes=num_classes, alpha=alpha, beta=beta, eps=eps)
         self.level_topk_mode = level_topk_mode
         # level_topk: dict{stride:int} or list aligned to sorted unique strides.
         self.level_topk = level_topk
         self.min_level_k = int(min_level_k)
+        # quality_gate: if > 0, within each level a selected candidate is kept
+        # only if its metric >= gate * (that level's max metric for that GT).
+        # Motivated by lb_coarse_244: coarse levels FOUND more small objects
+        # (AR50_small 0.966) but did NOT convert to mAP -> some coarse positives
+        # are low-quality. Gating drops the weakest per-level picks so the extra
+        # coarse budget only admits GOOD boxes. 0.0 = no gate (stock LB-TAL).
+        self.quality_gate = float(quality_gate)
         self._strides = None       # (A,) per-anchor stride, set each fwd pass
         self._warned = False
         self._printed = False
@@ -1033,6 +1040,24 @@ class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
         elif self.level_topk_mode == "uniform":
             per = max(self.min_level_k, -(-self.topk // n))  # ceil
             ks = {s: per for s in uniq_strides}
+        elif self.level_topk_mode == "balanced_capped":
+            # Like uniform, but the FINEST level (smallest stride, P3) is capped
+            # slightly BELOW the coarser levels so large/medium objects retain
+            # enough positives. Motivated by the failed SWA+LB-TAL combo where
+            # over-boosting small collapsed LARGE (large mAP -3). Gives coarse
+            # levels a guaranteed share WITHOUT starving them: e.g. topk10/3lvl
+            # -> P3=3, P4=4, P5=3 (fine slightly reduced, coarse protected).
+            base = max(self.min_level_k, self.topk // n)
+            ks = {}
+            for i, s in enumerate(uniq_strides):  # sorted ascending: P3,P4,P5
+                if i == 0:
+                    ks[s] = max(self.min_level_k, base - 1)   # trim finest
+                else:
+                    ks[s] = base + (1 if i == 1 else 0)       # give the middle +1
+            # top up any remaining budget to the coarsest level
+            rem = self.topk - sum(ks.values())
+            if rem > 0:
+                ks[uniq_strides[-1]] += rem
         else:  # 'proportional' — share of geometric candidate supply (live)
             w = cand_share if cand_share is not None else {s: 1.0 / n for s in uniq_strides}
             tot = sum(w.values()) or 1.0
@@ -1084,6 +1109,13 @@ class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
                 continue
             tk_metrics, tk_idxs = torch.topk(m_lvl, k_eff, dim=-1, largest=largest)  # (b,n,k_eff)
             valid = tk_metrics > self.eps                          # drop empty slots
+            # Quality gate: within this level, keep a pick only if its metric is
+            # >= quality_gate * (this GT's best metric AT THIS LEVEL). Drops the
+            # weakest per-level positives so extra (esp. coarse) budget admits
+            # only good boxes. Off when quality_gate == 0.
+            if self.quality_gate > 0.0:
+                lvl_max = tk_metrics[:, :, :1].clamp_min(self.eps)  # (b,n,1) best-at-level
+                valid = valid & (tk_metrics >= self.quality_gate * lvl_max)
             tk_idxs = tk_idxs.masked_fill(~valid, 0)
             ones = torch.ones_like(tk_idxs[:, :, :1], dtype=torch.int8)
             for j in range(k_eff):
@@ -1329,6 +1361,10 @@ class v8DetectionLoss:
         self.lbtal_mode = getattr(h, 'lbtal_mode', 'proportional')
         self.lbtal_level_topk = getattr(h, 'lbtal_level_topk', None)
         self.lbtal_min_level_k = getattr(h, 'lbtal_min_level_k', 1)
+        # Quality-gate (0=off): within each level keep only picks whose metric
+        # is >= gate * per-level-best. Targets lb_coarse_244's "found but not
+        # converted" signal. Also 'balanced_capped' mode protects large objects.
+        self.lbtal_quality_gate = getattr(h, 'lbtal_quality_gate', 0.0)
 
         # M / N / O are mutually exclusive assigner variants — at most one on.
         # Each is a different single override of the stock assigner; stacking
@@ -1425,6 +1461,7 @@ class v8DetectionLoss:
                 level_topk_mode=self.lbtal_mode,
                 level_topk=self.lbtal_level_topk,
                 min_level_k=self.lbtal_min_level_k,
+                quality_gate=self.lbtal_quality_gate,
             )
         else:
             self.assigner = TaskAlignedAssigner(
@@ -1468,7 +1505,7 @@ class v8DetectionLoss:
             print(f"  [L] bag_penalty:     {self.use_bag_penalty}" + (f" (w={self.bag_penalty_weight}, cls={self.bag_class_id})" if self.use_bag_penalty else ""))
             print(f"  [M] artal:           {self.use_artal}" + (f" (thresh={self.artal_ar_thresh}, scale={self.artal_ar_scale}, relax={self.artal_beta_relax})" if self.use_artal else ""))
             print(f"  [N] snatal:          {self.use_snatal}" + (f" (rho={self.snatal_rho}, k_min={self.snatal_kmin}, geometric pool)" if self.use_snatal else ""))
-            print(f"  [O2] lbtal:          {self.use_lbtal}" + (f" (mode={self.lbtal_mode}, level_topk={self.lbtal_level_topk}, min_k={self.lbtal_min_level_k}, per-level top-k)" if self.use_lbtal else ""))
+            print(f"  [O2] lbtal:          {self.use_lbtal}" + (f" (mode={self.lbtal_mode}, level_topk={self.lbtal_level_topk}, min_k={self.lbtal_min_level_k}, qgate={self.lbtal_quality_gate}, per-level top-k)" if self.use_lbtal else ""))
             if self.use_satal:
                 print(f"      satal_alpha_small: {self.satal_alpha_small}")
                 print(f"      satal_beta_small:  {self.satal_beta_small}")
