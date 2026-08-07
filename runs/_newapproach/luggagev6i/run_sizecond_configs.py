@@ -1,58 +1,93 @@
 #!/usr/bin/env python3
 """
-SIZE-CONDITIONAL LB-TAL (the F9 mechanism) + the justified combos.
+SIZE-CONDITIONAL LB-TAL (the F9 mechanism) + Section S, on measured budgets.
 
 =============================================================================
-WHY — straight from the footprint diagnostic (F9)
+WHY — straight from the 4-pass footprint diagnostic
 =============================================================================
-The 4-pass footprint proved ONE GLOBAL BUDGET CANNOT SERVE ALL THREE SIZES:
-  * small GTs peak at P3=4 and are P4-SUPPLY-limited (only 2.46 candidates),
-  * large GTs need a LOW P3 (501 P3 candidates -> any P3 budget forces junk
-    stride-8 positives that collapse large IoU 0.876->0.720).
-p4wide {8:4,16:7,32:1} is the best single global 3-tuple (cmb_p4wide: overall
-55.60, small 51.15 = +1.17, the project's best small AP). F9 states verbatim
-that a genuinely SIZE-CONDITIONAL per-level budget "would DOMINATE any single
-global 3-tuple". This runs exactly that mechanism.
+ONE GLOBAL BUDGET CANNOT SERVE ALL THREE SIZES:
+  * small GTs peak around P3=4 and are P4-SUPPLY-limited (2.46 candidates),
+  * large GTs need a MINIMAL P3 — they have 501 stride-8 candidates, so any P3
+    budget forces junk positives that collapsed large IoU 0.876 -> 0.720 and
+    killed the original cmb.
+p4wide {8:4,16:7,32:1} is the best single global 3-tuple (cmb_p4wide: 0.5560
+overall, small 0.5115 — 8/8 small-object metrics and the best mAP50 of all 28
+runs). size_cond gives EACH GT a budget chosen by its own max-side size, which
+is what F9 said "would dominate any single global 3-tuple".
 
-size_cond gives EACH GT a per-level budget chosen by its OWN max-side size:
-    small  -> {8:5,16:4,32:1}   fine-heavy (peak P3 + all its P4 supply)
-    medium -> {8:4,16:6,32:1}   balanced
-    large  -> {8:1,16:7,32:2}   coarse-heavy (minimal P3 -> no junk stride-8)
-Thresholds small<48<=medium<=96<large px, matching the footprint convention.
+BUDGETS ARE _F9 IN THIS FILE, NOT THE LOSS DEFAULT. Predicted allocation from
+the measured metric-valid ceilings (diag_fp_out_v6i):
+
+    scheme                      small tot   large P3   large tot
+    stock         (measured)        7.73       0.16       9.80  -> 0.5477 ANCHOR
+    p4wide        (measured)        5.91       2.17       9.54  -> best small cfg
+    loss default  {5/4/1,1/7/2}     6.86       0.68       8.76
+    _F9           {4/4/0,0/7/2}     5.72       0.00       8.08
+
+The loss default puts small at 6.86 total positives. The two best small-object
+configs sat at 5.73 and 5.91; stock's 7.73 is the ANCHOR. More small supply
+measured WORSE, twice — so _F9 pulls small back to 5.72 and takes large's P3 to
+0, matching stock's 0.16 instead of forcing 0.68 junk picks. See the comment
+block above _F9 for the full derivation.
 
 =============================================================================
-THE RUNS (ordered by expected payoff)
+THE RUNS
 =============================================================================
-  1. cmb_sizecond   sqrt0703 + size_cond (default F9 budgets) — THE headline
-                    candidate. If F9 is right it beats cmb_p4wide (small 51.15).
-  2. lb_sizecond    size_cond on the all-off base — ATTRIBUTION for #1 (is the
-                    win the allocation, or the sqrt combination?). Also: does it
-                    beat lb_p4wide (small 50.97) / lb_uniform (50.85) alone?
-  3. cmb_sizecond_aggr  aggressive small budget {8:6,16:3,32:1} for small,
-                    large {8:1,16:8,32:1} — pushes the size split harder.
-  4. cmb_p4wide_clsswa  cmb_p4wide + cls_swa 1.75 — the THIRD axis (cls/scoring)
-                    stacked on the current best. Fills the empty scoring stage;
-                    cls_swa alone was +0.41 small and did NOT fail (unlike qfl).
-  5. cmb_sizecond_clsswa  size_cond + sqrt + cls_swa — all three axes on the
-                    F9 allocation. The full stack, run last (needs #1 to work).
+  1. cmb_sizecond    sqrt0703 + size_cond(_F9) — THE headline candidate.
+  2. lb_sizecond     size_cond on all-off — ATTRIBUTION for #1 (allocation, or
+                     the sqrt combination?) and vs lb_p4wide / lb_uniform.
+  3. cmb_sizecond_aggr  probes the OTHER direction on small (P3=6, ~8.0 total,
+                     stock territory). A probe of the supply axis, not a
+                     candidate.
+  4. snt             sqrt0703 + Section S, the scale-normalised confidence
+                     target. SINGLE AXIS, deliberately NOT stacked with
+                     size_cond — see below.
+  5. cmb_p4wide_clsswa  cmb_p4wide + cls_swa 1.75. ONE cls_swa run, not two.
   6. cmb_p4wide_seed1   seed-1 confirm of the current best, so the new configs
-                    are compared against a SEED-VERIFIED baseline not a lucky one.
+                     are compared against a seed-verified baseline.
 
-Baselines: cmb_p4wide 55.60 / small 51.15 (current best), lb_uniform 55.57,
-SWA sqrt0703 55.64, anchor 54.77. Seed noise 0.12 overall / 2.06 large.
-READ small mAP (CocoEvalAllFolders_luggage.py) — the whole point is small.
+WHY snt IS NOT STACKED WITH size_cond. Both target small-object confidence by
+different routes. Effects here are ~0.005 against 0.0012 measured seed noise,
+so a stacked result cannot be attributed, and a null cannot be told apart from
+two effects cancelling. Stack them only if BOTH show signal alone.
+
+WHAT SECTION S DOES. TAL trains each GT toward a confidence ceiling equal to
+its own best achievable IoU (pos_overlaps). Measured peak target per GT:
+small 0.8365 / medium 0.8933 / large 0.9028 — small objects are explicitly
+taught to be 6.4% less confident, which is the AR50_small 0.95 -> R50_small
+0.70 gap. That ceiling is INVARIANT to allocation (under p4wide it reads
+0.8366, identical to stock), so no assigner — including size_cond — can move
+it. SNT rescales by ema_global/ema_size. RISK: it may cost precision; WATCH
+P50_small AS CLOSELY AS R50_small.
+
+WHY ONLY ONE cls_swa RUN. cls_swa is pos_boost's structural twin — both scale
+the CLS LOSS WEIGHT on selected positives. pos_boost measured -0.58 pp and
+moved R50_small by 0.34 pp, because loss weighting cannot push a prediction
+past its own target ceiling. Expect this to underperform; it is here to
+confirm that prediction cheaply, not because it is likely to win. (The
+docstring previously claimed "cls_swa alone was +0.41 small and did NOT fail" —
+use_cls_swa is False in all 28 runs in the results JSONs, so that number is
+not supported by anything in this repo. If it came from earlier work, cite it.)
+
+Baselines: cmb_p4wide 0.5560 / small 0.5115 (current best), lb_uniform 0.5557,
+sqrt0703 0.5564 (still champion), anchor 0.5477. Seed noise 0.0012 overall,
+0.0206 on large. READ small mAP + P50_small (CocoEvalAllFolders_luggage.py).
 
 VERIFY FIRST (5 min, no training): diag_anchor_footprint.py with the size_cond
-assigner, confirm small GTs draw ~5/4/1 and large GTs ~1/7/2, i.e. large's
-stride-8 count drops toward the stock 0.16 while small's P3 stays ~4-5.
+assigner — confirm small GTs draw ~4/2.1/0 and large ~0/6.8/1.3, i.e. large's
+stride-8 count hits 0 while small stays near 5.7 total.
 
-REQUIRES lossv2updated.py (with mode='size_cond' + set_gt_sizes) installed as
-ultralytics/utils/loss.py; lbtal_size_* whitelisted in default.yaml.
+REQUIRES lossv2updated.py (mode='size_cond' + set_gt_sizes + Section S)
+installed as ultralytics/utils/loss.py; lbtal_size_* and snt_* whitelisted in
+default.yaml. preflight() scans the installed loss SOURCE for every key each
+selected config activates and aborts on a no-op, and aborts on run-dir
+collisions before burning hours.
 
 Usage:
     python run_sizecond_configs.py
-    python run_sizecond_configs.py cmb_sizecond lb_sizecond
+    python run_sizecond_configs.py cmb_sizecond snt
 """
+
 
 import sys
 import time
@@ -131,30 +166,82 @@ def _sq_p4wide(cls_swa=None):
     return cfg
 
 
-_AGGR = {"small": {8: 6, 16: 3, 32: 1},
+# =============================================================================
+# SIZE-CONDITIONAL BUDGETS — tuned against the measured footprint, not guessed
+# =============================================================================
+# Predicted allocation from the four footprint passes (metric-valid ceilings in
+# diag_fp_out_v6i), small and large totals per GT:
+#
+#   scheme                       small tot   large P3   large tot
+#   stock          (measured)        7.73       0.16       9.80   -> 0.5477 ANCHOR
+#   p4wide         (measured)        5.91       2.17       9.54   -> best small cfg
+#   loss default   {5/4/1,·,1/7/2}   6.86       0.68       8.76
+#   _F9 below      {4/4/0,·,0/7/2}   5.72       0.00       8.08
+#
+# Two changes from the loss-file default, both measured rather than assumed:
+#
+#   small P3 5->4, P5 1->0.  The two best small-object configs sat at 5.73
+#     (lb_uniform) and 5.91 (cmb_p4wide) total positives per small GT. Stock's
+#     7.73 is the ANCHOR at 0.5477 — MORE small supply measured WORSE, twice.
+#     The loss default lands at 6.86, i.e. on the losing side of that. P5 goes
+#     to 0 because small selects 0.00-0.01 there in every pass: those anchors
+#     exist geometrically but carry a ~0 alignment metric.
+#
+#   large P3 1->0.  Stock takes 0.16 stride-8 positives per large GT; a budget
+#     of 1 forces ~0.68. Those are the junk picks that collapsed large quality
+#     under uniform (mean IoU 0.876 -> 0.720) and killed the original cmb.
+#     Zero is legal — the assigner does `if k <= 0: continue` — and large keeps
+#     125 P4 candidates, so it cannot be starved.
+#
+# _AGGR deliberately probes the OTHER direction on small (P3=6 -> ~8.0 total,
+# stock territory). Kept as a probe, not a candidate; its large row is fixed to
+# 0 as well since that change has no downside.
+_F9 = {"small":  {8: 4, 16: 4, 32: 0},
+       "medium": {8: 4, 16: 6, 32: 1},
+       "large":  {8: 0, 16: 7, 32: 2}}
+
+_AGGR = {"small": {8: 6, 16: 3, 32: 0},
          "medium": {8: 4, 16: 6, 32: 1},
-         "large": {8: 1, 16: 8, 32: 1}}
+         "large": {8: 0, 16: 8, 32: 1}}
+
+def _snt(base, strength=1.0):
+    """Section S: scale-normalised confidence target (in lossv2updated.py)."""
+    return dict(base, use_snt=True, snt_strength=strength, snt_momentum=0.02,
+                snt_max_scale=1.15, snt_warmup_epochs=3,
+                snt_small_px=48.0, snt_medium_px=96.0)
+
 
 RUNS = [
     {"name": "cmb_sizecond", "batch": BATCH,
-     "label": "sqrt0703 + size_cond (F9 default budgets) — the headline candidate",
-     "params": _lb_sizecond(_SQRT0703)},
+     "label": "sqrt0703 + size_cond (_F9 tuned budgets) — the headline candidate",
+     "params": _lb_sizecond(_SQRT0703, size_budgets=_F9)},
 
     {"name": "lb_sizecond", "batch": BATCH,
      "label": "size_cond on all-off base — attribution + vs lb_p4wide/lb_uniform",
-     "params": _lb_sizecond(_ALL_OFF)},
+     "params": _lb_sizecond(_ALL_OFF, size_budgets=_F9)},
 
     {"name": "cmb_sizecond_aggr", "batch": BATCH,
-     "label": "sqrt0703 + size_cond aggressive {s:6/3/1, l:1/8/1} — harder size split",
+     "label": "sqrt0703 + size_cond aggressive {s:6/3/0} — probes MORE small supply",
      "params": _lb_sizecond(_SQRT0703, size_budgets=_AGGR)},
 
+    # Section S — kept as a SINGLE-AXIS test, deliberately NOT stacked with
+    # size_cond. Both target small-object confidence by different routes; with
+    # effects of ~0.005 against 0.0012 seed noise, a stacked result cannot be
+    # attributed and a null cannot be told apart from two effects cancelling.
+    # Stack them only if BOTH show signal on their own.
+    {"name": "snt", "batch": BATCH,
+     "label": "sqrt0703 + scale-normalised confidence target — the one axis no assigner can reach",
+     "params": _snt(_SQRT0703)},
+
+    # ONE cls_swa run, not two. cls_swa is pos_boost's structural twin: both
+    # scale the CLS LOSS WEIGHT on small/selected positives. pos_boost measured
+    # -0.58 pp and moved R50_small by 0.34 pp, because loss weighting cannot
+    # push a prediction past its own target ceiling (pos_overlaps) — which is
+    # exactly what Section S changes instead. Expect this to underperform; it
+    # is here to confirm the prediction, not because it is likely to win.
     {"name": "cmb_p4wide_clsswa", "batch": BATCH,
      "label": "cmb_p4wide + cls_swa 1.75 — third axis (scoring) on the current best",
      "params": _sq_p4wide(cls_swa=1.75)},
-
-    {"name": "cmb_sizecond_clsswa", "batch": BATCH,
-     "label": "sqrt0703 + size_cond + cls_swa 1.75 — full 3-axis stack on F9 alloc",
-     "params": _lb_sizecond(_SQRT0703, cls_swa=1.75)},
 
     {"name": "cmb_p4wide_seed1", "batch": BATCH, "seed": 1,
      "label": "cmb_p4wide SEED 1 — confirm the current best before comparing",
@@ -163,7 +250,8 @@ RUNS = [
 
 
 def loss_provenance():
-    info = {"path": None, "md5": None, "has_size_cond": False, "has_set_gt_sizes": False}
+    info = {"path": None, "md5": None, "has_size_cond": False,
+            "has_set_gt_sizes": False, "has_snt": False, "_body": ""}
     try:
         import ultralytics.utils.loss as _lm
         path = getattr(_lm, "__file__", None)
@@ -174,6 +262,9 @@ def loss_provenance():
             txt = src.decode("utf-8", "ignore")
             info["has_size_cond"] = "size_cond" in txt
             info["has_set_gt_sizes"] = "set_gt_sizes" in txt
+            info["_body"] = "\n".join(
+                l for l in txt.split("\n") if not l.strip().startswith("#"))
+            info["has_snt"] = "use_snt" in info["_body"]
     except Exception as e:
         info["error"] = str(e)
     return info
@@ -182,14 +273,50 @@ def loss_provenance():
 LOSS_INFO = loss_provenance()
 
 
-def preflight():
+def unimplemented_params(params):
+    """Keys a config tries to ACTIVATE that the installed loss never reads.
+
+    default.yaml whitelists the union of every mechanism ever written, so the
+    cfg checker happily accepts keys the installed loss ignores — the run then
+    trains a bit-identical copy of its base config and burns 1.5 GPU-h
+    reproducing a number you already have. That is exactly how `posboost` was
+    ranked HIGH for a whole sweep before anyone noticed use_pos_boost appeared
+    nowhere in lossv2updated.py. Only keys whose value DIFFERS from the all-off
+    default are checked.
+    """
+    body = LOSS_INFO.get("_body") or ""
+    if not body:
+        return []
+    return sorted(k for k, v in params.items()
+                  if not (k in _ALL_OFF and _ALL_OFF[k] == v) and k not in body)
+
+
+def preflight(todo):
     print(f"  loss.py: {LOSS_INFO.get('path')}")
     print(f"  md5={LOSS_INFO.get('md5')}  size_cond={LOSS_INFO.get('has_size_cond')} "
-          f"set_gt_sizes={LOSS_INFO.get('has_set_gt_sizes')}")
+          f"set_gt_sizes={LOSS_INFO.get('has_set_gt_sizes')} "
+          f"snt={LOSS_INFO.get('has_snt')}")
     missing = [k for k in ("has_size_cond", "has_set_gt_sizes") if not LOSS_INFO.get(k)]
     if missing:
         print(f"\n  [ABORT] installed loss.py missing: {', '.join(missing)}")
         print("  Install the updated lossv2updated.py as ultralytics/utils/loss.py.")
+        return False
+
+    bad = {r["name"]: unimplemented_params(r["params"]) for r in todo}
+    bad = {k: v for k, v in bad.items() if v}
+    if bad:
+        print("\n  [ABORT] these configs set params the installed loss NEVER READS.")
+        print("          Each would train an exact copy of its base config:")
+        for name, ks in bad.items():
+            print(f"            {name:<22} {', '.join(ks)}")
+        return False
+
+    clash = [r["name"] for r in todo
+             if os.path.isdir(os.path.join(PROJECT_DIR, r["name"]))]
+    if clash:
+        print(f"\n  [ABORT] run dirs already exist (exist_ok=False): {', '.join(clash)}")
+        print("  Delete or rename them, or those runs fail after the earlier")
+        print("  ones have already burned their hours.")
         return False
     return True
 
@@ -280,7 +407,7 @@ if __name__ == "__main__":
     print(f"  target: beat cmb_p4wide (overall 55.60, small 51.15)")
     print(f"  runs: {', '.join(r['name'] for r in todo)}  (~{1.5*len(todo):.0f} GPU-h)")
     print(f"{'=' * 76}\n")
-    if not preflight():
+    if not preflight(todo):
         sys.exit(1)
     os.makedirs(PROJECT_DIR, exist_ok=True)
     out_path = os.path.join(PROJECT_DIR, "summary.json")

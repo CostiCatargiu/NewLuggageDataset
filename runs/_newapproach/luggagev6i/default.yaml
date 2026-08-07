@@ -304,3 +304,21 @@ cfg: # (str, optional) for overriding defaults.yaml
 
 # Tracker settings ------------------------------------------------------------------------------------------------------
 tracker: botsort.yaml # (str) tracker type, choices=[botsort.yaml, bytetrack.yaml]
+
+# --- Section S: scale-normalised confidence target. use_snt=False -> stock TAL ---
+# TAL trains each GT toward a confidence ceiling equal to its own best achievable
+# IoU (pos_overlaps). Measured peak target per GT (diag_anchor_footprint 5b):
+# small 0.8365 / medium 0.8933 / large 0.9028 — small objects are taught to be
+# 6.4% less confident, which is the AR50_small 0.95 -> R50_small 0.70 gap.
+# The ceiling is INVARIANT to allocation (LB-TAL p4wide reads 0.8366), so no
+# assigner — including size_cond — can move it, and loss weighting cannot either
+# (pos_boost: -0.58 pp). SNT rescales by ema_global/ema_size so the target
+# measures localisation quality RELATIVE TO WHAT IS ACHIEVABLE AT THAT SCALE.
+# RISK: may cost precision — watch P50_small as closely as R50_small.
+use_snt: False # (bool) enable the scale-normalised confidence target
+snt_momentum: 0.02 # (float) EMA momentum for the running per-size pos_overlaps
+snt_strength: 1.0 # (float) 0..1; 1 = full equalisation, <1 = partial correction
+snt_max_scale: 1.15 # (float) cap on the per-bucket multiplier (guards early EMAs)
+snt_warmup_epochs: 3 # (int) update EMAs but do not rescale before this epoch
+snt_small_px: 48.0 # (float) max-side threshold, MODEL px — matches the diagnostic
+snt_medium_px: 96.0 # (float) max-side threshold, MODEL px

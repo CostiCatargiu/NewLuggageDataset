@@ -1296,6 +1296,142 @@ class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
 
 
 # =============================================================================
+# Section S: Scale-Normalised Confidence Target (SNT)
+# =============================================================================
+# THE PROBLEM, measured (diag_anchor_footprint.py section 5b, v6i val):
+#
+#   stock TAL builds the classification target as
+#       norm_align_metric = align_metric * pos_overlaps / pos_align_metrics
+#       target_scores     = onehot * norm_align_metric
+#   where pos_overlaps is the GT's MAX IoU among its own positives. At that
+#   GT's best anchor align_metric == pos_align_metrics, so its target is
+#   EXACTLY pos_overlaps. A GT is therefore trained toward a confidence
+#   ceiling equal to its own best achievable IoU — and no higher.
+#
+#   Small objects are structurally harder to localise, so they get lower
+#   ceilings. Measured peak target per GT:
+#       small 0.8365   medium 0.8933   large 0.9028      (-6.4% small vs medium)
+#   with pos_overlaps tracking it almost exactly (0.8393 / 0.8948 / 0.9043).
+#
+#   The model is being explicitly trained to be less confident about small
+#   luggage. That is the AR50_small ~0.95 -> R50_small ~0.70 gap.
+#
+# WHY NO ASSIGNMENT SCHEME CAN FIX IT. The same diagnostic under LB-TAL
+# 'p4wide' gives small 0.8366 / pos_overlaps 0.8393 — identical to stock to
+# four decimals. Changing WHICH anchors become positive does not change the
+# ceiling, because the best anchor is selected either way and pos_overlaps is
+# its IoU. All 28 prior runs varied allocation, weighting or the box loss;
+# none of them could move this number.
+#
+# WHY LOSS WEIGHTING CANNOT FIX IT EITHER. pos_boost scales the loss on
+# positives and measured -0.58 pp overall while moving R50_small by 0.34 pp.
+# Weighting the loss harder cannot push a prediction past its own target; it
+# only converges to the same ceiling faster. Same for QFL from the other side.
+#
+# THE MECHANISM. Keep an EMA of pos_overlaps per size bucket and rescale the
+# target by (ema_global / ema_bucket), so the target measures how well a GT is
+# localised RELATIVE TO WHAT IS ACHIEVABLE AT ITS SCALE. A small object
+# localised as well as small objects can be earns the same confidence as a
+# large one. With the measured values this maps 0.8393 / 0.8948 / 0.9043 all
+# to ~0.87: roughly +4% for small, -2% for medium and large.
+#
+# RISK, and it is real: raising the target on inherently poorly-localised
+# boxes trains toward overconfidence and may cost precision. That is the
+# trade this mechanism exists to measure. Watch P50_small alongside R50_small.
+# =============================================================================
+
+
+def scale_norm_target(target_scores, target_bboxes, fg_mask, target_gt_idx,
+                      gt_bboxes, size_bins, ema, momentum=0.02,
+                      strength=1.0, max_scale=1.15, warmup_done=True):
+    """Rescale TAL's confidence targets to be scale-relative. In-place safe.
+
+    Args:
+        target_scores : (b, A, nc) soft targets from the assigner
+        target_bboxes : (b, A, 4) xyxy PIXEL coords of the assigned GT
+        fg_mask       : (b, A) bool
+        target_gt_idx : (b, A) long, index of the assigned GT
+        gt_bboxes     : (b, n, 4) xyxy PIXEL coords
+        size_bins     : (small_px, medium_px) max-side thresholds
+        ema           : dict {'small','medium','large','global'} -> float|None,
+                        mutated in place
+        momentum      : EMA momentum for the running pos_overlaps means
+        strength      : 0 = off, 1 = full equalisation. Interpolates, so a
+                        partial correction can be tested without an all-or-
+                        nothing commitment.
+        max_scale     : hard cap on the per-bucket multiplier. Guards the
+                        first few batches, when an EMA built from one batch of
+                        a rare bucket (large is 7.7% of GTs) can be far off.
+        warmup_done   : if False, only update the EMAs and return unchanged —
+                        the running means are meaningless until the model
+                        produces sane IoUs.
+
+    Returns:
+        (target_scores, applied) — applied is False when nothing was changed.
+    """
+    if not fg_mask.any():
+        return target_scores, False
+
+    # per-anchor GT max side, in the same PIXEL units as size_bins
+    tb = target_bboxes[fg_mask]                                       # (M,4)
+    side = torch.maximum(tb[:, 2] - tb[:, 0], tb[:, 3] - tb[:, 1])    # (M,)
+
+    # pos_overlaps per GT == the GT's MAX target (at its best anchor the
+    # align/align_max factor is exactly 1, so target == pos_overlaps).
+    tgt = target_scores[fg_mask].amax(dim=-1)                         # (M,)
+    b, n = gt_bboxes.shape[0], gt_bboxes.shape[1]
+    bidx, aidx = fg_mask.nonzero(as_tuple=True)
+    flat = bidx * n + target_gt_idx[bidx, aidx]                       # GT id
+    peak = torch.zeros(b * n, device=tgt.device, dtype=tgt.dtype)
+    peak.scatter_reduce_(0, flat, tgt, reduce="amax", include_self=True)
+    seen = torch.zeros(b * n, device=tgt.device, dtype=torch.bool)
+    seen[flat] = True
+
+    gw = (gt_bboxes[..., 2] - gt_bboxes[..., 0])
+    gh = (gt_bboxes[..., 3] - gt_bboxes[..., 1])
+    gside = torch.maximum(gw, gh).reshape(-1)                         # (b*n,)
+
+    buckets = {
+        "small":  seen & (gside < size_bins[0]),
+        "medium": seen & (gside >= size_bins[0]) & (gside <= size_bins[1]),
+        "large":  seen & (gside > size_bins[1]),
+    }
+    # ---- update the running per-bucket means (detached; targets carry no grad)
+    with torch.no_grad():
+        for name, m in buckets.items():
+            if m.any():
+                v = float(peak[m].mean())
+                ema[name] = v if ema[name] is None else \
+                    (1.0 - momentum) * ema[name] + momentum * v
+        if seen.any():
+            v = float(peak[seen].mean())
+            ema["global"] = v if ema["global"] is None else \
+                (1.0 - momentum) * ema["global"] + momentum * v
+
+    if not warmup_done or ema["global"] is None:
+        return target_scores, False
+    if any(ema[k] is None for k in ("small", "medium", "large")):
+        return target_scores, False
+
+    # ---- per-anchor multiplier from its GT's size bucket
+    scale = torch.ones_like(side)
+    for name, lo, hi in (("small", -1.0, size_bins[0]),
+                         ("medium", size_bins[0], size_bins[1]),
+                         ("large", size_bins[1], float("inf"))):
+        sel = (side >= lo) & (side < hi) if name != "medium" else \
+              (side >= lo) & (side <= hi)
+        if sel.any():
+            f = ema["global"] / max(ema[name], 1e-6)
+            f = 1.0 + strength * (f - 1.0)              # partial correction
+            scale[sel] = min(max(f, 1.0 / max_scale), max_scale)
+
+    ts = target_scores.clone()
+    fg = ts[fg_mask]                                                  # (M, nc)
+    ts[fg_mask] = (fg * scale.unsqueeze(-1)).clamp(max=1.0)
+    return ts, True
+
+
+# =============================================================================
 # Section P telemetry — ported from loss_custom_v3_fixed.py
 # =============================================================================
 
@@ -1539,6 +1675,30 @@ class v8DetectionLoss:
         # UNITS: pos_boost_small_px is in MODEL pixels, matching
         # target_bboxes_px. v6i labels are already 640-wide, so 60.0 here is
         # 60 px at imgsz=640 — do NOT reuse the 48/96 COCO-style size bins.
+        # =====================================================================
+        # Section S: scale-normalised confidence target — see scale_norm_target
+        # =====================================================================
+        # snt_size_px are MAX-SIDE thresholds in MODEL pixels and default to the
+        # 48/96 bins the footprint diagnostic uses, so the mechanism is bucketed
+        # exactly the same way the measurement that motivated it was.
+        self.use_snt = bool(getattr(h, 'use_snt', False))
+        self.snt_momentum = float(getattr(h, 'snt_momentum', 0.02))
+        self.snt_strength = float(getattr(h, 'snt_strength', 1.0))
+        self.snt_max_scale = float(getattr(h, 'snt_max_scale', 1.15))
+        self.snt_warmup_epochs = int(getattr(h, 'snt_warmup_epochs', 3))
+        self.snt_small_px = float(getattr(h, 'snt_small_px', 48.0))
+        self.snt_medium_px = float(getattr(h, 'snt_medium_px', 96.0))
+        self._snt_ema = {"small": None, "medium": None, "large": None, "global": None}
+        self._snt_applied = 0
+        if self.use_snt:
+            if not (0.0 <= self.snt_strength <= 1.0):
+                raise ValueError("snt_strength must be in [0, 1]")
+            if self.snt_max_scale < 1.0:
+                raise ValueError("snt_max_scale must be >= 1.0")
+            if self.snt_strength == 0.0:
+                raise ValueError(
+                    "use_snt=True but snt_strength=0 — that is stock TAL.")
+
         self.use_pos_boost = bool(getattr(h, 'use_pos_boost', False))
         self.pos_boost_backpack = float(getattr(h, 'pos_boost_backpack', 1.0))
         self.pos_boost_bag = float(getattr(h, 'pos_boost_bag', 1.5))
@@ -1767,6 +1927,11 @@ class v8DetectionLoss:
             print(f"  [J] repulsion:       {self.use_repulsion}" + (f" (w={self.repulsion_weight})" if self.use_repulsion else ""))
             print(f"  [K] cls_swa:         {self.use_cls_swa}" + (f" (boost={self.cls_swa_boost}, area<{self.small_obj_px}px² criterion)" if self.use_cls_swa else ""))
             print(f"  [L] bag_penalty:     {self.use_bag_penalty}" + (f" (w={self.bag_penalty_weight}, cls={self.bag_class_id})" if self.use_bag_penalty else ""))
+            print(f"  [S] scale-norm tgt:  {self.use_snt}" + (
+                f" (strength={self.snt_strength}, mom={self.snt_momentum}, "
+                f"cap={self.snt_max_scale}, warmup={self.snt_warmup_epochs}ep, "
+                f"bins {self.snt_small_px}/{self.snt_medium_px}px MODEL)"
+                if self.use_snt else ""))
             print(f"  [P] pos_boost:       {self.use_pos_boost}" + (
                 f" (bp/bag/tr={self.pos_boost_backpack}/{self.pos_boost_bag}/"
                 f"{self.pos_boost_trolley}, small x{self.pos_boost_small} below "
@@ -2259,6 +2424,22 @@ class v8DetectionLoss:
             gt_bboxes,
             mask_gt,
         )
+
+        # ── Section S: scale-normalised confidence target ──────────────────
+        # MUST run before target_scores_sum, the cls loss and the box loss —
+        # all three consume target_scores, and the box loss uses it as the
+        # per-sample score weight, so a late rescale would desynchronise them.
+        # target_bboxes is still in PIXEL coords here (the box branch divides
+        # by stride later), which is what the size bucketing needs.
+        if self.use_snt:
+            target_scores, _ok = scale_norm_target(
+                target_scores, target_bboxes, fg_mask, target_gt_idx, gt_bboxes,
+                (self.snt_small_px, self.snt_medium_px), self._snt_ema,
+                momentum=self.snt_momentum, strength=self.snt_strength,
+                max_scale=self.snt_max_scale,
+                warmup_done=int(getattr(self, 'epoch', 0)) >= self.snt_warmup_epochs,
+            )
+            self._snt_applied += int(_ok)
 
         target_scores_sum = max(target_scores.sum(), 1)
 
