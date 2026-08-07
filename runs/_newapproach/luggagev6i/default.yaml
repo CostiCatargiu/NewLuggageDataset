@@ -234,10 +234,12 @@ snatal_kmin: 2 # (int) v6i fix (was 1): matches snatal_kmin=2 used in the run sc
 # tal_topk) — no supply cut, no metric change. Requires set_strides() (wired in
 # the loss). Mutually exclusive with SATAL/AR-TAL/SNA-TAL (loss raises if >1 on).
 use_lbtal: False # (bool) enable per-level top-k allocation
-lbtal_mode: proportional # (str) 'proportional' | 'fixed' | 'uniform' | 'balanced_capped' (protects large)
+lbtal_mode: proportional # (str) 'proportional' | 'fixed' | 'uniform' | 'balanced_capped' | 'size_cond' (F9: per-GT size-conditional)
 lbtal_level_topk: # (dict|list, optional) 'fixed' mode budget, e.g. {8: 6, 16: 3, 32: 2}; blank = None
 lbtal_min_level_k: 1 # (int) minimum top-k budget guaranteed to each pyramid level
 lbtal_quality_gate: 0.0 # (float) 0=off; >0 keeps per-level picks with metric >= gate*GT-global-best across levels (drops weak coarse positives)
+lbtal_size_budgets: # (dict, optional) size_cond override {small:{8:k,16:k,32:k}, medium:{...}, large:{...}}; blank = F9 default
+lbtal_size_thresholds: # (tuple, optional) size_cond (small_max, medium_max) model-px on GT max-side; blank = (48,96)
 
 # ======================================================================================================================
 # loss_custom_v3(_fixed).py keys — stock + AR-DFL / PEU / LBA. All default OFF/neutral

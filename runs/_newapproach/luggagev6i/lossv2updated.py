@@ -999,26 +999,66 @@ class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
 
     def __init__(self, topk=10, num_classes=80, alpha=0.5, beta=6.0,
                  level_topk_mode="proportional", level_topk=None,
-                 min_level_k=1, quality_gate=0.0, eps=1e-9):
+                 min_level_k=1, quality_gate=0.0,
+                 size_budgets=None, size_thresholds=(48.0, 96.0), eps=1e-9):
         super().__init__(topk=topk, num_classes=num_classes, alpha=alpha, beta=beta, eps=eps)
         self.level_topk_mode = level_topk_mode
         # level_topk: dict{stride:int} or list aligned to sorted unique strides.
         self.level_topk = level_topk
         self.min_level_k = int(min_level_k)
         # quality_gate: if > 0, within each level a selected candidate is kept
-        # only if its metric >= gate * (that level's max metric for that GT).
+        # only if its metric >= gate * (that GT's best metric across ALL levels).
         # Motivated by lb_coarse_244: coarse levels FOUND more small objects
         # (AR50_small 0.966) but did NOT convert to mAP -> some coarse positives
-        # are low-quality. Gating drops the weakest per-level picks so the extra
-        # coarse budget only admits GOOD boxes. 0.0 = no gate (stock LB-TAL).
+        # are low-quality. Gating drops the weakest picks so the extra budget
+        # only admits GOOD boxes. 0.0 = no gate (stock LB-TAL).
         self.quality_gate = float(quality_gate)
+        # =====================================================================
+        # SIZE-CONDITIONAL per-level budget (mode='size_cond') — the F9 mechanism.
+        # =====================================================================
+        # The footprint diagnostic (F9) proved ONE GLOBAL BUDGET CANNOT SERVE ALL
+        # THREE SIZES: small objects peak at P3=4 (they are P4-SUPPLY-limited, only
+        # 2.46 candidates), while large objects need a LOW P3 (they have 501 P3
+        # candidates and any P3 budget forces junk stride-8 positives onto them,
+        # collapsing their IoU 0.876->0.720). p4wide {8:4,16:7,32:1} is the best
+        # single global 3-tuple, but F9 states a genuinely SIZE-CONDITIONAL budget
+        # "would dominate any single global 3-tuple". This implements exactly that:
+        # each GT gets a per-level budget chosen by its OWN size.
+        #
+        # size_budgets: dict {'small':{8:k,16:k,32:k}, 'medium':{...}, 'large':{...}}
+        #   Default encodes the diagnostic's prescription:
+        #     small  -> fine-heavy   {8:5,16:4,32:1} (peak P3, all the P4 supply it has)
+        #     medium -> balanced     {8:4,16:6,32:1}
+        #     large  -> coarse-heavy {8:1,16:7,32:2} (minimal P3 -> no junk stride-8)
+        # size_thresholds: (small_max, medium_max) in MODEL px on GT max-side,
+        #   matching the footprint's small<48<=medium<=96<large convention.
+        self.size_budgets = size_budgets
+        self.size_thresholds = size_thresholds
         self._strides = None       # (A,) per-anchor stride, set each fwd pass
+        self._gt_sizes = None      # (b,n) per-GT max-side px, set each fwd pass
         self._warned = False
         self._printed = False
+
+    # default size-conditional budget = the F9 prescription
+    _DEFAULT_SIZE_BUDGETS = {
+        "small":  {8: 5, 16: 4, 32: 1},
+        "medium": {8: 4, 16: 6, 32: 1},
+        "large":  {8: 1, 16: 7, 32: 2},
+    }
 
     def set_strides(self, stride_tensor):
         """Provide per-anchor stride (pixels). stride_tensor: (A,1) or (A,)."""
         self._strides = stride_tensor.reshape(-1)
+
+    def set_gt_sizes(self, gt_bboxes):
+        """Provide per-GT max-side in MODEL px for size_cond mode.
+        gt_bboxes: (b, n, 4) xyxy in model-pixel coords. Stores (b,n) max-side."""
+        if gt_bboxes is None:
+            self._gt_sizes = None
+            return
+        w = gt_bboxes[..., 2] - gt_bboxes[..., 0]
+        h = gt_bboxes[..., 3] - gt_bboxes[..., 1]
+        self._gt_sizes = torch.maximum(w, h)   # (b, n)
 
     def _print_once(self, level_ks):
         if not self._printed:
@@ -1076,6 +1116,15 @@ class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
                       "each forward pass.")
                 self._warned = True
             return super().select_topk_candidates(metrics, largest=largest, topk_mask=topk_mask)
+
+        # ------------------------------------------------------------------
+        # SIZE-CONDITIONAL path (mode='size_cond') — the F9 mechanism.
+        # Each GT gets a per-level budget chosen by its OWN size, so small GTs
+        # get a fine-heavy budget and large GTs a coarse-heavy one. Falls back
+        # to uniform-per-level if GT sizes were not provided.
+        # ------------------------------------------------------------------
+        if self.level_topk_mode == "size_cond":
+            return self._select_size_conditional(metrics, largest=largest)
 
         b, n, A = metrics.shape
         strides = self._strides
@@ -1152,6 +1201,90 @@ class LevelBalancedTaskAlignedAssigner(TaskAlignedAssigner):
             capped = torch.zeros_like(count)
             ones = torch.ones_like(keep_idx[:, :, :1], dtype=torch.int8)
             # only keep slots that were actually selected (metric>eps) AND in count
+            for j in range(self.topk):
+                idx = keep_idx[:, :, j:j + 1]
+                sel = torch.gather(count, -1, idx) > 0
+                capped.scatter_add_(-1, idx, ones * sel.to(torch.int8))
+            capped.masked_fill_(capped > 1, 0)
+            count = torch.where((total > self.topk).unsqueeze(-1), capped, count)
+
+        return count.to(metrics.dtype)
+
+    def _select_size_conditional(self, metrics, largest=True):
+        """Per-GT size-conditional per-level top-k (the F9 mechanism).
+
+        For each GT, choose the per-level budget by the GT's OWN max-side size:
+        small GTs get a fine-heavy budget, large GTs a coarse-heavy one. This is
+        what F9 said "would dominate any single global 3-tuple". Selection is done
+        per (size-group x level): within a level we top-k using the size-group's
+        budget for that level, applied only to the GTs in that group.
+
+        Requires set_gt_sizes(); falls back to a uniform per-level split if sizes
+        are missing (warned once).
+        """
+        b, n, A = metrics.shape
+        strides = self._strides
+        uniq = sorted(torch.unique(strides).tolist())
+        budgets = self.size_budgets or self._DEFAULT_SIZE_BUDGETS
+        s_max, m_max = self.size_thresholds
+
+        # GT size group ids: 0=small,1=medium,2=large; -1 = unknown/padded.
+        if self._gt_sizes is None or self._gt_sizes.shape[:2] != (b, n):
+            if not self._warned:
+                print("[LB-TAL][WARN] size_cond: GT sizes not set — falling back "
+                      "to uniform per-level split. Call set_gt_sizes() each fwd pass.")
+                self._warned = True
+            per = max(self.min_level_k, -(-self.topk // len(uniq)))
+            grp = torch.zeros(b, n, dtype=torch.long, device=metrics.device)  # all 'small'
+            budgets = {"small": {s: per for s in uniq},
+                       "medium": {s: per for s in uniq},
+                       "large": {s: per for s in uniq}}
+        else:
+            gs = self._gt_sizes.to(metrics.device)
+            grp = torch.full((b, n), 0, dtype=torch.long, device=metrics.device)
+            grp = torch.where(gs > s_max, torch.ones_like(grp), grp)     # medium
+            grp = torch.where(gs > m_max, torch.full_like(grp, 2), grp)  # large
+
+        group_names = ["small", "medium", "large"]
+        self._print_once({g: budgets[g] for g in group_names})
+
+        count = torch.zeros_like(metrics, dtype=torch.int8)
+        for g_id, g_name in enumerate(group_names):
+            gmask = (grp == g_id)                     # (b, n) which GTs are this size
+            if not bool(gmask.any()):
+                continue
+            g_budget = budgets[g_name]
+            for s in uniq:
+                k = int(g_budget.get(s, self.min_level_k))
+                if k <= 0:
+                    continue
+                lvl = (strides == s).view(1, 1, -1)   # (1,1,A)
+                # only this size-group's GTs AND this level are eligible
+                elig = gmask.unsqueeze(-1) & lvl
+                m_sel = torch.where(elig, metrics, torch.full_like(metrics, -1.0))
+                k_eff = min(k, int(lvl.sum().item()))
+                if k_eff <= 0:
+                    continue
+                tk_metrics, tk_idxs = torch.topk(m_sel, k_eff, dim=-1, largest=largest)
+                valid = tk_metrics > self.eps
+                if self.quality_gate > 0.0 and largest:
+                    gmax = metrics.amax(dim=-1, keepdim=True).clamp_min(self.eps)
+                    valid = valid & (tk_metrics >= self.quality_gate * gmax)
+                tk_idxs = tk_idxs.masked_fill(~valid, 0)
+                ones = torch.ones_like(tk_idxs[:, :, :1], dtype=torch.int8)
+                for j in range(k_eff):
+                    count.scatter_add_(-1, tk_idxs[:, :, j:j + 1],
+                                       ones * valid[:, :, j:j + 1].to(torch.int8))
+
+        count.masked_fill_(count > 1, 0)
+
+        # Cap total per GT at topk (highest-metric-first), same as the global path.
+        total = count.sum(-1)
+        if int((total > self.topk).sum().item()) > 0:
+            masked = torch.where(count > 0, metrics, torch.full_like(metrics, -1.0))
+            _, keep_idx = torch.topk(masked, self.topk, dim=-1, largest=True)
+            capped = torch.zeros_like(count)
+            ones = torch.ones_like(keep_idx[:, :, :1], dtype=torch.int8)
             for j in range(self.topk):
                 idx = keep_idx[:, :, j:j + 1]
                 sel = torch.gather(count, -1, idx) > 0
@@ -1490,6 +1623,10 @@ class v8DetectionLoss:
         # is >= gate * per-level-best. Targets lb_coarse_244's "found but not
         # converted" signal. Also 'balanced_capped' mode protects large objects.
         self.lbtal_quality_gate = getattr(h, 'lbtal_quality_gate', 0.0)
+        # size_cond mode (F9): per-GT size-conditional per-level budget. Optional
+        # override of the default {small/medium/large} budgets and thresholds.
+        self.lbtal_size_budgets = getattr(h, 'lbtal_size_budgets', None)
+        self.lbtal_size_thresholds = getattr(h, 'lbtal_size_thresholds', (48.0, 96.0))
 
         # M / N / O are mutually exclusive assigner variants — at most one on.
         # Each is a different single override of the stock assigner; stacking
@@ -1587,6 +1724,8 @@ class v8DetectionLoss:
                 level_topk=self.lbtal_level_topk,
                 min_level_k=self.lbtal_min_level_k,
                 quality_gate=self.lbtal_quality_gate,
+                size_budgets=self.lbtal_size_budgets,
+                size_thresholds=self.lbtal_size_thresholds,
             )
         else:
             self.assigner = TaskAlignedAssigner(
@@ -1635,7 +1774,7 @@ class v8DetectionLoss:
                 if self.use_pos_boost else ""))
             print(f"  [M] artal:           {self.use_artal}" + (f" (thresh={self.artal_ar_thresh}, scale={self.artal_ar_scale}, relax={self.artal_beta_relax})" if self.use_artal else ""))
             print(f"  [N] snatal:          {self.use_snatal}" + (f" (rho={self.snatal_rho}, k_min={self.snatal_kmin}, geometric pool)" if self.use_snatal else ""))
-            print(f"  [O2] lbtal:          {self.use_lbtal}" + (f" (mode={self.lbtal_mode}, level_topk={self.lbtal_level_topk}, min_k={self.lbtal_min_level_k}, qgate={self.lbtal_quality_gate}, per-level top-k)" if self.use_lbtal else ""))
+            print(f"  [O2] lbtal:          {self.use_lbtal}" + (f" (mode={self.lbtal_mode}, level_topk={self.lbtal_level_topk}, min_k={self.lbtal_min_level_k}, qgate={self.lbtal_quality_gate}" + (f", size_budgets={self.lbtal_size_budgets or 'DEFAULT-F9'}, thr={self.lbtal_size_thresholds}" if self.lbtal_mode == 'size_cond' else "") + ", per-level top-k)" if self.use_lbtal else ""))
             if self.use_satal:
                 print(f"      satal_alpha_small: {self.satal_alpha_small}")
                 print(f"      satal_beta_small:  {self.satal_beta_small}")
@@ -2103,6 +2242,12 @@ class v8DetectionLoss:
         # pyramid level each anchor belongs to). stride_tensor is (A, 1) pixels.
         if hasattr(self.assigner, 'set_strides'):
             self.assigner.set_strides(stride_tensor)
+
+        # Set per-GT sizes for LB-TAL size_cond mode (per-GT max-side, model px).
+        # gt_bboxes here is xyxy in model-pixel coords (preprocess scaled it), so
+        # the size groups match the footprint's small<48<=medium<=96<large.
+        if hasattr(self.assigner, 'set_gt_sizes'):
+            self.assigner.set_gt_sizes(gt_bboxes)
 
         # Task Aligned Assignment
         # capture target_gt_idx for the per-GT crowd weighting in the center loss.
