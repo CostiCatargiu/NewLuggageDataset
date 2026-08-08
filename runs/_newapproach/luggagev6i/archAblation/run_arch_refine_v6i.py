@@ -138,6 +138,15 @@ _SWA0703 = dict(
 )
 
 
+# WIoU v3 — box_loss_type has been 'ciou' in ALL 33 loss runs AND all 7 arch
+# runs. It is the only major loss component never varied once, and it governs
+# the mAP50->mAP50-95 ratio, which is the number NEITHER campaign moved:
+# 0.635-0.658 across the loss runs, 0.653-0.659 across the arch runs, while
+# overall mAP spanned 8.4 pp. Either a dead end, or the reason it is stuck.
+_WIOU = dict(_ALL_OFF, box_loss_type="wiou", wiou_alpha=1.9, wiou_delta=3.0,
+             wiou_momentum=0.02)
+
+
 def _ls_shift_lbtal(level_topk, swa=False):
     """ls_shift topology (via YAML) + LB-TAL fixed budget (+ optional SWA)."""
     cfg = dict(_ALL_OFF, use_lbtal=True, lbtal_mode="fixed",
@@ -238,55 +247,81 @@ TAIL_LS_SHIFT = """  - [14, 1, DySample, [2]]                          # 21  P3 
 
 
 RUNS = [
-    {"name": "ls_shift_k5", "batch": BATCH, "levels": 4,
-     "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_LS_SHIFT_K5,
-     "label": "ls_shift, snake k9->k5 @P3P4P5 — size-matched kernel on the winner",
-     "why": "Pure kernel delta on the best topology. On v6i k=9 covers 2.6-5.3x "
-            "the object at P4/P5; k=5 is size-matched. If ls_shift's snake is "
-            "oversized this is the cheapest win."},
-
+    # ---- TOPOLOGY: the gctx/snake boundary at P3 (unique to this file) -------
     {"name": "ls_shift_gctxP3", "batch": BATCH, "levels": 4,
      "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_LS_SHIFT_GCTXP3,
-     "label": "ls_shift + gctx2 ALSO at P3 (context AND snake) — resolve the P3 split",
-     "why": "levelspec(gctx@P3)=best small, ls_shift(snake@P3)=best overall. "
-            "P3 gets BOTH: does the finest object level want scene context AND "
-            "the shape prior, not one or the other?"},
+     "label": "gctx2 AND snake stacked at P3 — the 'why choose' variant",
+     "why": "The sharpest question the round-1 data raises. ls_shift (snake@P3) "
+            "wins OVERALL 55.98; levelspec (gctx@P3) wins SMALL 51.36 vs 51.22. "
+            "The two differ at exactly one level, and each wins a different "
+            "metric — so P3 may want BOTH the scene context and the shape prior "
+            "rather than a choice between them. gctx2 feeds the snake (node 25 "
+            "-> 26); Detect takes 26, so P3 is one output, not two."},
 
     {"name": "ls_shift_gctxP3P4", "batch": BATCH, "levels": 4,
      "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_LS_SHIFT_GCTXP3P4,
-     "label": "gctx2 @P2P3P4 + snake @P5 only — push global context deeper",
-     "why": "60% small; every prior config caps gctx at P2/P3. Move the boundary "
-            "down to P4 so small+medium get scene context and only P5 (7.7% of "
-            "GTs) keeps the snake."},
+     "label": "gctx2 @P2,P3,P4 + snake @P5 only — push the boundary the other way",
+     "why": "Brackets gctxP3 from the opposite side. The placement trend says "
+            "LESS gctx is better (@P2 only 0.5598 > @P2,P3 0.5590 > @all4 "
+            "0.5578), so this should LOSE. It is here because that trend was "
+            "read off three configs that also differ in snake coverage — if "
+            "gctxP3P4 wins, the trend was really about snake count, not gctx "
+            "placement, and the whole reading of round 1 changes."},
 
-    {"name": "ls_shift_snakeP2", "batch": BATCH, "levels": 4,
-     "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_LS_SHIFT_SNAKEP2,
-     "label": "snake k5 @P2 (+gctx2) + snake k9 @P3P4P5 — shape prior at the finest level",
-     "why": "No config has put a snake at stride-4. P2 is where the smallest "
-            "objects resolve; a size-matched shape prior there tests if the "
-            "finest level benefits from deformation at all."},
+    {"name": "ls_shift_k5", "batch": BATCH, "levels": 4,
+     "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_LS_SHIFT_K5,
+     "label": "kernel k=9 -> 5 on the WINNING tail",
+     "why": "CORRECTED RATIONALE. This was originally justified by my v6i "
+            "geometry note (k=9 covers 2.6-5.3x the 39x55 px mean box at P4/P5, "
+            "so k=5 is 'size-matched'). ROUND 1 FALSIFIED THAT: on the levelspec "
+            "tail k=9 beat k=5 by 0.22 pp, and both ZGDSConvV6 twins lost to "
+            "their originals. The run is still worth it because round 1 only "
+            "tested the kernel on levelspec (snake at P4,P5) — ls_shift has the "
+            "snake at P3 too, where objects are 4.9x6.9 cells and k=9 is much "
+            "closer to matched. So this asks whether k=9's win survives on the "
+            "tail where the snake sits at a finer level, NOT because I still "
+            "think k=5 is right."},
 
-    # ---- BEST ARCH x BEST LB-TAL — the two axes combined ---------------------
-    # ls_shift topology (unchanged) + the loss campaign's best assigner (p4wide),
-    # extended to 4 levels with an explicit `4:` budget for the P2 head. This is
-    # the arch-supply x loss-allocation combination the whole project points to.
-    {"name": "ls_shift_lbtalA", "batch": BATCH, "levels": 4,
+    # ---- LOSS: three different axes on one fixed topology --------------------
+    {"name": "ls_shift_sqrt", "batch": BATCH, "levels": 4,
+     "params": dict(_ALL_OFF, **_SWA0703),
      "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_LS_SHIFT,
-     "label": "ls_shift + LB-TAL {4:4,8:4,16:7,32:1} — best arch + best assigner (P2-aware)",
-     "why": "The P2 head creates stride-4 small candidates; LB-TAL allocates the "
-            "budget across all four levels. Budget = p4wide {8:4,16:7,32:1} plus "
-            "an explicit 4:4 for the new finest level (WITHOUT it stride-4 falls "
-            "to min_level_k=1, starving the richest small level). Beats ls_shift "
-            "(55.98/small 51.22) only if allocation adds to raw P2 supply.",
-     "params": _ls_shift_lbtal(_LBTAL_A)},
+     "label": "current best topology + sqrt0703 SWA weighting",
+     "why": "All 7 round-1 arch runs used STOCK loss; sqrt0703 is the loss "
+            "campaign's best at +0.86 pp over the same stock anchor. The "
+            "pairing has never been run. Loss WEIGHTING against BACKBONE "
+            "features — no shared mechanism, and it does not touch the "
+            "assigner. CAVEAT: I called cmb additive once and it was "
+            "antagonistic; that pair shared a mechanism, this one does not. "
+            "Hypothesis, not prediction."},
 
     {"name": "ls_shift_lbtalB", "batch": BATCH, "levels": 4,
+     "params": _ls_shift_lbtal(_LBTAL_B, swa=True),
      "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_LS_SHIFT,
-     "label": "ls_shift + LB-TAL {4:5,8:4,16:6,32:1} — more budget to the P2 level",
-     "why": "Same combination, but pushes more of the top-k to stride-4 (now the "
-            "richest small-object level) and trims P4. Tests whether the finest "
-            "level should dominate the draw once the P2 head exists.",
-     "params": _ls_shift_lbtal(_LBTAL_B)},
+     "label": "topology + SWA + LB-TAL {4:5,8:4,16:6,32:1} — full stack, P2-weighted",
+     "why": "The complete loss stack (SWA + LB-TAL), i.e. cmb_p4wide's recipe "
+            "on the P2 topology. Uses _LBTAL_B rather than _LBTAL_A because A "
+            "just copies p4wide's 3-level dict with a P2 entry equal to P3's, "
+            "and that P2 value is a NUMBER I INVENTED — the 640 footprint was "
+            "measured on a 3-level model, so no P2 supply figure exists. B at "
+            "least probes the direction the P2 head is supposed to exploit. "
+            "FIX THIS PROPERLY: runs_arch_v6i/arch_ls_shift/weights/best.pt is "
+            "a trained 4-level checkpoint — point diag_anchor_footprint.py at "
+            "it and section 4b reports the real P2 candidate supply in 5 min. "
+            "Do that before trusting this run."},
+
+    {"name": "ls_shift_wiou", "batch": BATCH, "levels": 4,
+     "params": _WIOU,
+     "yaml": BACKBONE + HEAD_DYSAMPLE + TAIL_LS_SHIFT,
+     "label": "current best topology + WIoU v3 box loss — the last untouched component",
+     "why": "box_loss_type = 'ciou' in all 33 loss runs and all 7 arch runs. "
+            "The only major loss component never varied, and the one that "
+            "governs the mAP50->mAP50-95 ratio — the number neither campaign "
+            "moved (0.635-0.658 loss, 0.653-0.659 arch, while overall mAP "
+            "spanned 8.4 pp). Stock loss otherwise, so it reads as a single "
+            "variable against arch_ls_shift (0.5598). If the ratio moves at "
+            "all, focaler and mpdiou are the follow-ups."},
+
 ]
 
 
