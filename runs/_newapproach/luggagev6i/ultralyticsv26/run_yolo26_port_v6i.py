@@ -192,14 +192,28 @@ def get_criteria(trainer):
 
 
 _ALPHA_SEEN = {}
+_WIRED = {"n": 0}
 
 
 def set_epoch(trainer):
     """Push the current epoch into every BboxLoss, then record alpha.
 
-    The recorded alphas are checked at the end of training: if a run configured
-    SWA and alpha never moved, the curriculum silently did not run and the result
-    is void rather than negative.
+    TIMING — do not "simplify" this back into a hard assert at epoch 0.
+    Ultralytics builds the criterion LAZILY, inside BaseModel.loss() on the first
+    forward pass:
+
+        if getattr(self, "criterion", None) is None:
+            self.criterion = self.init_criterion()
+
+    so at on_train_epoch_start for epoch 0 there is genuinely no BboxLoss yet and
+    finding none is expected, not a failure. It is harmless: BboxLoss.__init__
+    already sets epoch=0 and reads total_epochs from hyp.epochs, so epoch 0 is
+    correct without the hook. From epoch 1 onward the criterion exists, and
+    finding none THEN means the layout really did change — that is the case worth
+    aborting on, because alpha would freeze and the run would be void.
+
+    The recorded alphas are checked again after training: a run that configured
+    SWA but whose alpha never moved is reported VOID rather than negative.
     """
     epoch = int(getattr(trainer, "epoch", 0))
     n = 0
@@ -209,13 +223,21 @@ def set_epoch(trainer):
             bl.total_epochs = EPOCHS
             n += 1
             _ALPHA_SEEN.setdefault(epoch, round(bl.get_dynamic_alpha(), 6))
-    if epoch == 0:
-        if n == 0:
-            raise RuntimeError(
-                "epoch callback reached NO BboxLoss — the criterion layout changed. "
-                "SWA's alpha would freeze at its epoch-0 value and the run would be void."
-            )
-        print(f"  [callback] epoch hook wired to {n} BboxLoss instance(s)")
+
+    if n == 0:
+        if epoch == 0:
+            print("  [callback] criterion not built yet at epoch 0 (lazy init) — "
+                  "will wire at epoch 1; epoch-0 defaults are already correct")
+            return
+        raise RuntimeError(
+            f"epoch callback reached NO BboxLoss at epoch {epoch}, after the criterion "
+            "should exist. The criterion layout changed: alpha would freeze and the "
+            "run would be void. Check iter_bbox_losses() against E2ELoss."
+        )
+
+    if _WIRED["n"] == 0:
+        _WIRED["n"] = n
+        print(f"  [callback] epoch hook wired to {n} BboxLoss instance(s) at epoch {epoch}")
 
 
 # ================================================================== preflight
@@ -299,6 +321,7 @@ def run_one(rc):
     print(f"\n{'=' * 78}\n  RUN {name}\n  {rc['label']}\n"
           f"  imgsz={IMG_SIZE}  batch={BATCH}  epochs={EPOCHS}  seed={SEED}\n{'=' * 78}\n")
     _ALPHA_SEEN.clear()
+    _WIRED["n"] = 0
     t0 = time.time()
 
     model = YOLO(MODEL_CFG)
@@ -323,11 +346,15 @@ def run_one(rc):
     alphas = dict(sorted(_ALPHA_SEEN.items()))
     swa_on = max(rc["params"].get("alpha_start", 0.0), rc["params"].get("alpha_end", 0.0)) > 0
     alpha_moved = len(set(alphas.values())) > 1
+    if swa_on and _WIRED["n"] == 0:
+        print(f"\n  [VOID] {name}: the epoch hook never reached a BboxLoss during the "
+              f"whole run. SWA stayed at its epoch-0 alpha throughout.")
     out = {"name": name, "hours": hours, "weights": weights, "seed": SEED,
            "alpha_first": next(iter(alphas.values()), None),
            "alpha_last": list(alphas.values())[-1] if alphas else None,
            "alpha_moved": alpha_moved,
-           "void": bool(swa_on and not alpha_moved),
+           "hook_wired_to": _WIRED["n"],
+           "void": bool(swa_on and (not alpha_moved or _WIRED["n"] == 0)),
            "test_map50": float("nan"), "test_map5095": float("nan")}
     if out["void"]:
         print(f"\n  [VOID] {name} configured SWA but alpha never changed across epochs "
