@@ -216,13 +216,13 @@ def set_epoch(trainer):
     SWA but whose alpha never moved is reported VOID rather than negative.
     """
     epoch = int(getattr(trainer, "epoch", 0))
-    n = 0
+    found = []
     for crit in get_criteria(trainer):
         for bl in iter_bbox_losses(crit):
             bl.epoch = epoch
             bl.total_epochs = EPOCHS
-            n += 1
-            _ALPHA_SEEN.setdefault(epoch, round(bl.get_dynamic_alpha(), 6))
+            found.append(bl)
+    n = len(found)
 
     if n == 0:
         if epoch == 0:
@@ -235,9 +235,43 @@ def set_epoch(trainer):
             "run would be void. Check iter_bbox_losses() against E2ELoss."
         )
 
+    bl = found[0]
+    alpha = bl.get_dynamic_alpha()
+    _ALPHA_SEEN.setdefault(epoch, round(alpha, 6))
+
+    # First contact: dump what the loss OBJECT holds. The engine/trainer line
+    # only proves the keys reached the config; this proves they reached the loss.
     if _WIRED["n"] == 0:
         _WIRED["n"] = n
-        print(f"  [callback] epoch hook wired to {n} BboxLoss instance(s) at epoch {epoch}")
+        print(f"\n  {'=' * 66}")
+        print(f"  SWA WIRED — {n} BboxLoss instance(s) reached at epoch {epoch}")
+        print(f"  {'=' * 66}")
+        print(f"    enabled          : {bl.swa_enabled()}")
+        print(f"    area_weight_mode : {bl.area_weight_mode}   norm: {bl.area_weight_norm}")
+        print(f"    alpha            : {bl.alpha_start} -> {bl.alpha_end} "
+              f"clipped to [{bl.alpha_min}, {bl.alpha_max}] over {bl.total_epochs} epochs")
+        print(f"    small_obj        : px < {bl.small_obj_px}  boost x{bl.small_obj_boost}")
+        print(f"    dfl_loss         : {'present' if bl.dfl_loss else 'None (reg_max=1, L1 branch)'}")
+        for crit in get_criteria(trainer):
+            for br in ("one2many", "one2one"):
+                sub = getattr(crit, br, None)
+                asg = getattr(sub, "assigner", None)
+                if asg is not None:
+                    print(f"    assigner[{br:9}]: {type(asg).__name__} "
+                          f"topk={asg.topk} topk2={asg.topk2}")
+            asg = getattr(crit, "assigner", None)
+            if asg is not None and not hasattr(crit, "one2many"):
+                print(f"    assigner         : {type(asg).__name__} "
+                      f"topk={asg.topk} topk2={getattr(asg, 'topk2', '-')}")
+        if not bl.swa_enabled():
+            print("    NOTE: SWA is INERT for this config (all alphas 0) — expected "
+                  "for the anchor and the LB-TAL-only runs.")
+        print(f"  {'=' * 66}\n")
+
+    # Periodic proof that the curriculum is moving.
+    if bl.swa_enabled() and (epoch < 2 or epoch % 5 == 0 or epoch == EPOCHS - 1):
+        first = _ALPHA_SEEN.get(min(_ALPHA_SEEN)) if _ALPHA_SEEN else alpha
+        print(f"  [SWA] epoch {epoch:>3}/{EPOCHS}  alpha={alpha:.4f}  (started {first:.4f})")
 
 
 # ================================================================== preflight
@@ -307,10 +341,25 @@ def preflight(todo):
             print(f"\n  [ABORT] {r['name']}: a budget is set but use_lbtal is False.")
             return False
 
-    clash = [r["name"] for r in todo
-             if os.path.isdir(os.path.join(PROJECT_DIR, r["name"])) and not OVERWRITE_EXISTING]
+    # Resolve where ultralytics will ACTUALLY write. PROJECT_DIR is relative, and
+    # ultralytics resolves a relative project under SETTINGS['runs_dir']/<task>/,
+    # not under the cwd. Checking the cwd path silently misses every collision —
+    # which is how a rerun ended up in y26_sqrt0703-4 instead of aborting.
+    bases = [PROJECT_DIR]
+    try:
+        from ultralytics.utils import SETTINGS
+        bases.append(os.path.join(str(SETTINGS.get("runs_dir", "runs")), "detect", PROJECT_DIR))
+    except Exception:
+        pass
+    print(f"  run dirs checked: {bases}")
+    clash = sorted({f"{r['name']} -> {b}" for r in todo for b in bases
+                    if os.path.isdir(os.path.join(b, r["name"]))}) if not OVERWRITE_EXISTING else []
     if clash:
-        print(f"\n  [ABORT] run dirs already exist: {', '.join(clash)}")
+        print("\n  [ABORT] these run directories already exist:")
+        for c in clash:
+            print(f"      {c}")
+        print("  Delete them, or ultralytics will silently append -2/-3/-4 and the "
+              "summary will point at the wrong folder.")
         return False
     return True
 
@@ -318,8 +367,17 @@ def preflight(todo):
 # ======================================================================= train
 def run_one(rc):
     name = rc["name"]
-    print(f"\n{'=' * 78}\n  RUN {name}\n  {rc['label']}\n"
-          f"  imgsz={IMG_SIZE}  batch={BATCH}  epochs={EPOCHS}  seed={SEED}\n{'=' * 78}\n")
+    # Only the keys that DIFFER from stock, so the mechanism under test is
+    # readable at a glance instead of buried in the 100-key engine/trainer line.
+    active = {k: v for k, v in rc["params"].items() if v != _STOCK[k]}
+    print(f"\n{'=' * 78}\n  RUN {name}\n  {rc['label']}\n{'=' * 78}")
+    print(f"  imgsz={IMG_SIZE}  batch={BATCH}  epochs={EPOCHS}  seed={SEED}  model={MODEL_CFG}")
+    print(f"  non-stock keys ({len(active)}):")
+    for k, v in sorted(active.items()):
+        print(f"      {k:<20} = {v!r}")
+    if not active:
+        print("      (none — this is the stock anchor)")
+    print(f"{'=' * 78}\n")
     _ALPHA_SEEN.clear()
     _WIRED["n"] = 0
     t0 = time.time()
