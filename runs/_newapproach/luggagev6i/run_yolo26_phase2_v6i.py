@@ -189,6 +189,43 @@ RUNS = [
             "the same recipe with the SWA half set to YOLO26's own optimum. "
             "Success = small above 51.32; failure mode = large near 54 if the "
             "cmb_lbU_swa0703 compounding pattern holds instead."},
+
+    # ---------------------------------------------------------------- PHASE C
+    # Added after phase B. Judge these on SMALL, not on overall mAP50-95.
+    {"name": "y26_cmb_uniform", "phase": "C",
+     "params": _swa(0.6, 0.3, boost=BEST_BOOST, use_lbtal=True,
+                    lbtal_mode="uniform", lbtal_level_topk=None, lbtal_min_level_k=1),
+     "label": "SWA a0.6->0.3 boost2.0 + LB-TAL uniform — the two best single configs",
+     "why": "The pairing of YOLO26's two top runs (a06_03 55.59, lb_uniform 55.52), "
+            "and the one combination never tested on either model. I argued against "
+            "it because v12's cmb_lbU_swa0703 lost 0.53 pp to both parents — but "
+            "that argument only looked at overall mAP.\n"
+            "  THE PATTERN IT ACTUALLY TESTS: SWA+LB combinations are SUPER-ADDITIVE "
+            "ON SMALL on both detectors so far.\n"
+            "      v12 cmb_p4wide     parents 50.63 / 50.97 -> combo 51.15\n"
+            "      Y26 cmb_p4wide     parents 51.32 / 50.75 -> combo 51.37\n"
+            "  Two for two, above both parents each time. What kills these combos is "
+            "always LARGE, never small. Here the parents are 51.32 and 51.75, so a "
+            "third repetition lands ABOVE 51.75 — a new best small in the project "
+            "across both detector families.\n"
+            "  EXPECTATION, stated up front: overall ~55.2-55.4 (a tie or slightly "
+            "below a06_03) and large near 54-55 from compounding. Judged on mAP50-95 "
+            "this will look like another null. Judged on small it is the single most "
+            "likely config in the whole space to beat 51.75, and small is the metric "
+            "that matters for unattended luggage. Both parents are already measured, "
+            "so this completes a 2x2 with no extra control."},
+
+    {"name": "y26_swa_a06_03_seed1", "phase": "C", "seed": 1,
+     "params": _swa(0.6, 0.3, boost=2.0),
+     "label": "a06_03 repeated at SEED 1 — the noise floor, finally",
+     "why": "13 custom runs, best +0.35, and NO measured noise floor on YOLO26. The "
+            "only evidence is indirect: a09_03 and a08_04 share an identical mean "
+            "alpha and differ by 0.45 pp, and the phase-A boost curve spans 0.41 pp. "
+            "If the floor really is ~0.45 then every result in this campaign, "
+            "including the 51.75 small record, is inside it and none of it is "
+            "reportable. If it comes back within 0.1 of 55.59, the whole leaderboard "
+            "becomes defensible. This is the highest-value single run remaining and "
+            "it should have been run first."},
 ]
 
 
@@ -354,9 +391,11 @@ def preflight(todo):
 # ======================================================================= train
 def run_one(rc):
     name, p = rc["name"], rc["params"]
+    seed = rc.get("seed", SEED)          # per-run override, for the seed repeat
     active = {k: v for k, v in p.items() if v != _STOCK[k]}
     print(f"\n{'=' * 78}\n  RUN {name}   [phase {rc['phase']}]\n  {rc['label']}\n{'=' * 78}")
-    print(f"  model={MODEL_CFG} imgsz={IMG_SIZE} batch={BATCH} epochs={EPOCHS} seed={SEED}")
+    print(f"  model={MODEL_CFG} imgsz={IMG_SIZE} batch={BATCH} epochs={EPOCHS} seed={seed}"
+          + ("   <-- SEED OVERRIDE" if seed != SEED else ""))
     for k, v in sorted(active.items()):
         print(f"      {k:<20} = {v!r}")
     if p["alpha_start"] > 0:
@@ -376,7 +415,7 @@ def run_one(rc):
 
     kw = dict(data=DATA_YAML, epochs=EPOCHS, imgsz=IMG_SIZE, batch=BATCH,
               device=DEVICE, workers=WORKERS, project=PROJECT_DIR, name=name,
-              patience=PATIENCE, close_mosaic=CLOSE_MOSAIC, seed=SEED,
+              patience=PATIENCE, close_mosaic=CLOSE_MOSAIC, seed=seed,
               deterministic=True, exist_ok=OVERWRITE_EXISTING)
     kw.update(copy.deepcopy(p))
     results = model.train(**kw)
@@ -388,7 +427,7 @@ def run_one(rc):
     alphas = dict(sorted(_ALPHA_SEEN.items()))
     swa_on = p["alpha_start"] > 0
     out = {"name": name, "phase": rc["phase"], "hours": hours, "weights": weights,
-           "seed": SEED, "batch": BATCH, "hook_wired_to": _WIRED["n"],
+           "seed": seed, "batch": BATCH, "hook_wired_to": _WIRED["n"],
            "alpha_first": next(iter(alphas.values()), None),
            "alpha_last": list(alphas.values())[-1] if alphas else None,
            "void": bool(swa_on and (len(set(alphas.values())) < 2 or _WIRED["n"] == 0)),
@@ -439,11 +478,25 @@ def summarise(res, path):
     print("    peak or monotone trend -> the dose axis is real; scatter -> noise, "
           "same as the alpha sweep")
     print(f"\n  COMBINATION READOUT — watch SMALL, not overall mAP:")
-    print(f"    > 51.32  the v12 super-additivity reproduced (beats a06_03)")
+    print(f"    > 51.32  the super-additivity reproduced (beats a06_03)")
     print(f"    > {BEST_SMALL * 100:.2f}  best small-object config in the project, both families")
-    print(f"    large near 54 -> the cmb_lbU_swa0703 compounding pattern instead")
-    print(f"\n  Noise on YOLO26 is UNMEASURED; the phase-1 sweep implies a floor near")
-    print(f"  0.45 pp. Treat gaps below that as ties. Per-size: CocoEvalAllFolders_luggage.py")
+    print(f"    large near 54 -> the compounding pattern instead")
+
+    seeds = [r for r in ok if r.get("seed") != SEED]
+    if seeds:
+        print(f"\n  NOISE FLOOR — the number every other result depends on:")
+        for r in seeds:
+            base = next((x for x in ok if x["name"] == r["name"].replace("_seed1", "")), None)
+            ref = base["test_map5095"] if base else 0.5559   # a06_03 seed 0
+            gap = abs(r["test_map5095"] - ref) * 100
+            print(f"    {r['name']:<24}{r['test_map5095'] * 100:>7.2f}  vs seed0 "
+                  f"{ref * 100:.2f}   |gap| = {gap:.2f} pp")
+            print(f"      < 0.15 -> the leaderboard is real and reportable")
+            print(f"      > 0.35 -> every result in this campaign is inside noise, "
+                  f"including the 51.75 small record")
+    else:
+        print(f"\n  Noise on YOLO26 is still UNMEASURED; phase-1 implies a floor near 0.45 pp.")
+    print(f"  Per-size: CocoEvalAllFolders_luggage.py on best.pt")
     for r in res:
         if r.get("weights"):
             print(f"    {r['name']:<22} {r['weights']}")
@@ -456,6 +509,8 @@ if __name__ == "__main__":
         todo = [r for r in RUNS if r["phase"] == "A"]
     elif "phaseb" in args:
         todo = [r for r in RUNS if r["phase"] == "B"]
+    elif "phasec" in args:
+        todo = [r for r in RUNS if r["phase"] == "C"]
     elif args:
         todo = [r for r in RUNS if r["name"] in set(sys.argv[1:])]
     else:
