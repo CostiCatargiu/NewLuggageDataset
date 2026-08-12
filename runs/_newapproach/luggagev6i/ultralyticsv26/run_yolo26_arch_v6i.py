@@ -339,11 +339,19 @@ def env_provenance():
         import ultralytics.cfg as _c
         base = os.path.join(os.path.dirname(_c.__file__), "models", "26")
         for r in RUNS:
-            # custom YAMLs are written by this script, so they always resolve;
-            # only the STOCK ones have to be found inside the installed package
-            info["cfg_found"][r["cfg"]] = (
-                "written by this script" if r.get("yaml")
-                else os.path.isfile(os.path.join(base, r["cfg"])))
+            # custom YAMLs are written by this script, so they always resolve.
+            # For stock ones, ultralytics STRIPS THE SCALE LETTER at load time:
+            # "yolo26s.yaml" is served by the file "yolo26.yaml". Checking for the
+            # literal filename reports a false missing, so try the de-scaled name.
+            if r.get("yaml"):
+                info["cfg_found"][r["cfg"]] = "written by this script"
+                continue
+            stem, ext = os.path.splitext(r["cfg"])
+            cands = [r["cfg"]]
+            if stem and stem[-1] in "nsmlx":
+                cands.append(stem[:-1] + ext)
+            info["cfg_found"][r["cfg"]] = any(
+                os.path.isfile(os.path.join(base, c)) for c in cands)
     except Exception as e:
         info["cfg_error"] = str(e)
     return info
