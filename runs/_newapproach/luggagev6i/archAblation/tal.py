@@ -74,6 +74,15 @@ class TaskAlignedAssigner(nn.Module):
         self.beta_small = None  # float, e.g. 2.0-4.0; None disables
         self.beta_ref_px = 64.0  # GT sqrt(area) at which beta reaches self.beta
 
+        # --- SNT (Soft Negative Targets) — one2one only, inert at tau = 0 -------
+        # topk2=1 makes every non-selected anchor a hard negative, and the number
+        # of well-overlapping anchors discarded that way scales with object size.
+        # See snt_soft_targets() for the full argument and the 0/52 vs 26/45
+        # large-object evidence it is derived from.
+        self.snt_tau = 0.0  # peak soft target; 0 disables
+        self.snt_gamma = 2.0  # IoU exponent; >1 concentrates on the best runner-ups
+        self.snt_min_iou = 0.5  # below this overlap an anchor stays a hard negative
+
     def scb_enabled(self) -> bool:
         """True when size-conditioned beta can change the assignment (no-op check)."""
         return self.beta_small is not None and float(self.beta_small) != float(self.beta)
@@ -174,7 +183,84 @@ class TaskAlignedAssigner(nn.Module):
         norm_align_metric = (align_metric * pos_overlaps / (pos_align_metrics + self.eps)).amax(-2).unsqueeze(-1)
         target_scores = target_scores * norm_align_metric
 
+        # SNT: soften the target for well-overlapping anchors that were NOT selected.
+        # Inert when snt_tau == 0, where snt_soft_targets() returns None.
+        snt = self.snt_soft_targets(overlaps, gt_labels, fg_mask, target_scores)
+        if snt is not None:
+            target_scores = torch.maximum(target_scores, snt)
+
         return target_labels, target_bboxes, target_scores, fg_mask.bool(), target_gt_idx
+
+    def snt_enabled(self) -> bool:
+        """True when soft negative targets can change the loss (preflight no-op check)."""
+        return self.snt_tau > 0.0
+
+    def snt_soft_targets(self, overlaps, gt_labels, fg_mask, target_scores):
+        """Soft classification targets for high-IoU anchors that lost the selection.
+
+        WHY THIS EXISTS. Across 52 YOLO26 configurations in this project, ZERO
+        improved large-object AP. On YOLOv12 with the same interventions, 26 of 45
+        did. Nothing tried so far — SWA, LB-TAL, SNL1, SCB, SBB, every architecture
+        variant — moved that column, and none of them predicted it either.
+
+        The one2one branch uses topk2 = 1: exactly ONE anchor per GT is positive and
+        every other anchor is a hard negative with target 0. How many well-fitting
+        anchors that discards scales with object size:
+
+            8 px bag       few anchors overlap at all    ->  few high-IoU negatives
+            250 px trolley hundreds overlap well         ->  hundreds of them
+
+        So the branch that carries ~90% of the loss and produces every prediction
+        (the head is NMS-free) is told, for large objects, that hundreds of nearly
+        correct boxes are background. The damage scales with size by construction.
+        YOLOv12 has no topk2: one head, ten positives, and the runner-up anchors are
+        POSITIVES rather than hard negatives. That asymmetry is the only structural
+        difference that tracks the 26/45 vs 0/52 split.
+
+        WHAT THIS DOES. A non-selected anchor whose best overlap with any GT exceeds
+        `snt_min_iou` gets a soft target in that GT's class channel:
+
+            target = snt_tau * IoU ** snt_gamma          (elementwise max with the
+                                                          existing target, so
+                                                          positives are untouched)
+
+            snt_tau = 0     stock: every non-selected anchor stays at 0
+            snt_gamma > 1   concentrates the softening on the very best runner-ups
+
+        NOT A REWEIGHTING. SWA, SNL1 and SBB all multiply an existing term. This
+        changes what the TARGET IS, and makes it depend on a quantity the
+        classification loss currently ignores — the assigner computes `overlaps` and
+        discards them.
+
+        ONE2ONE ONLY. In one2many (topk=10, topk2 unset) the runner-ups are already
+        positives, so there is nothing to soften; E2ELoss installs this on the
+        one2one branch alone.
+
+        FALSIFIABLE. If the account is right, LARGE-object AP rises and small barely
+        moves. Small up / large flat refutes it. Note also that a mechanism of this
+        kind was tried on YOLOv12 (`snt`, +0.02 — a clean null); under this account
+        that is the correct result, because v12 has no topk2 and therefore no
+        runner-up-as-hard-negative problem.
+
+        Args:
+            overlaps (torch.Tensor): (b, n_max_boxes, A) IoU of each anchor to each GT.
+            gt_labels (torch.Tensor): (b, n_max_boxes, 1) GT class indices.
+            fg_mask (torch.Tensor): (b, A) selected-anchor mask.
+            target_scores (torch.Tensor): (b, A, nc) current targets, for shape/dtype.
+
+        Returns:
+            (torch.Tensor | None): (b, A, nc) soft targets, or None if inert.
+        """
+        if not self.snt_enabled():
+            return None
+        best_ov, best_gt = overlaps.max(dim=1)  # (b, A) over GTs
+        cls_idx = gt_labels.long().squeeze(-1).gather(1, best_gt)  # (b, A) class of that GT
+        soft = float(self.snt_tau) * best_ov.clamp(0.0, 1.0).pow(float(self.snt_gamma))
+        keep = (~fg_mask.bool()) & (best_ov >= float(self.snt_min_iou))
+        soft = torch.where(keep, soft, torch.zeros_like(soft))
+        out = torch.zeros_like(target_scores)
+        out.scatter_(2, cls_idx.unsqueeze(-1), soft.unsqueeze(-1).to(out.dtype))
+        return out
 
     def get_pos_mask(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, anc_points, mask_gt):
         """Get positive mask for each ground truth box.

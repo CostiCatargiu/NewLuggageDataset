@@ -1626,6 +1626,25 @@ class E2ELoss:
                 f"{'  [INVERTED control]' if invert else ''}"
             )
 
+        # ------------------------------------------------------------------ SNT
+        # Soft Negative Targets, ONE2ONE ONLY. topk2=1 makes every non-selected
+        # anchor a hard negative, and the count of well-overlapping anchors thrown
+        # away that way scales with object size — the only structural difference
+        # that tracks 0/52 (YOLO26) vs 26/45 (YOLOv12) on large-object AP.
+        # one2many has topk=10 with topk2 unset, so its runner-ups are already
+        # positives and there is nothing to soften; installing it there would be a
+        # different mechanism with no motivation behind it.
+        tau = float(getattr(h, "snt_tau", 0.0) or 0.0)
+        if tau > 0.0:
+            a = self.one2one.assigner
+            a.snt_tau = tau
+            a.snt_gamma = float(getattr(h, "snt_gamma", 2.0) or 2.0)
+            a.snt_min_iou = float(getattr(h, "snt_min_iou", 0.5) or 0.5)
+            LOGGER.info(
+                f"SNT active on one2one ONLY | tau={a.snt_tau} gamma={a.snt_gamma} "
+                f"min_iou={a.snt_min_iou} | one2many untouched (topk2 unset)"
+            )
+
     def __call__(self, preds: Any, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
         preds = self.one2many.parse_output(preds)
