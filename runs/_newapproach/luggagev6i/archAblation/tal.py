@@ -83,6 +83,29 @@ class TaskAlignedAssigner(nn.Module):
         self.snt_gamma = 2.0  # IoU exponent; >1 concentrates on the best runner-ups
         self.snt_min_iou = 0.5  # below this overlap an anchor stays a hard negative
 
+        # --- TSH (Target SHarpening) — one2one only, inert at rho = 1.0 ---------
+        # Derived from the SNT result, not from a prior. SNT raised the target for
+        # well-overlapping anchors that lost the selection and cost -3.93 mAP at
+        # tau=0.25 and -12.00 at tau=0.50, with detector recall UP (AR50_95_small
+        # 71.68 -> 76.00) while AP collapsed. AR up + AP down is a ranking failure,
+        # not a detection failure: in an NMS-free head the confidence gap between
+        # the single selected anchor and its neighbours IS the duplicate
+        # suppression, and SNT closed it. Large objects fell hardest (-16.60),
+        # which is the signature — they span the most anchors, so they emit the
+        # most duplicates.
+        #
+        # TSH tests the inverse. After normalization the winner's target is
+        # norm_align_metric = IoU_max * (align/align_max), which is < 1 and often
+        # well below it. Raising it widens the same gap SNT narrowed:
+        #     target_scores <- target_scores ** rho,   rho < 1 pushes toward 1.0
+        # Monotone, order-preserving, fixes 0 and 1, and rho = 1.0 is the identity
+        # (bit-identical to stock — asserted in the runner, not assumed).
+        #
+        # This is a target-definition change, not a gain: it alters what the model
+        # is asked to predict, which the cls gain cannot do. It is applied to the
+        # one2one branch only, since that is the branch producing every prediction.
+        self.sharp_rho = 1.0  # <1 sharpens; 1.0 disables
+
     def scb_enabled(self) -> bool:
         """True when size-conditioned beta can change the assignment (no-op check)."""
         return self.beta_small is not None and float(self.beta_small) != float(self.beta)
@@ -183,6 +206,14 @@ class TaskAlignedAssigner(nn.Module):
         norm_align_metric = (align_metric * pos_overlaps / (pos_align_metrics + self.eps)).amax(-2).unsqueeze(-1)
         target_scores = target_scores * norm_align_metric
 
+        # TSH: sharpen the positive target, widening the winner/runner-up gap that
+        # carries duplicate suppression in the NMS-free head. Inert at rho == 1.0
+        # (pow(1.0) is the identity), so stock behaviour is untouched by default.
+        # clamp_(0, 1) guards pow() against the tiny negative values that can appear
+        # from float error; target_scores is a probability by construction.
+        if self.tsh_enabled():
+            target_scores = target_scores.clamp(0.0, 1.0).pow(float(self.sharp_rho))
+
         # SNT: soften the target for well-overlapping anchors that were NOT selected.
         # Inert when snt_tau == 0, where snt_soft_targets() returns None.
         snt = self.snt_soft_targets(overlaps, gt_labels, fg_mask, target_scores)
@@ -190,6 +221,10 @@ class TaskAlignedAssigner(nn.Module):
             target_scores = torch.maximum(target_scores, snt)
 
         return target_labels, target_bboxes, target_scores, fg_mask.bool(), target_gt_idx
+
+    def tsh_enabled(self) -> bool:
+        """True when target sharpening can change the loss (preflight no-op check)."""
+        return float(self.sharp_rho) != 1.0
 
     def snt_enabled(self) -> bool:
         """True when soft negative targets can change the loss (preflight no-op check)."""

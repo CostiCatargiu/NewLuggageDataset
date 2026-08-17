@@ -1645,6 +1645,21 @@ class E2ELoss:
                 f"min_iou={a.snt_min_iou} | one2many untouched (topk2 unset)"
             )
 
+        # TSH — target sharpening, one2one ONLY. Same placement argument as SNT and
+        # for the same reason: one2one is the branch that produces every prediction
+        # in the NMS-free head, so it is the only branch whose winner/runner-up
+        # confidence gap reaches inference. one2many is auxiliary and discarded.
+        # Inert at rho == 1.0, where tsh_enabled() is False and _forward skips the
+        # pow() entirely — stock is untouched, not merely approximated.
+        rho = float(getattr(h, "sharp_rho", 1.0) or 1.0)
+        if rho != 1.0:
+            a = self.one2one.assigner
+            a.sharp_rho = rho
+            LOGGER.info(
+                f"TSH active on one2one ONLY | sharp_rho={a.sharp_rho} "
+                f"(target**rho; <1 widens the winner/runner-up gap) | one2many untouched"
+            )
+
     def __call__(self, preds: Any, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
         preds = self.one2many.parse_output(preds)

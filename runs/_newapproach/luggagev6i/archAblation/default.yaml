@@ -196,3 +196,42 @@ tal_beta_ref_px: 64.0 # (float) sqrt(area) in px at which beta reaches tal_beta
 sbb_q: 0.0 # (float) magnitude; 0 disables. 0.25-0.75 is the sane range
 sbb_ref_px: 64.0 # (float) sqrt(area) in px where the weight is neutral
 sbb_invert: False # (bool) flip both signs - the control arm, tests direction
+
+# --- SNT: Soft Negative Targets (YOLO26 one2one branch only) ------------------
+# Across 52 YOLO26 configs in this project ZERO improved large-object AP; on
+# YOLOv12 with the same interventions 26/45 did. The one structural difference
+# that tracks it: one2one uses topk2=1, so exactly ONE anchor per GT is positive
+# and every other is a hard negative with target 0. The number of WELL-FITTING
+# anchors discarded that way scales with object size — a 250 px trolley has
+# hundreds, an 8 px bag has almost none. SNT gives a non-selected anchor whose
+# best overlap exceeds snt_min_iou a soft target snt_tau * IoU^snt_gamma in that
+# GT's class channel (elementwise max, so positives are untouched).
+# Installed on one2one ONLY: one2many's runner-ups are already positives.
+# snt_tau = 0 is bit-identical to stock.
+# FALSIFIABLE: large-object AP should rise, small should barely move.
+snt_tau: 0.0 # (float) peak soft target for runner-up anchors; 0 disables
+snt_gamma: 2.0 # (float) IoU exponent; >1 concentrates on the best runner-ups
+snt_min_iou: 0.5 # (float) below this overlap an anchor stays a hard negative
+
+# TSH — Target SHarpening (one2one only) --------------------------------------
+# RESULT-DERIVED, not a prior. SNT was FALSIFIED hard: tau=0.25 -> -3.93 mAP,
+# tau=0.50 -> -12.00, monotone. The diagnostic: detector recall went UP
+# (AR50_95_small 71.68 -> 76.00) while AP collapsed, and large fell hardest
+# (-16.60). AR up + AP down is a ranking failure, not a detection failure. In the
+# NMS-free head the confidence gap between the one selected anchor and its
+# well-overlapping neighbours IS the duplicate suppression; SNT closed it, so
+# duplicates were emitted at near-equal confidence and interleaved with true
+# positives in the ranking. Large objects span the most anchors, hence emit the
+# most duplicates — that is the mechanism's fingerprint.
+# TSH tests the inverse: widen the same gap. After normalization the winner's
+# target is norm_align_metric < 1; raising it toward 1.0 via a power makes the
+# winner more confident relative to its neighbours.
+#   target_scores <- target_scores ** sharp_rho     (rho < 1 pushes toward 1.0)
+# Monotone and order-preserving, so it cannot reorder the assignment; it only
+# changes magnitudes. sharp_rho = 1.0 is the identity and bit-identical to stock.
+# This is a target-DEFINITION change, not a gain — cls gain scales the loss, this
+# changes what the model is asked to predict. Applied to one2one only.
+# FALSIFIABLE: if the gap story is right, large-object AP rises first and small
+# barely moves — the exact mirror of how SNT failed. If large falls again, the
+# gap is already at its optimum and the loss axis is closed.
+sharp_rho: 1.0 # (float) <1 sharpens the one2one positive target; 1.0 disables
