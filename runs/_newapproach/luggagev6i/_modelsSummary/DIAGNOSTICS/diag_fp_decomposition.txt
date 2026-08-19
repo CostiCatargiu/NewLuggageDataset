@@ -1,0 +1,184 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/diag_fp_decomposition.py
+[run]   /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_identity/weights/best.pt
+[split] test  conf=0.001  IoU=0.5  max_det=1000
+[head]  end2end=True  (NMS-free: duplicates reach the output unsuppressed)
+
+======================================================================================
+FALSE-POSITIVE DECOMPOSITION
+images=1219  max_det cap hit on 0 images  end2end=True
+  dup = GT already claimed by a higher-scoring box   cls = good box, wrong class
+  loc = right class, IoU in [0.10, 0.50)             bg  = IoU < 0.10 with any GT
+======================================================================================
+
+CLASS backpack
+score band          TP      FP    dup%    cls%    loc%     bg%
+--------------------------------------------------------------
+0.90-1.00          334       3    33.3    33.3    33.3     0.0
+0.70-0.90          646      70     5.7    24.3     7.1    62.9
+0.50-0.70          172     105     3.8    18.1     4.8    73.3
+0.25-0.50          126     238     8.4    17.2     5.9    68.5
+0.05-0.25          161    1001    10.4    15.4     4.5    69.7
+0.00-0.05          141   16392    12.0    13.9     3.6    70.5
+
+CLASS bag
+score band          TP      FP    dup%    cls%    loc%     bg%
+--------------------------------------------------------------
+0.90-1.00          143       3     0.0   100.0     0.0     0.0
+0.70-0.90          382      58     3.4    44.8    15.5    36.2
+0.50-0.70          195     117     6.0    32.5     6.8    54.7
+0.25-0.50          172     270    13.3    24.1     8.1    54.4
+0.05-0.25          181    1225    17.1    18.8     5.6    58.5
+0.00-0.05          191   20240    13.1    15.8     3.9    67.2
+
+CLASS trolley
+score band          TP      FP    dup%    cls%    loc%     bg%
+--------------------------------------------------------------
+0.90-1.00          840       8     0.0    25.0    62.5    12.5
+0.70-0.90         1125      77     7.8    15.6    31.2    45.5
+0.50-0.70          419     175    10.9    10.9    16.0    62.3
+0.25-0.50          309     566    30.6     8.7     9.2    51.6
+0.05-0.25          224    2072    26.9     7.5    11.3    54.2
+0.00-0.05          189   22980    16.1     9.4    10.8    63.8
+
+--------------------------------------------------------------------------------------
+THE NUMBER — FPs that OUTRANK the median true positive
+class          medTP  nFP above    dup%    cls%    loc%     bg%
+---------------------------------------------------------------
+backpack       0.801         38     5.3    28.9    10.5    55.3
+bag            0.595        116     4.3    44.8    11.2    39.7
+trolley        0.810         38     2.6    15.8    39.5    42.1
+
+VERDICT
+  pooled: dup=4.2%  cls=35.9%  loc=16.7%  bg=43.2%
+  -> BACKGROUND dominates. Hallucinated boxes are a feature/capacity
+     problem; no reweighting of the loss reaches them. The loss axis
+     closes here, with a measurement behind it.
+======================================================================================
+
+
+Process finished with exit code 0
+
+
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/diag_fp_decomposition.py
+[run]   /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_combo_v6i/y26_scb3_sbb50/weights/best.pt
+[split] test  conf=0.001  IoU=0.5  max_det=1000
+[head]  end2end=True  (NMS-free: duplicates reach the output unsuppressed)
+
+======================================================================================
+FALSE-POSITIVE DECOMPOSITION
+images=1219  max_det cap hit on 0 images  end2end=True
+  dup = GT already claimed by a higher-scoring box   cls = good box, wrong class
+  loc = right class, IoU in [0.10, 0.50)             bg  = IoU < 0.10 with any GT
+======================================================================================
+
+CLASS backpack
+score band          TP      FP    dup%    cls%    loc%     bg%
+--------------------------------------------------------------
+0.90-1.00          391       2     0.0     0.0   100.0     0.0
+0.70-0.90          609      73     1.4    26.0     2.7    69.9
+0.50-0.70          167     126     5.6    15.9     7.9    70.6
+0.25-0.50          132     299    12.4    15.7     3.7    68.2
+0.05-0.25          158    1141     8.4    16.4     4.9    70.3
+0.00-0.05          139   17409     8.4    13.3     3.8    74.5
+
+CLASS bag
+score band          TP      FP    dup%    cls%    loc%     bg%
+--------------------------------------------------------------
+0.90-1.00          176       7     0.0   100.0     0.0     0.0
+0.70-0.90          379      64     3.1    43.8    12.5    40.6
+0.50-0.70          195     122     4.1    27.9     9.0    59.0
+0.25-0.50          159     273    10.6    22.3    10.3    56.8
+0.05-0.25          190    1190    13.5    14.4     5.3    66.8
+0.00-0.05          169   19130    13.1    14.6     3.8    68.5
+
+CLASS trolley
+score band          TP      FP    dup%    cls%    loc%     bg%
+--------------------------------------------------------------
+0.90-1.00          904      10     0.0    10.0    80.0    10.0
+0.70-0.90         1167      86     8.1    14.0    17.4    60.5
+0.50-0.70          394     186     9.1    12.9    18.3    59.7
+0.25-0.50          266     542    25.6     8.9    11.3    54.2
+0.05-0.25          194    1696    19.2     8.1    10.1    62.5
+0.00-0.05          176   19583    13.4    10.7    10.8    65.2
+
+--------------------------------------------------------------------------------------
+THE NUMBER — FPs that OUTRANK the median true positive
+class          medTP  nFP above    dup%    cls%    loc%     bg%
+---------------------------------------------------------------
+backpack       0.810         23     0.0    43.5     8.7    47.8
+bag            0.624        113     2.7    41.6    10.6    45.1
+trolley        0.831         36     2.8    19.4    41.7    36.1
+
+VERDICT
+  pooled: dup=2.3%  cls=37.2%  loc=16.9%  bg=43.6%
+  -> BACKGROUND dominates. Hallucinated boxes are a feature/capacity
+     problem; no reweighting of the loss reaches them. The loss axis
+     closes here, with a measurement behind it.
+======================================================================================
+
+
+Process finished with exit code 0
+
+
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/diag_fp_decomposition.py
+[run]   /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round5_v6i/y26_p2k2_hi/weights/best.pt
+[split] test  conf=0.001  IoU=0.5  max_det=1000
+[head]  end2end=True  (NMS-free: duplicates reach the output unsuppressed)
+/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/functional.py:534: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at ../aten/src/ATen/native/TensorShape.cpp:3595.)
+  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
+
+======================================================================================
+FALSE-POSITIVE DECOMPOSITION
+images=1219  max_det cap hit on 0 images  end2end=True
+  dup = GT already claimed by a higher-scoring box   cls = good box, wrong class
+  loc = right class, IoU in [0.10, 0.50)             bg  = IoU < 0.10 with any GT
+======================================================================================
+
+CLASS backpack
+score band          TP      FP    dup%    cls%    loc%     bg%
+--------------------------------------------------------------
+0.90-1.00          387       4     0.0    50.0    50.0     0.0
+0.70-0.90          683      89     0.0    23.6     6.7    69.7
+0.50-0.70          153     133     7.5    15.8     7.5    69.2
+0.25-0.50          106     297    13.1    15.5     4.0    67.3
+0.05-0.25          103     858    12.2    14.0     4.5    69.2
+0.00-0.05          146   15015    12.2    17.2     4.3    66.2
+
+CLASS bag
+score band          TP      FP    dup%    cls%    loc%     bg%
+--------------------------------------------------------------
+0.90-1.00          147       2     0.0   100.0     0.0     0.0
+0.70-0.90          463      87     0.0    34.5    14.9    50.6
+0.50-0.70          181     138     8.0    27.5     7.2    57.2
+0.25-0.50          156     296    13.9    22.3     6.1    57.8
+0.05-0.25          134     870    17.6    15.9     5.6    60.9
+0.00-0.05          176   15832    18.0    16.3     5.1    60.6
+
+CLASS trolley
+score band          TP      FP    dup%    cls%    loc%     bg%
+--------------------------------------------------------------
+0.90-1.00         1067       3     0.0     0.0    33.3    66.7
+0.70-0.90         1064     110     0.0    14.5    18.2    67.3
+0.50-0.70          374     186    11.8    15.1    11.3    61.8
+0.25-0.50          249     494    32.0     6.1    11.3    50.6
+0.05-0.25          159    1468    27.0     6.9    11.9    54.3
+0.00-0.05          191   16746    16.8    12.5    12.8    57.9
+
+--------------------------------------------------------------------------------------
+THE NUMBER — FPs that OUTRANK the median true positive
+class          medTP  nFP above    dup%    cls%    loc%     bg%
+---------------------------------------------------------------
+backpack       0.837         28     0.0    42.9    10.7    46.4
+bag            0.691         93     0.0    34.4    14.0    51.6
+trolley        0.846         27     0.0    14.8    40.7    44.4
+
+VERDICT
+  pooled: dup=0.0%  cls=32.4%  loc=18.2%  bg=49.3%
+  -> BACKGROUND dominates. Hallucinated boxes are a feature/capacity
+     problem; no reweighting of the loss reaches them. The loss axis
+     closes here, with a measurement behind it.
+======================================================================================
+
+
+Process finished with exit code 0
+
