@@ -1,0 +1,52 @@
+RUN: y26_p2k2_hi
+images scored: 1219   split re-eval @ conf=0.001, match IoU>= 0.5
+size edges (px, MAX SIDE): small<48  medium<= 96  large>
+NOT the COCO area buckets used in the results JSONs — do not cross-compare.
+confusion matrices matched at IoU 0.45; this script uses 0.50
+max_det=1000   images hitting the cap: 0   most preds in one image: 225
+
+For each (class,size): of all GTs, what fraction is
+  hit@0.25   = correct box already above default threshold
+  recovered  = correct box EXISTS but scored below 0.25  (SCORING loss)
+  true_miss  = no correct box at ANY confidence           (PROPOSAL loss)
+
+class     size        GT  hit@.25%  recover%  true_miss%
+--------------------------------------------------------
+backpack  small      957      77.5      18.3         4.2
+backpack  medium     501      86.6       9.4         4.0
+backpack  large      190      84.2      11.6         4.2
+bag       small      833      70.1      25.0         4.9
+bag       medium     331      75.5      17.5         6.9
+bag       large      166      78.3      16.3         5.4
+trolley   small     1927      84.0      13.1         2.9
+trolley   medium    1020      91.7       6.3         2.1
+trolley   large      247      85.8       9.7         4.5
+
+ALL CLASSES combined, by size:
+          size        GT  hit@.25%  recover%  true_miss%
+--------------------------------------------------------
+          small     3717      79.2      17.1         3.7
+          medium    1852      87.4       9.1         3.5
+          large      603      83.3      12.1         4.6
+
+PER CLASS, all sizes pooled:
+class            GT  hit@.25%  recover%  true_miss%  verdict
+--------------------------------------------------------------
+trolley        3194      86.6      10.6         2.8  SCORING-limited
+backpack       1648      81.1      14.8         4.1  SCORING-limited
+bag            1330      72.5      22.0         5.5  SCORING-limited
+
+VERDICT
+  small bucket (all classes): recovered 17.1%   true_miss 3.7%
+    -> SCORING-limited. The boxes EXIST below 0.25. A per-class or
+       per-size threshold recovers them with zero retraining, and the
+       classification head is a live lever -> narrow loss work COULD help.
+
+  worst class (bag): recovered 22.0%   true_miss 5.5%
+    -> SCORING-limited. The boxes EXIST below 0.25. A per-class or
+       per-size threshold recovers them with zero retraining, and the
+       classification head is a live lever -> narrow loss work COULD help.
+
+  If these two disagree, believe the CLASS one — a size-pooled summary can
+  read 'saturated' while a single class carries the entire deficit.
+

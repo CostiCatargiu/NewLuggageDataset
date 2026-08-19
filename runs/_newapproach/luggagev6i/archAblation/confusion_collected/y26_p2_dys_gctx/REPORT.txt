@@ -1,0 +1,46 @@
+RUN: y26_p2_dys_gctx
+source: /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_arch3_v6i/y26_p2_dys_gctx
+
+FINAL EPOCH (from results.csv, VAL split, overall)
+  epochs   70
+  P        81.94
+  R        71.69
+  mAP50    79.01
+  mAP50-95 53.47
+
+PER-CLASS METRICS (TEST split)
+
+run              class            P       R    AP50  AP50-95
+------------------------------------------------------------
+y26_p2_dys_gctx  backpack      81.1    74.8    83.0     56.6
+y26_p2_dys_gctx  bag           74.6    63.4    69.9     46.3
+y26_p2_dys_gctx  trolley       85.1    81.3    87.6     61.4
+
+CONFUSION LEAK (TEST split) — where did each TRUE class end up? (% of its ground truths)
+matrix[predicted, true]; 'missed' = predicted as background
+
+run              true           n  correct   as_backpack        as_bag    as_trolley   missed
+---------------------------------------------------------------------------------------------
+y26_p2_dys_gctx  backpack    1648     78.2           0.0           3.9           1.8     16.0
+y26_p2_dys_gctx  bag         1330     66.8           3.9           0.0           2.9     26.5
+y26_p2_dys_gctx  trolley     3194     85.0           0.7           1.5           0.0     12.8
+
+HOW TO READ IT
+  missed high, misclassified low   -> a DETECTION / CONFIDENCE problem. The
+     campaign was aimed correctly and you are near the ceiling.
+  misclassified high               -> a CLASSIFICATION problem. Every mechanism
+     tried so far (assignment, localisation, box regression) is orthogonal to
+     it, which would explain twelve flat results.
+
+  Compare the SAME class ACROSS runs. If the misclassified column is identical
+  for baseline / best-config / NWD, no loss mechanism ever moved the real
+  failure — a cleaner statement than any of the mAP deltas.
+
+  *_valid.png files come from training (VAL split). The leak table and the
+  *_test.* files come from this script's re-evaluation on the 'test' split.
+
+files collected:
+  confusion_matrix_valid.png
+  confusion_matrix_normalized_valid.png
+  results.csv
+  confusion_test.csv

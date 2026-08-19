@@ -1,0 +1,46 @@
+RUN: runs_yolo26_port_v6i__y26_lb_p4wide
+source: /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_port_v6i/y26_lb_p4wide
+
+FINAL EPOCH (from results.csv, VAL split, overall)
+  epochs   70
+  P        80.26
+  R        72.58
+  mAP50    80.03
+  mAP50-95 54.55
+
+PER-CLASS METRICS (TEST split)
+
+run                                  class            P       R    AP50  AP50-95
+--------------------------------------------------------------------------------
+runs_yolo26_port_v6i__y26_lb_p4wide  backpack      81.3    73.0    82.2     56.4
+runs_yolo26_port_v6i__y26_lb_p4wide  bag           73.8    60.7    70.6     47.0
+runs_yolo26_port_v6i__y26_lb_p4wide  trolley       85.2    80.9    88.0     62.7
+
+CONFUSION LEAK (TEST split) — where did each TRUE class end up? (% of its ground truths)
+matrix[predicted, true]; 'missed' = predicted as background
+
+run                                  true           n  correct   as_backpack        as_bag    as_trolley   missed
+-----------------------------------------------------------------------------------------------------------------
+runs_yolo26_port_v6i__y26_lb_p4wide  backpack    1648     75.6           0.0           4.7           1.2     18.4
+runs_yolo26_port_v6i__y26_lb_p4wide  bag         1330     65.1           4.2           0.0           4.3     26.4
+runs_yolo26_port_v6i__y26_lb_p4wide  trolley     3194     84.6           0.8           1.5           0.0     13.1
+
+HOW TO READ IT
+  missed high, misclassified low   -> a DETECTION / CONFIDENCE problem. The
+     campaign was aimed correctly and you are near the ceiling.
+  misclassified high               -> a CLASSIFICATION problem. Every mechanism
+     tried so far (assignment, localisation, box regression) is orthogonal to
+     it, which would explain twelve flat results.
+
+  Compare the SAME class ACROSS runs. If the misclassified column is identical
+  for baseline / best-config / NWD, no loss mechanism ever moved the real
+  failure — a cleaner statement than any of the mAP deltas.
+
+  *_valid.png files come from training (VAL split). The leak table and the
+  *_test.* files come from this script's re-evaluation on the 'test' split.
+
+files collected:
+  confusion_matrix_valid.png
+  confusion_matrix_normalized_valid.png
+  results.csv
+  confusion_test.csv

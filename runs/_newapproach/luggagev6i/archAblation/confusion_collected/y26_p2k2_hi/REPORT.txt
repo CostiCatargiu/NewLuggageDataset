@@ -1,0 +1,46 @@
+RUN: y26_p2k2_hi
+source: /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round5_v6i/y26_p2k2_hi
+
+FINAL EPOCH (from results.csv, VAL split, overall)
+  epochs   70
+  P        80.43
+  R        72.75
+  mAP50    79.33
+  mAP50-95 53.83
+
+PER-CLASS METRICS (TEST split)
+
+run          class            P       R    AP50  AP50-95
+--------------------------------------------------------
+y26_p2k2_hi  backpack      80.7    76.2    83.4     57.4
+y26_p2k2_hi  bag           74.3    64.6    73.1     49.3
+y26_p2k2_hi  trolley       87.0    81.1    89.0     62.7
+
+CONFUSION LEAK (TEST split) — where did each TRUE class end up? (% of its ground truths)
+matrix[predicted, true]; 'missed' = predicted as background
+
+run          true           n  correct   as_backpack        as_bag    as_trolley   missed
+-----------------------------------------------------------------------------------------
+y26_p2k2_hi  backpack    1648     79.2           0.0           3.9           1.4     15.5
+y26_p2k2_hi  bag         1330     70.7           4.4           0.0           2.6     22.3
+y26_p2k2_hi  trolley     3194     85.8           0.7           1.7           0.0     11.8
+
+HOW TO READ IT
+  missed high, misclassified low   -> a DETECTION / CONFIDENCE problem. The
+     campaign was aimed correctly and you are near the ceiling.
+  misclassified high               -> a CLASSIFICATION problem. Every mechanism
+     tried so far (assignment, localisation, box regression) is orthogonal to
+     it, which would explain twelve flat results.
+
+  Compare the SAME class ACROSS runs. If the misclassified column is identical
+  for baseline / best-config / NWD, no loss mechanism ever moved the real
+  failure — a cleaner statement than any of the mAP deltas.
+
+  *_valid.png files come from training (VAL split). The leak table and the
+  *_test.* files come from this script's re-evaluation on the 'test' split.
+
+files collected:
+  confusion_matrix_valid.png
+  confusion_matrix_normalized_valid.png
+  results.csv
+  confusion_test.csv

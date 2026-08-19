@@ -1,0 +1,243 @@
+runs_yolo26_port_v6i__y26_lb_p4wide
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_port_v6i/y26_lb_p4wide
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_alpha075
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_loss_round2_v6i/y26_alpha075
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_arch_scb3_sbb50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round10_v6i/y26_arch_scb3_sbb50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_base_rep
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sbb_overnight_v6i/y26_base_rep
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_beta4
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_loss_study_v6i/y26_beta4
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_cmb_p4wide
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_phase2_v6i/y26_cmb_p4wide
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_cmb_uniform
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_phase2_v6i/y26_cmb_uniform
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_dfl3
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_loss_study_v6i/y26_dfl3
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_dys_2of3
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sbb_overnight_v6i/y26_dys_2of3
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_dys_g2
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sbb_overnight_v6i/y26_dys_g2
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_dys_g8
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sbb_overnight_v6i/y26_dys_g8
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_dys_lbp2k2
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round7_v6i/y26_dys_lbp2k2
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_dys_lbuni
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round7_v6i/y26_dys_lbuni
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_dys_p2rich
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight4_v6i/y26_dys_p2rich
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_dys_p2starve
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight4_v6i/y26_dys_p2starve
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_dys_swa0603
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round7_v6i/y26_dys_swa0603
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_dys_swa_lb
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round7_v6i/y26_dys_swa_lb
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_eiou
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_eiou
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_gctxp3
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_arch_v6i/y26_gctxp3
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_identity
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_identity
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_lb_coarse244
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sweep_v6i/y26_lb_coarse244
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_lb_p3_3
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sweep_v6i/y26_lb_p3_3
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_lb_p4wide
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_phase2_v6i/y26_lb_p4wide
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_lb_uniform
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_port_v6i/y26_lb_uniform
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_levelspec
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_arch2_v6i/y26_levelspec
+    files  results.csv, confusion_test.csv, REPORT.txt
+y26_lsshift
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_arch_v6i/y26_lsshift
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_nwd25
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_nwd25
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_nwd50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_nwd50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_nwd50_sbb
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_nwd50_sbb
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_nwd50_scb3_sbb
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_nwd50_scb3_sbb
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_p2_b32
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_arch2_v6i/y26_p2_b32
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_p2_dys3
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_arch3_v6i/y26_p2_dys3
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_p2_dys_gctx
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_arch3_v6i/y26_p2_dys_gctx
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_p2_dys_snake
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_arch2_v6i/y26_p2_dys_snake
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_p2_dysample
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_arch2_v6i/y26_p2_dysample
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_p2_snake_p3p4
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_arch2_v6i/y26_p2_snake_p3p4
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_p2_wide
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight4_v6i/y26_p2_wide
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_p2k1_lo
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round5_v6i/y26_p2k1_lo
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_p2k2_hi
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round5_v6i/y26_p2k2_hi
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_p2k4_hi
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round5_v6i/y26_p2k4_hi
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_s10_bal
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round6_v6i/y26_s10_bal
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_s10_hi
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round6_v6i/y26_s10_hi
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_s10_p45
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round6_v6i/y26_s10_p45
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_s10_p5
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round6_v6i/y26_s10_p5
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_sbb_inv50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sbb_overnight_v6i/y26_sbb_inv50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_sbb_q50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sbb_overnight_v6i/y26_sbb_q50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb2_sbb50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round10_v6i/y26_scb2_sbb50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb3_sbb25
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round10_v6i/y26_scb3_sbb25
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb3_sbb50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_combo_v6i/y26_scb3_sbb50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb3_sbb50_pw25
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round10_v6i/y26_scb3_sbb50_pw25
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb3_sbb50_pw50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round10_v6i/y26_scb3_sbb50_pw50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb3_sbb75
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round10_v6i/y26_scb3_sbb75
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb3_snl25
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_combo_v6i/y26_scb3_snl25
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb3_snl25_sbb
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_combo_v6i/y26_scb3_snl25_sbb
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb3_snl50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_combo_v6i/y26_scb3_snl50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb_b3
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_loss_study_v6i/y26_scb_b3
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb_b3_arch
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_loss_study_v6i/y26_scb_b3_arch
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb_b4s2
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_loss_round2_v6i/y26_scb_b4s2
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb_r128
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_scb_sweep_v6i/y26_scb_r128
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb_r32
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_scb_sweep_v6i/y26_scb_r32
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb_s2
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_scb_sweep_v6i/y26_scb_s2
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_scb_s4
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_scb_sweep_v6i/y26_scb_s4
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_sharp_r50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_combo_v6i/y26_sharp_r50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_sharp_r75
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_combo_v6i/y26_sharp_r75
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_snl1_p25
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_loss_study_v6i/y26_snl1_p25
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_snl1_p25_arch
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_loss_study_v6i/y26_snl1_p25_arch
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_snl1_p50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_loss_study_v6i/y26_snl1_p50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_snl1_sbb
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round10_v6i/y26_snl1_sbb
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_snt_t25
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_snt_v6i/y26_snt_t25
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_snt_t50
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_snt_v6i/y26_snt_t50
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_sqrt0703
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_port_v6i/y26_sqrt0703
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_sqrt0703-4
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_port_v6i/y26_sqrt0703-4
+    files  results.csv, confusion_test.csv, REPORT.txt
+y26_stock_b32
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round10_v6i/y26_stock_b32
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_swa_a06_03
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sweep_v6i/y26_swa_a06_03
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_swa_a06_b15
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_phase2_v6i/y26_swa_a06_b15
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_swa_a06_b25
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_phase2_v6i/y26_swa_a06_b25
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_swa_a07_04
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sweep_v6i/y26_swa_a07_04
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_swa_a08_04
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sweep_v6i/y26_swa_a08_04
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_swa_a09_03
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sweep_v6i/y26_swa_a09_03
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_swa_a09_04
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_sweep_v6i/y26_swa_a09_04
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
+y26_wide_starve
+    src    /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight4_v6i/y26_wide_starve
+    files  confusion_matrix_valid.png, confusion_matrix_normalized_valid.png, results.csv, confusion_test.csv, REPORT.txt
