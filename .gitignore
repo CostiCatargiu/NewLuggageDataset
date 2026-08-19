@@ -1,0 +1,8 @@
+# Local helper/analysis scripts for the archAblation summaries (not part of the project)
+runs/_newapproach/luggagev6i/archAblation/check_baseline.js
+runs/_newapproach/luggagev6i/archAblation/check_snt.js
+runs/_newapproach/luggagev6i/archAblation/finalcheck.js
+runs/_newapproach/luggagev6i/archAblation/inspect.js
+runs/_newapproach/luggagev6i/archAblation/listnames.js
+runs/_newapproach/luggagev6i/archAblation/summarize.js
+runs/_newapproach/luggagev6i/archAblation/v26split.js
