@@ -1,10 +1,9 @@
 /home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/diag_zero_positive.py
 [patch] instrumented TaskAlignedAssigner (both branches)
-[run]   yolo26s.pt on /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml
+[run]   /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_identity/weights/best.pt on /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml
 New https://pypi.org/project/ultralytics/8.4.123 available 😃 Update with 'pip install -U ultralytics'
 Ultralytics 8.4.117 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
-engine/trainer: agnostic_nms=False, alpha_end=0.0, alpha_max=0.0, alpha_min=0.0, alpha_start=0.0, amp=True, angle=1.0, area_weight_mode=inv, area_weight_norm=max, augment=False, auto_augment=randaugment, batch=82, bgr=0.0, box=7.5, cache=False, cfg=None, channels_last=False, classes=None, close_mosaic=10, cls=0.5, cls_pw=0.0, cls_remap=True, compile=False, conf=None, copy_paste=0.0, copy_paste_mode=flip, cos_lr=False, cutmix=0.0, data=/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml, degrees=0.0, deterministic=True, device=0, dfl=1.5, dgrad=0.5, dis=6.0, distill_model=None, dlam=1.0, dlog=1.0, dnn=False, dropout=0.0, dynamic=False, embed=None, end2end=None, epochs=1, erasing=0.4, exist_ok=True, fliplr=0.5, flipud=0.0, format=torchscript, fraction=0.1, freeze=None, hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, imgsz=640, iou=0.7, iou_type=ciou, keras=False, kobj=1.0, l1_scale_p=0.0, lbtal_level_topk=None, lbtal_min_level_k=1, lbtal_mode=uniform, lbtal_quality_gate=0.0, line_width=None, lr0=0.01, lrf=0.01, mask_ratio=4, max_det=300, mixup=0.0, mode=train, model=yolo26s.pt, momentum=0.937, mosaic=1.0, multi_scale=0.0, name=probe, nbs=64, nms=False, nwd=0.0, nwd_c=24.0, opset=None, optimize=False, optimizer=auto, overlap_mask=True, patience=100, perspective=0.0, plots=False, pose=12.0, pretrained=True, profile=False, project=diag_zero_positive, quantize=None, rect=False, resume=False, retina_masks=False, rle=1.0, save=False, save_conf=False, save_crop=False, save_dir=/home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe, save_frames=False, save_json=False, save_period=-1, save_txt=False, sbb_invert=False, sbb_q=0.0, sbb_ref_px=64.0, scale=0.5, scale_balance=0.0, seed=0, sharp_rho=1.0, shear=0.0, show=False, show_boxes=True, show_conf=True, show_labels=True, simplify=True, single_cls=False, small_obj_boost=1.0, small_obj_px=0, snt_gamma=2.0, snt_min_iou=0.5, snt_tau=0.0, source=None, split=val, stream_buffer=False, tal_alpha=0.5, tal_beta=6.0, tal_beta_ref_px=64.0, tal_beta_small=None, task=detect, time=None, tracker=tracktrack.yaml, translate=0.1, use_lbtal=False, val=False, verbose=False, vid_stride=1, visualize=False, warmup_bias_lr=0.1, warmup_epochs=3.0, warmup_momentum=0.8, weight_decay=0.0005, workers=8, workspace=None
-Overriding model.yaml nc=80 with nc=3
+engine/trainer: agnostic_nms=False, alpha_end=0.0, alpha_max=0.0, alpha_min=0.0, alpha_start=0.0, amp=True, angle=1.0, area_weight_mode=inv, area_weight_norm=max, augment=False, auto_augment=randaugment, batch=82, bgr=0.0, box=7.5, cache=False, cfg=None, channels_last=False, classes=None, close_mosaic=10, cls=0.5, cls_pw=0.0, cls_remap=True, compile=False, conf=None, copy_paste=0.0, copy_paste_mode=flip, cos_lr=False, cutmix=0.0, data=/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml, degrees=0.0, deterministic=True, device=0, dfl=1.5, dgrad=0.5, dis=6.0, distill_model=None, dlam=1.0, dlog=1.0, dnn=False, dropout=0.0, dynamic=False, embed=None, end2end=None, epochs=1, erasing=0.4, exist_ok=True, fliplr=0.5, flipud=0.0, format=torchscript, fraction=0.1, freeze=None, hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, imgsz=640, iou=0.7, iou_type=ciou, keras=False, kobj=1.0, l1_scale_p=0.0, lbtal_level_topk=None, lbtal_min_level_k=1, lbtal_mode=uniform, lbtal_quality_gate=0.0, line_width=None, lr0=0.01, lrf=0.01, mask_ratio=4, max_det=300, mixup=0.0, mode=train, model=/home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_identity/weights/best.pt, momentum=0.937, mosaic=1.0, multi_scale=0.0, name=probe, nbs=64, nms=False, nwd=0.0, nwd_c=24.0, opset=None, optimize=False, optimizer=auto, overlap_mask=True, patience=100, perspective=0.0, plots=False, pose=12.0, pretrained=True, profile=False, project=diag_zero_positive, quantize=None, rect=False, resume=False, retina_masks=False, rle=1.0, save=False, save_conf=False, save_crop=False, save_dir=/home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe, save_frames=False, save_json=False, save_period=-1, save_txt=False, sbb_invert=False, sbb_q=0.0, sbb_ref_px=64.0, scale=0.5, scale_balance=0.0, seed=0, sharp_rho=1.0, shear=0.0, show=False, show_boxes=True, show_conf=True, show_labels=True, simplify=True, single_cls=False, small_obj_boost=1.0, small_obj_px=0, snt_gamma=2.0, snt_min_iou=0.5, snt_tau=0.0, source=None, split=val, stream_buffer=False, tal_alpha=0.5, tal_beta=6.0, tal_beta_ref_px=64.0, tal_beta_small=None, task=detect, time=None, tracker=tracktrack.yaml, translate=0.1, use_lbtal=False, val=False, verbose=False, vid_stride=1, visualize=False, warmup_bias_lr=0.1, warmup_epochs=3.0, warmup_momentum=0.8, weight_decay=0.0005, workers=8, workspace=None
 
                    from  n    params  module                                       arguments
   0                  -1  1       928  ultralytics.nn.modules.conv.Conv             [3, 32, 3, 2]
@@ -33,7 +32,6 @@ Overriding model.yaml nc=80 with nc=3
  23        [16, 19, 22]  1    934186  ultralytics.nn.modules.head.Detect           [3, 1, True, [128, 256, 512]]
 YOLO26s summary: 260 layers, 9,950,186 parameters, 9,950,186 gradients
 
-Remapped 1/3 cls head rows from pretrained weights by class name
 Transferred 708/708 items from pretrained weights
 AMP: running Automatic Mixed Precision (AMP) checks...
 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
@@ -41,12 +39,11 @@ AMP: running Automatic Mixed Precision (AMP) checks...
 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
   sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
 AMP: checks passed ✅
-train: Fast image access ✅ (ping: 0.3±0.2 ms, read: 193.9±21.6 MB/s, size: 51.5 KB)
-train: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/labels... 914 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 914/914 4.5Kit/s 0.2s
+train: Fast image access ✅ (ping: 0.0±0.0 ms, read: 4792.8±1388.5 MB/s, size: 51.5 KB)
+train: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/labels.cache... 914 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 914/914 348.5Mit/s 0.0s
 train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/LuggageDatasett1698_png.rf.c73555c0487aff417c73fce0f7ff3172.jpg: 1 duplicate labels removed
-train: New cache created: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/labels.cache
-val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 211.8±53.1 MB/s, size: 51.4 KB)
-val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/labels.cache... 1827 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1827/1827 264.2Mit/s 0.0s
+val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 3596.0±1776.7 MB/s, size: 51.4 KB)
+val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/labels.cache... 1827 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1827/1827 283.8Mit/s 0.0s
 val: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/images/LuggageDatasett2538_png.rf.6465967949862aac4e22edcd41ef5718.jpg: 1 duplicate labels removed
 optimizer: 'optimizer=auto' found, ignoring 'lr0=0.01' and 'momentum=0.937' and determining best 'optimizer', 'lr0' and 'momentum' automatically...
 optimizer: AdamW(lr=0.001429, momentum=0.9) with parameter groups 114 weight(decay=0.0), 126 weight(decay=0.000640625), 126 bias(decay=0.0)
@@ -60,46 +57,46 @@ Starting training for 1 epochs...
   sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
 
       Epoch    GPU_mem   box_loss   cls_loss    l1_loss  Instances       Size
-        1/1        22G      1.876      6.604   0.005985        168        640: 100% ━━━━━━━━━━━━ 12/12 2.2it/s 5.3s
-                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 12/12 5.3it/s 2.2s
-                   all       1827       9818   0.000241     0.0177   1.09e-05   2.09e-06
+        1/1        22G       1.19     0.9041   0.003265        168        640: 100% ━━━━━━━━━━━━ 12/12 2.0it/s 5.9s
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 12/12 5.3it/s 2.3s
+                   all       1827       9818      0.686      0.578       0.64      0.371
 
-1 epochs completed in 0.003 hours.
+1 epochs completed in 0.002 hours.
 Optimizer stripped from /home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe/weights/last.pt, 20.3MB
 Optimizer stripped from /home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe/weights/best.pt, 20.3MB
 
 Validating /home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe/weights/best.pt...
 Ultralytics 8.4.117 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
 YOLO26s summary (fused): 122 layers, 9,466,341 parameters, 0 gradients
-                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 12/12 6.5it/s 1.8s
-                   all       1827       9818   0.000241     0.0176   1.08e-05   2.08e-06
-Speed: 0.1ms preprocess, 0.5ms inference, 0.0ms loss, 0.1ms postprocess per image
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 12/12 7.0it/s 1.7s
+                   all       1827       9818      0.662      0.597      0.641      0.371
+Speed: 0.1ms preprocess, 0.5ms inference, 0.0ms loss, 0.0ms postprocess per image
 
 ==============================================================================
 ZERO-POSITIVE DIAGNOSTIC
-weights=yolo26s.pt  batch=82  imgsz=640  fraction=0.1
+weights=/home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_identity/weights/best.pt  batch=82  imgsz=640  fraction=0.1
 size edges (MAX SIDE, px): small<48  medium<=96  large>
 ==============================================================================
 
 BRANCH one2many  (topk2 unset, auxiliary)
 size          n_GT  cand/GT  %cand IoU<=0  %GT metric==0  %GT 0 pos  mean pos/GT
 ------------------------------------------------------------------------------
-small        11890     12.3           9.4           0.57       1.15         7.15
-medium        5164     55.3          17.9           0.00       0.08         9.79
-large         1314    465.3          71.2           0.00       0.23         9.83
+small        11890     12.3           2.6           0.08       0.72         7.52
+medium        5164     55.3           4.9           0.00       0.87         9.80
+large         1314    465.3          51.8           0.00       0.61         9.75
 
 BRANCH one2one  (topk2=1, produces every prediction)
 size          n_GT  cand/GT  %cand IoU<=0  %GT metric==0  %GT 0 pos  mean pos/GT
 ------------------------------------------------------------------------------
-small        11890     12.3           9.2           0.35       0.68         0.99
-medium        5164     55.3          23.9           0.00       0.04         1.00
-large         1314    465.3          76.1           0.00       0.15         1.00
+small        11890     12.3           2.3           0.05       0.39         1.00
+medium        5164     55.3           7.4           0.00       0.27         1.00
+large         1314    465.3          59.3           0.00       0.00         1.00
 
 ------------------------------------------------------------------------------
 VERDICT
-  small 1.15% vs large 0.23% — size-dependent, as predicted.
-  -> Real. GTs are being dropped, and it is the population NWD helped.
-     Build the mechanism, and plot this table as the motivating figure.
+  small 0.72% vs large 0.61% — present but FLAT across sizes.
+  -> Real but not a small-object story. It would not explain NWD's +0.89,
+     so the mechanism needs a different justification before spending runs.
 ==============================================================================
 
 
