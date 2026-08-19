@@ -1,0 +1,34 @@
+RUN: y26_scb3_sbb50
+tune on 'val'  ->  report on 'test'   (threshold is a free
+parameter; fitting and reporting it on the same split is leakage)
+match IoU >= 0.5   max_det=1000   cap hits: tune 0, report 0
+
+class      best-F1 thr  | tuned on val            | applied to test
+                             P       R      F1          P       R      F1
+------------------------------------------------------------------------------
+backpack         0.500    86.1    71.1    77.9       85.3    70.8    77.4
+bag              0.400    75.9    61.1    67.7       75.8    61.4    67.8
+trolley          0.400    85.0    81.0    83.0       85.3    81.0    83.1
+
+WHAT IT BUYS on 'test' — current conf 0.25 vs per-class tuned
+class                P       R      F1       thr       P       R      F1     dF1
+------------------------------------------------------------------------------
+backpack   now    72.2    78.8    75.4     0.500    85.3    70.8    77.4    +2.0
+bag        now    66.1    68.3    67.2     0.400    75.8    61.4    67.8    +0.6
+trolley    now    76.8    85.5    80.9     0.400    85.3    81.0    83.1    +2.2
+micro now                   73.4    80.0    76.6
+micro tuned                 83.4    74.0    78.5
+
+READ IT
+  precision roughly HOLDS at the tuned thresholds -> the model ranks well and
+     0.25 was simply the wrong operating point. Free win, no retraining;
+     report the tuned per-class operating point and say the default cost
+     20+ points of recall.
+  precision COLLAPSES -> the correct box is ranked below junk. That is a
+     classification / ranking failure and the first evidence-backed loss
+     target this project has had.
+
+  Watch the TUNE vs REPORT columns. If the tuned threshold transfers, the two
+  F1 values are close. A big drop means the threshold overfitted the val split
+  and per-class tuning is not as free as it looks.
+
