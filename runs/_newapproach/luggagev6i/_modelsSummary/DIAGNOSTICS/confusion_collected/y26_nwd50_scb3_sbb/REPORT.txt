@@ -1,0 +1,46 @@
+RUN: y26_nwd50_scb3_sbb
+source: /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_nwd50_scb3_sbb
+
+FINAL EPOCH (from results.csv, VAL split, overall)
+  epochs   70
+  P        80.07
+  R        72.80
+  mAP50    79.90
+  mAP50-95 53.08
+
+PER-CLASS METRICS (TEST split)
+
+run                 class            P       R    AP50  AP50-95
+---------------------------------------------------------------
+y26_nwd50_scb3_sbb  backpack      81.8    74.8    83.0     56.2
+y26_nwd50_scb3_sbb  bag           74.7    63.3    71.1     46.7
+y26_nwd50_scb3_sbb  trolley       85.1    81.0    88.1     60.8
+
+CONFUSION LEAK (TEST split) — where did each TRUE class end up? (% of its ground truths)
+matrix[predicted, true]; 'missed' = predicted as background
+
+run                 true           n  correct   as_backpack        as_bag    as_trolley   missed
+------------------------------------------------------------------------------------------------
+y26_nwd50_scb3_sbb  backpack    1648     78.6           0.0           4.1           1.5     15.9
+y26_nwd50_scb3_sbb  bag         1330     67.6           4.9           0.0           4.0     23.5
+y26_nwd50_scb3_sbb  trolley     3194     85.4           0.8           1.6           0.0     12.2
+
+HOW TO READ IT
+  missed high, misclassified low   -> a DETECTION / CONFIDENCE problem. The
+     campaign was aimed correctly and you are near the ceiling.
+  misclassified high               -> a CLASSIFICATION problem. Every mechanism
+     tried so far (assignment, localisation, box regression) is orthogonal to
+     it, which would explain twelve flat results.
+
+  Compare the SAME class ACROSS runs. If the misclassified column is identical
+  for baseline / best-config / NWD, no loss mechanism ever moved the real
+  failure — a cleaner statement than any of the mAP deltas.
+
+  *_valid.png files come from training (VAL split). The leak table and the
+  *_test.* files come from this script's re-evaluation on the 'test' split.
+
+files collected:
+  confusion_matrix_valid.png
+  confusion_matrix_normalized_valid.png
+  results.csv
+  confusion_test.csv

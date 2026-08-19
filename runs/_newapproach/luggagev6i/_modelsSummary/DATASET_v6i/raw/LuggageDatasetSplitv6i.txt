@@ -1,0 +1,83 @@
+Found splits: train, valid, test | class names: loaded (3)
+Analyzing 'train' ...
+Analyzing 'valid' ...
+Analyzing 'test' ...
+
+==============================================================================
+DATASET ANALYSIS REPORT
+==============================================================================
+
+1) IMAGES & INSTANCES PER SPLIT
+split    images    img %    labeled   background  no label file  instances   inst %   avg box/img
+------------------------------------------------------------------------------
+train    9138      75.0%    9138      0           0              41823       72.3%    4.58
+valid    1827      15.0%    1827      0           0              9819        17.0%    5.37
+test     1219      10.0%    1219      0           0              6172        10.7%    5.06
+
+2) INSTANCES PER CLASS (count and % within split)
+class         train (n / %)       valid (n / %)       test (n / %)
+------------------------------------------------------------------------------
+backpack       11338 / 27.11%       2623 / 26.71%       1648 / 26.70%
+bag             9268 / 22.16%       1994 / 20.31%       1330 / 21.55%
+trolley        21217 / 50.73%       5202 / 52.98%       3194 / 51.75%
+
+3A) OBJECT SIZE ANALYSIS — OVERVIEW A (small < 48px, 48 <= medium <= 96px, large > 96px, by max bbox side)
+split    small     %        medium    %        large     %        mean W    mean H
+------------------------------------------------------------------------------
+train    25076     60.0%    12006     28.7%    4741      11.3%    39px      55px
+valid    6103      62.2%    2958      30.1%    758        7.7%    35px      49px
+test     3717      60.2%    1852      30.0%    603        9.8%    40px      56px
+
+3B) OBJECT SIZE ANALYSIS — OVERVIEW B (small < 32px, 32 <= medium <= 64px, large > 64px, by max bbox side)
+split    small     %        medium    %        large     %        mean W    mean H
+------------------------------------------------------------------------------
+train    14959     35.8%    16398     39.2%    10466     25.0%    39px      55px
+valid    3669      37.4%    4034      41.1%    2116      21.6%    35px      49px
+test     2175      35.2%    2510      40.7%    1487      24.1%    40px      56px
+
+4A) SIZE DISTRIBUTION PER CLASS — OVERVIEW A (train split)
+class         small     medium    large
+------------------------------------------------------------------------------
+backpack      6531      3331      1476
+bag           5664      2070      1534
+trolley       12881     6605      1731
+
+4B) SIZE DISTRIBUTION PER CLASS — OVERVIEW B (train split)
+class         small     medium    large
+------------------------------------------------------------------------------
+backpack      3699      4600      3039
+bag           3499      3267      2502
+trolley       7761      8531      4925
+
+5) BOX SHAPE ANALYSIS (h/w ratio: wide < 0.8, square 0.8-1.25, tall > 1.25)
+split    wide      %        square    %        tall      %        mean h/w
+------------------------------------------------------------------------------
+train    2524       6.0%    9772      23.4%    29527     70.6%    1.55
+valid    568        5.8%    2240      22.8%    7011      71.4%    1.55
+test     352        5.7%    1417      23.0%    4403      71.3%    1.54
+
+6) BOX SHAPE PER CLASS, PER SPLIT (mean h/w ratio; wide<0.8 square tall>1.25)
+class         train (mean h/w)  valid (mean h/w)  test (mean h/w)
+------------------------------------------------------------------------------
+backpack      1.47 (n=11338)    1.48 (n=2623)     1.47 (n=1648)
+bag           1.33 (n=9268)     1.35 (n=1994)     1.34 (n=1330)
+trolley       1.68 (n=21217)    1.66 (n=5202)     1.66 (n=3194)
+
+   Shape-bin breakdown per class (train split):
+class         wide      square    tall
+------------------------------------------------------------------------------
+backpack      137       2704      8497
+bag           1225      3335      4708
+trolley       1162      3733      16322
+
+7) DATA QUALITY
+  train: no issues found | top image sizes: 640x360 (7350), 640x480 (370), 640x426 (211)
+  valid: no issues found | top image sizes: 640x360 (1723), 640x640 (14), 640x480 (14)
+  test: no issues found | top image sizes: 640x360 (1069), 640x640 (25), 640x480 (23)
+
+8) SPLIT QUALITY VERDICT
+------------------------------------------------------------------------------
+  [OK] Splits look well done: similar class, size, and shape distributions, reasonable ratios, no missing classes.
+==============================================================================
+
+Process finished with exit code 0

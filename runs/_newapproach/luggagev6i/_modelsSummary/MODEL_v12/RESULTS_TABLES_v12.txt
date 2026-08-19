@@ -1,0 +1,46 @@
+YOLOv12s / LuggageDataset v6i — TEST split (1219 images, 6172 instances)
+S / M / L are mAP50 by COCO size bucket. Δ% is relative to that block's baseline.
+Companion to RESULTS_TABLES_v26.txt — same layout, same metrics.
+
+TABLE 1 — LOSS   vs the yolov12s baseline
+============================================================================================================================================================
+yolov12s stock, 640px. The strongest evidence in the project: the sqrt0703
+family was 29/32 above baseline, sign test p = 1.3e-06, seed spread 0.11.
+
+config                    mAP50-95       Δ      Δ%     mAP50       Δ      Δ%       P      Δ%       R      Δ%       S      Δ%       M      Δ%       L      Δ%
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+yolov12s_sqrt0703            55.64   +0.86   +1.58     80.70   +0.95   +1.19   80.95   +0.71   72.86   +0.97   77.37   +0.95   87.01   +0.49   82.12   +0.31
+ms_s_sqrt_a0703_b15          55.49   +0.72   +1.31     80.66   +0.91   +1.14   81.22   +1.06   72.64   +0.67   77.16   +0.67   86.45   -0.16   84.58   +3.31
+ms_s_sqrt_a0703_b25          55.47   +0.69   +1.27     80.66   +0.91   +1.15   80.03   -0.43   73.24   +1.50   77.66   +1.32   86.41   -0.20   79.30   -3.14
+BASELINE yolov12s_default     54.77   +0.00   +0.00     79.75   +0.00   +0.00   80.37   +0.00   72.16   +0.00   76.65   +0.00   86.59   +0.00   81.87   +0.00
+
+
+TABLE 2 — ARCH   vs the yolov12s baseline  (DIFFERENT BATCH — upper bound)
+============================================================================================================================================================
+Level-shift / P2 architectures. These ran at b32 against a b54 baseline, so
+part of every Δ is batch, not architecture — on YOLO26 the same confound was
+worth +0.52 mAP50-95 and accounted for 42-62% of the apparent arch gain.
+NO MATCHED v12 CONTROL EXISTS. Until one is run these are upper bounds only,
+and I would not put the arch claim in the paper without it.
+
+config                    mAP50-95       Δ      Δ%     mAP50       Δ      Δ%       P      Δ%       R      Δ%       S      Δ%       M      Δ%       L      Δ%
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+ls_shift_gctxP3              56.02   +1.24   +2.27     81.35   +1.60   +2.00   80.65   +0.34   73.01   +1.17   78.37   +2.25   86.59   -0.00   80.78   -1.33
+arch_ls_shift                55.98   +1.21   +2.20     81.70   +1.95   +2.44   81.39   +1.26   73.56   +1.94   78.34   +2.22   87.31   +0.84   84.32   +3.00
+ls_shift_wiou                55.91   +1.13   +2.07     80.93   +1.18   +1.48   80.72   +0.43   73.44   +1.77   78.25   +2.09   85.80   -0.91   80.75   -1.37
+BASELINE yolov12s_default     54.77   +0.00   +0.00     79.75   +0.00   +0.00   80.37   +0.00   72.16   +0.00   76.65   +0.00   86.59   +0.00   81.87   +0.00
+
+
+PROVENANCE
+============================================================================================================================================================
+
+  yolov12s_default        runs_newl_luggagev6i__test_full_dataset.json
+  yolov12s_sqrt0703       runs_newl_luggagev6i__test_full_dataset.json
+  ms_s_sqrt_a0703_b15     runs_newl_luggagev6i__test_full_dataset.json
+  ms_s_sqrt_a0703_b25     runs_newl_luggagev6i__test_full_dataset.json
+  ls_shift_gctxP3         archAblation/runs_arch_refine_v6i__test_full_dataset.json
+  arch_ls_shift           archAblation/runs_arch_v6i__test_full_dataset.json
+  ls_shift_wiou           archAblation/runs_arch_refine_v6i__test_full_dataset.json
+
+NOTE: the arch_best/arch_luggage_eval/*.json families (57-59 mAP50-95) are a
+DIFFERENT dataset/resolution and are not comparable to anything above.

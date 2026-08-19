@@ -1,0 +1,13 @@
+run,class,size,gt,hit25,recovered,true_miss,hit25_pct,recovered_pct,true_miss_pct,rec_b_001_05,rec_b_05_10,rec_b_10_25
+y26_identity,backpack,small,957,714,203,40,74.61,21.21,4.18,90,41,72
+y26_identity,backpack,medium,501,413,64,24,82.44,12.77,4.79,36,8,20
+y26_identity,backpack,large,190,158,28,4,83.16,14.74,2.11,10,6,12
+y26_identity,bag,small,833,550,246,37,66.03,29.53,4.44,119,44,83
+y26_identity,bag,medium,331,243,69,19,73.41,20.85,5.74,33,16,20
+y26_identity,bag,large,166,115,42,9,69.28,25.30,5.42,26,6,10
+y26_identity,trolley,small,1927,1573,297,57,81.63,15.41,2.96,130,47,120
+y26_identity,trolley,medium,1020,917,84,19,89.90,8.24,1.86,41,12,31
+y26_identity,trolley,large,247,214,24,9,86.64,9.72,3.64,11,8,5
+y26_identity,trolley,ALL,3194,2704,405,85,84.66,12.68,2.66,,,
+y26_identity,backpack,ALL,1648,1285,295,68,77.97,17.90,4.13,,,
+y26_identity,bag,ALL,1330,908,357,65,68.27,26.84,4.89,,,
