@@ -39,18 +39,10 @@ READ:
 =============================================================================
 WHERE TO RUN IT
 =============================================================================
-On the training box (weights + dataset live there). Example:
+On the training box (weights + dataset live there). Edit the CONFIG block below,
+then:
 
-  python diag_miss_vs_score.py \
-      --weights runs/detect/runs_yolo26_round11_v6i/y26_identity/weights/best.pt \
-      --data    /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml \
-      --split   test --imgsz 640
-
-Compare two models in one go (baseline vs the arch that moved the miss column):
-
-  python diag_miss_vs_score.py \
-      --weights .../y26_identity/weights/best.pt .../y26_p2k2_hi/weights/best.pt \
-      --data .../data.yaml --split test
+  python diag_miss_vs_score.py
 
 Outputs, per weights file, next to this script:
   miss_vs_score__<runname>.csv   machine-readable, one row per (class,size,band)
@@ -59,7 +51,6 @@ Outputs, per weights file, next to this script:
 No training. Pure inference. ~1-2 min per model on a GPU.
 """
 
-import argparse
 import os
 import sys
 from collections import defaultdict
@@ -75,6 +66,25 @@ except Exception as e:
     sys.exit(1)
 
 
+# ============================== CONFIG ======================================= #
+# One or more best.pt paths. The run name is taken from the folder two levels up
+# (…/<run>/weights/best.pt), which is how ultralytics lays runs out.
+WEIGHTS = [
+    "/home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_identity/weights/best.pt",
+    "/home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_combo_v6i/y26_scb3_sbb50/weights/best.pt",
+    "/home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round5_v6i/y26_p2k2_hi/weights/best.pt",
+]
+
+DATA = "/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml"
+SPLIT = "test"
+IMGSZ = 640
+DEVICE = 0          # 0 for the first GPU, or "cpu"
+
+# Where the .txt / .csv reports land. "" = next to this script.
+OUT_DIR = ""
+# ============================================================================= #
+
+
 # ---- size buckets ----------------------------------------------------------
 # Edges are on max(w,h) EXPRESSED AT imgsz=640-equivalent scale, so they match
 # the small<48 / medium<=96 convention used throughout this project regardless
@@ -83,13 +93,40 @@ except Exception as e:
 # letterbox-invariant size in the model's working frame. This sidesteps the
 # stretch-vs-letterbox coordinate hazard entirely: IoU is done in NATIVE pixels
 # (where preds already live), size bucketing is done on scale-normalised sides.
-SMALL_PX = 48.0
+#
+# WARNING — THESE EDGES ARE *NOT* THE COCO BUCKETS USED ELSEWHERE IN THIS PROJECT.
+# Every mAP50_small / mAP50_medium / mAP50_large figure quoted in this campaign
+# comes from CocoEvalAllFolders_luggage.py, which uses COCO *AREA* buckets:
+#     small  area < 32^2   -> side < 32 for a square box
+#     medium 32^2 .. 96^2
+#     large  > 96^2
+# The edges below are on MAX SIDE at 48/96, so "small" here is materially BROADER
+# than COCO small. That is a defensible choice (max side is the right notion for
+# "can the grid resolve it"), but it means THESE ROWS ARE NOT COMPARABLE to the
+# mAP_small numbers in the results JSONs. Do not put them in the same table.
+# Flip COCO_BUCKETS to True to use area-equivalent edges instead.
+COCO_BUCKETS = False
+SMALL_PX = 32.0 if COCO_BUCKETS else 48.0
 MEDIUM_PX = 96.0
 
 # confidence bands to bucket recovered boxes into
 BANDS = [(0.001, 0.05), (0.05, 0.10), (0.10, 0.25), (0.25, 1.01)]
 DEFAULT_CONF = 0.25          # the threshold the collected matrices used
 IOU_MATCH = 0.50             # a "well-localised" recovered box needs IoU >= this
+
+# At conf=0.001 the boxes being hunted are BY DEFINITION the lowest-scoring ones,
+# and predict() keeps only the top `max_det` by score. If that cap binds, the
+# low-confidence tail is silently truncated, `recovered` is undercounted, and the
+# script concludes PROPOSAL-dominated — precisely the failure it exists to rule
+# out. ~5 boxes/image means 300 (the default) is very likely fine, but "very
+# likely" is how the batch confound survived three weeks. The report states
+# outright whether the cap was ever reached.
+MAX_DET = 1000
+
+# ultralytics' ConfusionMatrix matches at IoU 0.45; this script uses 0.50. So
+# `hit@0.25` here will NOT exactly equal the confusion matrix `correct` column.
+# Close, but they are different measurements — do not quote them as one number.
+CM_IOU_NOTE = "confusion matrices matched at IoU 0.45; this script uses 0.50"
 
 
 def box_iou_matrix(a, b):
@@ -208,7 +245,12 @@ def analyse(weights, data, split, imgsz, device, names):
 
     results = model.predict(source=src, conf=0.001, iou=0.7, imgsz=imgsz,
                             device=device, stream=True, verbose=False,
-                            save=False, agnostic_nms=False)
+                            save=False, agnostic_nms=False, max_det=MAX_DET)
+    # Track whether the max_det cap ever bound. If it did, the truncated tail is
+    # exactly the low-confidence region this script is measuring, and any
+    # "PROPOSAL-dominated" verdict would be an artefact rather than a finding.
+    cap_hits = 0
+    max_preds_seen = 0
 
     # counters[class][size] = dict(gt, hit25, recovered, true_miss, band_counts{})
     def _new():
@@ -237,6 +279,9 @@ def analyse(weights, data, split, imgsz, device, names):
             pxyxy = r.boxes.xyxy.cpu().numpy().astype(np.float32)
             pcls = r.boxes.cls.cpu().numpy().astype(np.int64)
             pconf = r.boxes.conf.cpu().numpy().astype(np.float32)
+            max_preds_seen = max(max_preds_seen, len(pconf))
+            if len(pconf) >= MAX_DET:
+                cap_hits += 1
 
         iou = box_iou_matrix(gxyxy, pxyxy)  # (G,P), native pixels both sides
 
@@ -266,17 +311,26 @@ def analyse(weights, data, split, imgsz, device, names):
                         cell["bands"][(lo, hi)] += 1
                         break
 
-    return counters, n_imgs
+    return counters, n_imgs, cap_hits, max_preds_seen
 
 
-def report(run, counters, n_imgs, out_dir):
+def report(run, counters, n_imgs, out_dir, names, cap_hits=0, max_preds_seen=0):
     lines = []
     def emit(s=""):
         lines.append(s)
 
     emit(f"RUN: {run}")
     emit(f"images scored: {n_imgs}   split re-eval @ conf=0.001, match IoU>= {IOU_MATCH}")
-    emit(f"size edges (px, max side): small<{SMALL_PX:.0f}  medium<= {MEDIUM_PX:.0f}  large>")
+    emit(f"size edges (px, MAX SIDE): small<{SMALL_PX:.0f}  medium<= {MEDIUM_PX:.0f}  large>")
+    emit(f"NOT the COCO area buckets used in the results JSONs — do not cross-compare.")
+    emit(f"{CM_IOU_NOTE}")
+    emit(f"max_det={MAX_DET}   images hitting the cap: {cap_hits}   "
+         f"most preds in one image: {max_preds_seen}")
+    if cap_hits:
+        emit("  *** WARNING: the max_det cap BOUND on some images. The truncated tail is")
+        emit("      the low-confidence region this script measures, so `recovered` is")
+        emit("      UNDERCOUNTED and any PROPOSAL-dominated verdict may be an artefact.")
+        emit("      Raise MAX_DET and re-run before believing the verdict.")
     emit("")
     emit("For each (class,size): of all GTs, what fraction is")
     emit("  hit@0.25   = correct box already above default threshold")
@@ -324,22 +378,68 @@ def report(run, counters, n_imgs, out_dir):
         emit(f"{'':<10}{sz:<8}{g:>6}{100*a['hit25']/g:>10.1f}"
              f"{100*a['recovered']/g:>10.1f}{100*a['true_miss']/g:>12.1f}")
 
+    # ---- PER CLASS, all sizes pooled ---------------------------------------
+    # The size verdict alone can read "near-saturated" while one CLASS is the
+    # whole problem. On this dataset bag has AR50 95.6 but only ~66.5% survive at
+    # conf 0.25 — a ~29pt gap that spans every size bucket, so it is invisible in
+    # a size-only summary.
+    percls = defaultdict(lambda: dict(gt=0, hit25=0, recovered=0, true_miss=0))
+    for c in counters:
+        cname = names.get(c, str(c)) if isinstance(names, dict) else str(c)
+        for sz in counters[c]:
+            cell = counters[c][sz]
+            a = percls[cname]
+            for k in ("gt", "hit25", "recovered", "true_miss"):
+                a[k] += cell[k]
+
     emit("")
-    emit("VERDICT (small bucket is the test):")
-    a = agg["small"]
-    if a["gt"]:
-        rec_pct = 100 * a["recovered"] / a["gt"]
-        tm_pct = 100 * a["true_miss"] / a["gt"]
-        emit(f"  small recovered = {rec_pct:.1f}%   small true_miss = {tm_pct:.1f}%")
-        if rec_pct >= tm_pct and rec_pct >= 3.0:
-            emit("  -> SCORING-dominated. The boxes exist below 0.25. A per-size")
-            emit("     threshold / calibration recovers them for free, and the")
-            emit("     classification head IS a live lever -> narrow loss work COULD help.")
-        elif tm_pct > rec_pct and tm_pct >= 3.0:
-            emit("  -> PROPOSAL-dominated. The boxes are not there at any conf.")
-            emit("     Loss is exhausted; spend budget on arch / resolution.")
+    emit("PER CLASS, all sizes pooled:")
+    emit(f"{'class':<12}{'GT':>7}{'hit@.25%':>10}{'recover%':>10}{'true_miss%':>12}"
+         f"{'  verdict'}")
+    emit("-" * 62)
+    for cname in sorted(percls, key=lambda k: -percls[k]["gt"]):
+        a = percls[cname]
+        if not a["gt"]:
+            continue
+        g = a["gt"]
+        rec, tm = 100 * a["recovered"] / g, 100 * a["true_miss"] / g
+        if rec + tm < 3.0:
+            v = "saturated"
+        elif rec >= tm:
+            v = "SCORING-limited"
         else:
-            emit("  -> both small; the small bucket is near-saturated already.")
+            v = "PROPOSAL-limited"
+        emit(f"{cname:<12}{g:>7}{100*a['hit25']/g:>10.1f}{rec:>10.1f}{tm:>12.1f}  {v}")
+        csv.append(f"{run},{cname},ALL,{g},{a['hit25']},{a['recovered']},{a['true_miss']},"
+                   f"{100*a['hit25']/g:.2f},{rec:.2f},{tm:.2f},,,")
+
+    def verdict(label, a):
+        if not a["gt"]:
+            return
+        g = a["gt"]
+        rec, tm = 100 * a["recovered"] / g, 100 * a["true_miss"] / g
+        emit(f"  {label}: recovered {rec:.1f}%   true_miss {tm:.1f}%")
+        if rec >= tm and rec >= 3.0:
+            emit("    -> SCORING-limited. The boxes EXIST below 0.25. A per-class or")
+            emit("       per-size threshold recovers them with zero retraining, and the")
+            emit("       classification head is a live lever -> narrow loss work COULD help.")
+        elif tm > rec and tm >= 3.0:
+            emit("    -> PROPOSAL-limited. No correct box at ANY confidence. Nothing in")
+            emit("       the loss can recover these; spend budget on arch / resolution.")
+        else:
+            emit("    -> near-saturated; neither failure mode has meaningful mass.")
+
+    emit("")
+    emit("VERDICT")
+    verdict("small bucket (all classes)", agg["small"])
+    worst = min(percls.items(), key=lambda kv: kv[1]["hit25"] / max(kv[1]["gt"], 1),
+                default=(None, None))
+    if worst[0] is not None:
+        emit("")
+        verdict(f"worst class ({worst[0]})", worst[1])
+    emit("")
+    emit("  If these two disagree, believe the CLASS one — a size-pooled summary can")
+    emit("  read 'saturated' while a single class carries the entire deficit.")
     emit("")
 
     txt = os.path.join(out_dir, f"miss_vs_score__{run}.txt")
@@ -353,26 +453,38 @@ def report(run, counters, n_imgs, out_dir):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--weights", nargs="+", required=True,
-                    help="one or more best.pt paths")
-    ap.add_argument("--data", required=True, help="dataset data.yaml")
-    ap.add_argument("--split", default="test")
-    ap.add_argument("--imgsz", type=int, default=640)
-    ap.add_argument("--device", default=0 if torch.cuda.is_available() else "cpu")
-    args = ap.parse_args()
+    out_dir = OUT_DIR or os.path.dirname(os.path.abspath(__file__))
+    os.makedirs(out_dir, exist_ok=True)
 
-    out_dir = os.path.dirname(os.path.abspath(__file__))
+    device = DEVICE if torch.cuda.is_available() or DEVICE == "cpu" else "cpu"
+    if device != DEVICE:
+        print(f"  [note] no CUDA visible — falling back to cpu (this will be slow)")
+
+    missing = [w for w in WEIGHTS if not os.path.isfile(w)]
+    if missing:
+        print("[ABORT] these weights do not exist — fix WEIGHTS in the CONFIG block:")
+        for w in missing:
+            print(f"    {w}")
+        sys.exit(1)
+    if not os.path.isfile(DATA):
+        sys.exit(f"[ABORT] DATA not found: {DATA}")
+
+    print(f"\n  DATA    {DATA}")
+    print(f"  SPLIT   {SPLIT}   IMGSZ {IMGSZ}   DEVICE {device}   MAX_DET {MAX_DET}")
+    print(f"  buckets small<{SMALL_PX:.0f} medium<={MEDIUM_PX:.0f} (max side"
+          f"{', COCO-equivalent' if COCO_BUCKETS else ', NOT the COCO area buckets'})")
+    print(f"  OUT     {out_dir}")
+    print(f"  {len(WEIGHTS)} model(s)\n")
 
     # class names from the dataset yaml
     from ultralytics.data.utils import check_det_dataset
-    ds = check_det_dataset(args.data)
+    ds = check_det_dataset(DATA)
     names = ds.get("names", {})
     if isinstance(names, (list, tuple)):
         names = {i: n for i, n in enumerate(names)}
 
-    for w in args.weights:
+    for w in WEIGHTS:
         run = os.path.basename(os.path.dirname(os.path.dirname(w))) or os.path.basename(w)
-        counters, n_imgs = analyse(w, args.data, args.split, args.imgsz,
-                                   args.device, names)
-        report(run, counters, n_imgs, out_dir)
+        counters, n_imgs, cap_hits, max_preds = analyse(
+            w, DATA, SPLIT, IMGSZ, device, names)
+        report(run, counters, n_imgs, out_dir, names, cap_hits, max_preds)
