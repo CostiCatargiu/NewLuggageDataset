@@ -1,0 +1,46 @@
+RUN: y26_dys_lbuni
+source: /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round7_v6i/y26_dys_lbuni
+
+FINAL EPOCH (from results.csv, VAL split, overall)
+  epochs   70
+  P        82.42
+  R        72.07
+  mAP50    79.62
+  mAP50-95 53.82
+
+PER-CLASS METRICS (TEST split)
+
+run            class            P       R    AP50  AP50-95
+----------------------------------------------------------
+y26_dys_lbuni  backpack      83.1    74.0    83.5     57.4
+y26_dys_lbuni  bag           73.3    62.7    71.7     47.8
+y26_dys_lbuni  trolley       87.0    80.0    88.1     61.8
+
+CONFUSION LEAK (TEST split) — where did each TRUE class end up? (% of its ground truths)
+matrix[predicted, true]; 'missed' = predicted as background
+
+run            true           n  correct   as_backpack        as_bag    as_trolley   missed
+-------------------------------------------------------------------------------------------
+y26_dys_lbuni  backpack    1648     77.4           0.0           4.1           1.5     17.1
+y26_dys_lbuni  bag         1330     68.0           3.9           0.0           2.9     25.3
+y26_dys_lbuni  trolley     3194     84.1           0.8           1.6           0.0     13.5
+
+HOW TO READ IT
+  missed high, misclassified low   -> a DETECTION / CONFIDENCE problem. The
+     campaign was aimed correctly and you are near the ceiling.
+  misclassified high               -> a CLASSIFICATION problem. Every mechanism
+     tried so far (assignment, localisation, box regression) is orthogonal to
+     it, which would explain twelve flat results.
+
+  Compare the SAME class ACROSS runs. If the misclassified column is identical
+  for baseline / best-config / NWD, no loss mechanism ever moved the real
+  failure — a cleaner statement than any of the mAP deltas.
+
+  *_valid.png files come from training (VAL split). The leak table and the
+  *_test.* files come from this script's re-evaluation on the 'test' split.
+
+files collected:
+  confusion_matrix_valid.png
+  confusion_matrix_normalized_valid.png
+  results.csv
+  confusion_test.csv

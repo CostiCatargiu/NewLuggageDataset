@@ -1,0 +1,46 @@
+RUN: y26_wide_starve
+source: /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight4_v6i/y26_wide_starve
+
+FINAL EPOCH (from results.csv, VAL split, overall)
+  epochs   70
+  P        80.40
+  R        73.74
+  mAP50    79.47
+  mAP50-95 53.84
+
+PER-CLASS METRICS (TEST split)
+
+run              class            P       R    AP50  AP50-95
+------------------------------------------------------------
+y26_wide_starve  backpack      83.0    75.5    83.7     57.1
+y26_wide_starve  bag           73.8    63.3    71.0     46.7
+y26_wide_starve  trolley       85.7    81.6    88.2     62.6
+
+CONFUSION LEAK (TEST split) — where did each TRUE class end up? (% of its ground truths)
+matrix[predicted, true]; 'missed' = predicted as background
+
+run              true           n  correct   as_backpack        as_bag    as_trolley   missed
+---------------------------------------------------------------------------------------------
+y26_wide_starve  backpack    1648     79.2           0.0           4.1           1.4     15.3
+y26_wide_starve  bag         1330     67.9           4.5           0.0           4.1     23.5
+y26_wide_starve  trolley     3194     86.2           0.5           1.6           0.0     11.7
+
+HOW TO READ IT
+  missed high, misclassified low   -> a DETECTION / CONFIDENCE problem. The
+     campaign was aimed correctly and you are near the ceiling.
+  misclassified high               -> a CLASSIFICATION problem. Every mechanism
+     tried so far (assignment, localisation, box regression) is orthogonal to
+     it, which would explain twelve flat results.
+
+  Compare the SAME class ACROSS runs. If the misclassified column is identical
+  for baseline / best-config / NWD, no loss mechanism ever moved the real
+  failure — a cleaner statement than any of the mAP deltas.
+
+  *_valid.png files come from training (VAL split). The leak table and the
+  *_test.* files come from this script's re-evaluation on the 'test' split.
+
+files collected:
+  confusion_matrix_valid.png
+  confusion_matrix_normalized_valid.png
+  results.csv
+  confusion_test.csv

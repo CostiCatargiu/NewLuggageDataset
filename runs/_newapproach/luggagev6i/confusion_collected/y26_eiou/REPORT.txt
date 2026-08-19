@@ -1,0 +1,46 @@
+RUN: y26_eiou
+source: /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round11_v6i/y26_eiou
+
+FINAL EPOCH (from results.csv, VAL split, overall)
+  epochs   70
+  P        79.38
+  R        72.41
+  mAP50    79.08
+  mAP50-95 54.36
+
+PER-CLASS METRICS (TEST split)
+
+run       class            P       R    AP50  AP50-95
+-----------------------------------------------------
+y26_eiou  backpack      79.2    74.3    81.2     56.2
+y26_eiou  bag           75.5    62.2    70.3     47.9
+y26_eiou  trolley       85.2    78.8    86.7     61.5
+
+CONFUSION LEAK (TEST split) — where did each TRUE class end up? (% of its ground truths)
+matrix[predicted, true]; 'missed' = predicted as background
+
+run       true           n  correct   as_backpack        as_bag    as_trolley   missed
+--------------------------------------------------------------------------------------
+y26_eiou  backpack    1648     76.3           0.0           4.5           1.3     17.8
+y26_eiou  bag         1330     65.7           4.1           0.0           3.8     26.4
+y26_eiou  trolley     3194     82.5           1.0           1.7           0.0     14.8
+
+HOW TO READ IT
+  missed high, misclassified low   -> a DETECTION / CONFIDENCE problem. The
+     campaign was aimed correctly and you are near the ceiling.
+  misclassified high               -> a CLASSIFICATION problem. Every mechanism
+     tried so far (assignment, localisation, box regression) is orthogonal to
+     it, which would explain twelve flat results.
+
+  Compare the SAME class ACROSS runs. If the misclassified column is identical
+  for baseline / best-config / NWD, no loss mechanism ever moved the real
+  failure — a cleaner statement than any of the mAP deltas.
+
+  *_valid.png files come from training (VAL split). The leak table and the
+  *_test.* files come from this script's re-evaluation on the 'test' split.
+
+files collected:
+  confusion_matrix_valid.png
+  confusion_matrix_normalized_valid.png
+  results.csv
+  confusion_test.csv
