@@ -39,11 +39,11 @@ AMP: running Automatic Mixed Precision (AMP) checks...
 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
   sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
 AMP: checks passed ✅
-train: Fast image access ✅ (ping: 0.0±0.0 ms, read: 4792.8±1388.5 MB/s, size: 51.5 KB)
+train: Fast image access ✅ (ping: 0.0±0.0 ms, read: 4538.6±1216.7 MB/s, size: 51.5 KB)
 train: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/labels.cache... 914 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 914/914 348.5Mit/s 0.0s
 train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/LuggageDatasett1698_png.rf.c73555c0487aff417c73fce0f7ff3172.jpg: 1 duplicate labels removed
-val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 3596.0±1776.7 MB/s, size: 51.4 KB)
-val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/labels.cache... 1827 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1827/1827 283.8Mit/s 0.0s
+val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 1650.7±597.4 MB/s, size: 51.4 KB)
+val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/labels.cache... 1827 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1827/1827 273.7Mit/s 0.0s
 val: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/images/LuggageDatasett2538_png.rf.6465967949862aac4e22edcd41ef5718.jpg: 1 duplicate labels removed
 optimizer: 'optimizer=auto' found, ignoring 'lr0=0.01' and 'momentum=0.937' and determining best 'optimizer', 'lr0' and 'momentum' automatically...
 optimizer: AdamW(lr=0.001429, momentum=0.9) with parameter groups 114 weight(decay=0.0), 126 weight(decay=0.000640625), 126 bias(decay=0.0)
@@ -61,14 +61,14 @@ Starting training for 1 epochs...
                  Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 12/12 5.3it/s 2.3s
                    all       1827       9818      0.686      0.578       0.64      0.371
 
-1 epochs completed in 0.002 hours.
+1 epochs completed in 0.003 hours.
 Optimizer stripped from /home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe/weights/last.pt, 20.3MB
 Optimizer stripped from /home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe/weights/best.pt, 20.3MB
 
 Validating /home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe/weights/best.pt...
 Ultralytics 8.4.117 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
 YOLO26s summary (fused): 122 layers, 9,466,341 parameters, 0 gradients
-                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 12/12 7.0it/s 1.7s
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 12/12 6.9it/s 1.7s
                    all       1827       9818      0.662      0.597      0.641      0.371
 Speed: 0.1ms preprocess, 0.5ms inference, 0.0ms loss, 0.0ms postprocess per image
 
@@ -85,6 +85,13 @@ small        11890     12.3           2.6           0.08       0.72         7.52
 medium        5164     55.3           4.9           0.00       0.87         9.80
 large         1314    465.3          51.8           0.00       0.61         9.75
 
+  box quality AT the selected anchors (clamped CIoU, not raw IoU)
+  size          n_GT   CIoU@sel  CIoU@best  CIoU@avail  left on table
+  -------------------------------------------------------------------
+  small        11804      0.742      0.822       0.823          0.001
+  medium        5119      0.821      0.878       0.878          0.000
+  large         1306      0.798      0.860       0.861          0.001
+
 BRANCH one2one  (topk2=1, produces every prediction)
 size          n_GT  cand/GT  %cand IoU<=0  %GT metric==0  %GT 0 pos  mean pos/GT
 ------------------------------------------------------------------------------
@@ -92,10 +99,25 @@ small        11890     12.3           2.3           0.05       0.39         1.00
 medium        5164     55.3           7.4           0.00       0.27         1.00
 large         1314    465.3          59.3           0.00       0.00         1.00
 
+  box quality AT the selected anchors (clamped CIoU, not raw IoU)
+  size          n_GT   CIoU@sel  CIoU@best  CIoU@avail  left on table
+  -------------------------------------------------------------------
+  small        11844      0.793      0.793       0.834          0.040
+  medium        5150      0.838      0.838       0.880          0.042
+  large         1314      0.819      0.819       0.864          0.045
+
 ------------------------------------------------------------------------------
-VERDICT
+VERDICT 1 — dropped ground truths
   small 0.72% vs large 0.61% — present but FLAT across sizes.
-  -> Real but not a small-object story. It would not explain NWD's +0.89,
-     so the mechanism needs a different justification before spending runs.
+  -> Real but not a small-object story. It would not explain NWD's +0.89.
+
+VERDICT 2 — does one2one's regression deficit reach the output?
+  small   one2many 0.742   one2one 0.793   delta +0.051
+  medium  one2many 0.821   one2one 0.838   delta +0.016
+  large   one2many 0.798   one2one 0.819   delta +0.021
+  one2one matches or beats one2many at the anchors that ship.
+  -> Widening one2one's REGRESSION assignment has nothing to fix. DEAD, 0 GPU-h.
 ==============================================================================
 
+
+Process finished with exit code 0
