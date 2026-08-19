@@ -19,11 +19,28 @@ also **single-seed**: exact does not mean general, and that belongs in the limit
 |---|---|---|---|---|
 | **Best loss** | `y26_scb3_sbb50` | 55.65 | +0.41 | +0.74% |
 | Best loss (raw mAP) | `y26_scb2_sbb50` | 55.70 | +0.46 | +0.83% |
-| **Best arch** | `y26_p2k2_hi` | 56.46 | +0.70 vs matched b32 | +1.26% |
+| **Best arch** | P2 + DySample, **n=10** | **56.08 ± 0.19** | **+0.32** vs matched b32 | +0.57% |
 
 `scb3_sbb50` is the config to report even though `scb2_sbb50` has the higher mAP: it is
 the only configuration in the campaign that gains overall **without giving up the large
 bucket** (mAP50 large 83.36 vs baseline 81.75, +1.97%). `scb2_sbb50` pays −5.28% there.
+
+**Do not report `y26_p2k2_hi` 56.46 as the architecture number.** Rounds 4-6 passed
+LB-TAL budgets while the **stock** `loss.py` was installed: the config system accepted
+`use_lbtal=True`, the header printed it, the preflight validated the budget dict — and
+nothing read the flag, so the assigner was never built. The ten differently-labelled
+budget runs are **ten replicates of one configuration** (P2 + DySample, stock loss,
+b32/640/seed 0):
+
+```
+overall  55.89 .. 56.46    mean 56.08   sd 0.19
+small                      mean 52.14   sd 0.23
+large    53.72 .. 60.66    mean 57.21   sd 2.11
+```
+
+So 56.46 is **the luckiest of ten draws of doing nothing**, and the architecture figure is
+the mean, 56.08. Large is unusable at sd 2.11 — differences under ~4 pp there are not
+readable, which retires several large-bucket stories told earlier in this project.
 
 ---
 
@@ -65,12 +82,45 @@ only SCB setting that lost). Paired with SBB it becomes the campaign's mAP maxim
 principle than another point near an optimum.
 
 ### Architecture — P2 head + DySample
-One `DySample` at P3→P2, groups=4. Every deviation lost: count 0/1/2/3 →
+One `DySample` at P3→P2, groups=4. Deviations: count 0/1/2/3 →
 55.03/55.94/55.57/54.49; groups 2/4/8 → 55.34/55.94/55.52. Four module additions
-(`ZGGlobalContext2`, `ZGDSConv`, others) all lost.
+(`ZGGlobalContext2`, `ZGDSConv`, others) lost.
 
-**+0.70 against a matched b32 control** (not the +1.22 against b82 — see the confound
-section). Recall +1.78%, small +1.41%, paid for on large −2.28%.
+The architecture figure is the **mean of the ten collapsed budget runs, 56.08 ± 0.19**,
+not the best of them — **+0.32** against the matched b32 control (55.76). Recall +1.78%,
+small +1.41%, paid for on large −2.28%.
+
+**Which of those claims actually survive the noise.** Every architecture run is n=1, and
+the replicate distribution is sd **0.19** (the ten collapsed runs, one configuration) to
+**0.46** (the eight heterogeneous b32 arch runs). Measuring each deviation against the
+arch mean 56.08:
+
+| claim | value | Δ | vs sd 0.46 | verdict |
+|---|---|---|---|---|
+| DySample count 0 is worse | 55.03 | −1.05 | 2.3 sd | **holds** |
+| DySample count 3 is worse | 54.49 | −1.59 | 3.5 sd | **holds** |
+| `ZGGlobalContext2` is worse | 54.79 | −1.29 | 2.8 sd | **holds** |
+| DySample count 2 is worse | 55.57 | −0.51 | 1.1 sd | **not established** |
+| groups 8 is worse | 55.52 | −0.56 | 1.2 sd | **not established** |
+| groups 2 is worse | 55.34 | −0.74 | 1.6 sd | **weak** |
+| `p2_wide` is worse | 55.53 | −0.55 | 1.2 sd | **not established** |
+
+So **"one DySample at groups=4 is the peak, every deviation loses" holds only for the
+extremes.** The groups sweep establishes nothing at all — 55.34 / 55.94 / 55.52 is one
+draw each from a distribution whose sd is comparable to the whole spread. Report the
+module choice as "1 DySample, groups=4, chosen from an underpowered sweep", not as an
+optimum.
+
+**The control is also n=1.** The +0.32 is `56.08 ± 0.19` against a single `y26_stock_b32`
+run with no error bar of its own. The stock model is deterministic, so three seeds
+(~5 GPU-h) would put an interval on both sides of the comparison. That is the cheapest
+run in the project that strengthens an existing headline instead of chasing a new one.
+
+**Why replicates vary at all when this box is otherwise deterministic:** `DySample` calls
+`F.grid_sample`, whose CUDA backward uses atomic adds and is nondeterministic. The stock
+3-level model reproduces bit-identically (`y26_base_rep` matched `yolo26_custom-9` across
+all 118 values); the P2 + DySample graph does not, which is exactly why it has a spread
+to measure and the stock model does not.
 
 ---
 
@@ -85,7 +135,7 @@ section). Recall +1.78%, small +1.41%, paid for on large −2.28%.
 | **EIoU** | −0.09, large **−7.80** | The tall-box argument (70.6% of boxes have h/w > 1.25) was reasonable. The data said no. |
 | **cls_pw** — class-frequency weighting | bag 48.2 → **47.4** | Made the worst class worse. Argues bag's deficit is not sample count. |
 | **SWA** (ported from v12) | −0.48 | |
-| **LB-TAL** (ported from v12) | −0.43 to −0.82 | Per-level budgets; every variant lost on the P2 arch. |
+| **LB-TAL** (ported from v12) | −0.43 to −0.82 | Per-level budgets. **Rounds 4-6 never actually ran it** — stock `loss.py` ignored the flag, so ten budget labels were one config. Genuinely tested only in round 7, where both variants landed inside the null band. |
 | **`sbb_q` sweep** | 0.25 → 55.28, 0.50 → 55.65, 0.75 → 55.20 | Knife-edge, not a plateau. Report it as such. |
 | gain sweeps (`box`/`cls`/`dfl`, `tal_alpha`, `tal_beta`) | ≈ +0.13 | Axis answered. |
 
@@ -116,6 +166,29 @@ the matched control it is −2.28%. The confounded version *understates* the cos
 **Still open:** `p2k2_hi`/`p2k1_lo` ran at b48 against a b32 control. The b48 stock run
 makes this final.
 
+### A second confound stacked on the first: 56.46 is the max of ten replicates
+After removing batch, what is left of `y26_p2k2_hi`'s +0.70 is still not a single
+measurement. Every `p2k*` / `dys_p2*` run in rounds 4-6 requested an `_lb(...)` per-level
+budget against a **stock** `loss.py` that never read the flag — so the assigner was never
+built and all ten are the SAME configuration:
+
+```
+stock b32 control                          55.76
+P2 + DySample, ten replicates    mean      56.08   sd 0.19    -> architecture  +0.32
+                                 best      56.46              -> the reported number
+```
+
+Reporting the best of ten draws as the effect adds roughly **+0.38 of selection** on top
+of the batch inflation. `run_yolo26_dysample_sweep_v6i.py` sets no `use_lbtal` and varies
+the YAML, so its count/groups sweeps are genuine architecture comparisons — but they must
+be read against sd 0.19, not against zero.
+
+**The lesson the project already learned the hard way:** a config key can be accepted by
+`default.yaml`, echoed in the run header, and validated by a preflight, while the file
+that has to consume it ignores it. Three different files, and only the third matters.
+Round 7 added the epoch-1 liveness guard for exactly this, and every runner since carries
+it.
+
 ### The loss axis is the productive one, once batch is controlled
 ```
 batch alone (b82 -> b32)     -1.83 missed detections
@@ -123,6 +196,10 @@ LOSS axis at fixed b82       -1.62
 ARCH b48 vs a b32 control    -0.42
 ARCH + loss, b32 vs b32      -0.06   (clean)
 ```
+
+The "ARCH" rows inherit the replicate problem above: if they were computed from
+`y26_p2k2_hi` they use the best of ten draws. Recomputing against the ten-run mean would
+make the loss axis look stronger, not weaker.
 
 ---
 
@@ -198,8 +275,10 @@ y26_dys_p2rich      runs_yolo26_overnight4_v6i__test_full_dataset.json
 - `y26_sqrt0703-4` — 55.65 correct / 39.50 missed / bag 28.1. Failed, not weak.
 - `y26_lsshift`, `y26_gctxp3` — built on a C2PSA skeleton mismatch (round-1 YAMLs used
   `reps=1 args=[1024,1]`, later rounds the shipped `reps=2 args=[1024]`). Uninterpretable.
-- `y26_s10_*` — these are round-6 **LB-TAL budget** configs on the P2 architecture at b32,
-  *not* loss runs. They rank near the top if you classify by name; classify by source file.
+- `y26_s10_*` — these are round-6 **LB-TAL budget** configs on the P2 architecture at b32.
+  They are assignment results on a fixed graph, not architecture results, and they belong
+  in the LB-TAL section rather than the architecture table. Classify by source file, not
+  by name.
 
 ## APPENDIX — every config, what it was meant to do, what it did
 
@@ -229,10 +308,28 @@ Intent: the two branches differ in supervision density (one2many topk=10 vs one2
 topk2=1). Give them **opposite** size preferences so each specialises — a question only
 a dual-branch head can pose.
 
+**Which way round.** `E2ELoss` assigns `one2many sign=-1, one2one sign=+1`, and
+`sbb_weight` computes `w = (sqrt(area_px)/ref) ** (sign * q)`, so a **negative** sign
+favours SMALL and a **positive** sign favours LARGE. Therefore:
+
+| `sbb_invert` | one2many | one2one | result |
+|---|---|---|---|
+| `False` (default) | small | large | `y26_sbb_q50` 55.16, **−0.08** |
+| `True` | large | **small** | `y26_sbb_inv50` 55.39, **+0.15** |
+
+**The winning arm is `invert=True`: one2one leans SMALL, one2many leans LARGE** — and
+`y26_scb3_sbb50`, the headline config, uses it (`run_yolo26_combo_v6i.py:235`). That is
+the *opposite* of the intuition in the code comments ("one2one carries the large ones,
+its single pick is reliable there"), which describes the arrangement that LOST. The
+account that fits the data instead: one2one is the output branch and specialises on the
+dominant, hardest population (small), while one2many is auxiliary and discarded at
+inference, so it can absorb the large objects. Consistent with the winning arm costing
+4.03 points of large.
+
 | config | setting | mAP50-95 | Δ | what happened |
 |---|---|---|---|---|
-| `y26_sbb_inv50` | q 0.5, invert | 55.39 | +0.15 | alone: weak, and costs 4.03 on large |
-| `y26_sbb_q50` | q 0.5, no invert | 55.16 | −0.08 | the losing sign (one2one → small) |
+| `y26_sbb_inv50` | q 0.5, invert | 55.39 | +0.15 | **the winning sign** (one2one → small); alone it is weak and costs 4.03 on large |
+| `y26_sbb_q50` | q 0.5, no invert | 55.16 | −0.08 | the losing sign (one2one → large) |
 | `y26_scb3_sbb50` | + SCB 3.0 | 55.65 | +0.41 | **large 83.36 — the only config that gains without losing large** |
 | `y26_scb2_sbb50` | + SCB 2.0 | 55.70 | **+0.46** | a below-baseline setting turned best-of-campaign |
 | `y26_scb3_sbb25` | q 0.25 | 55.28 | +0.04 | |
@@ -242,6 +339,20 @@ a dual-branch head can pose.
 
 **Verdict:** near-worthless alone, essential as a counterweight. Its whole value is the
 opposing-bias principle.
+
+**Open caveat — the effect is time-varying.** `E2ELoss` decays `o2m` 0.8 → 0.1, so the
+LARGE-leaning branch carries ~80% of the loss early and the SMALL-leaning one ~90% late.
+SBB therefore implements a large→small *curriculum*, not a static specialisation, which
+is a better explanation for why `sbb_q` is a knife-edge (0.25 → 55.28, 0.50 → 55.65,
+0.75 → 55.20) than a narrow optimum: `q` is integrated against a moving branch weight and
+is not a single-axis knob. One run with `o2m` pinned would separate the two.
+
+**Open caveat — SCB is not branch-isolated.** SBB, SNT and TSH are all scoped to one
+branch inside `E2ELoss`. SCB is set in `v8DetectionLoss.__init__`, so `tal_beta_small`
+applies to **both** branches — even though its justification ("topk2=1 makes the metric
+pick a single anchor") is a one2one argument. The campaign's one working mechanism has
+never been attributed to a branch. Two runs (SCB on one2one only, SCB on one2many only)
+would settle it.
 
 ### SNL1 — Scale-Normalised L1  *(regression normalisation)*
 Intent: YOLO26 is DFL-free, so the L1 target is normalised by **image** size — an 8 px
@@ -331,32 +442,51 @@ On v12 this family gave **+0.86 with 29/32 replications**. Here the best is +0.3
 the band, and the mean is negative. **The clearest cross-architecture failure in the
 project.**
 
-### LB-TAL — per-level top-k budgets, ported from YOLOv12  *(all lost)*
+### LB-TAL — per-level top-k budgets, ported from YOLOv12  *(all lost; most were never run)*
+On the stock 3-level model:
 `y26_lb_uniform` +0.28 · `y26_lb_coarse244` +0.10 · `y26_lb_p4wide` +0.08 ·
 `y26_lb_p3_3` −0.08 · `y26_cmb_p4wide` +0.02 · `y26_cmb_uniform` −0.38 ·
 `y26_dys_lbuni` +0.41 (b32) · `y26_dys_lbp2k2` +0.02 (b32)
 
-The `y26_s10_*` runs (`p45` +1.02, `hi` +0.86, `p5` +0.65, `bal` +0.65) are **also
-LB-TAL**, on the P2 architecture at b32 — arch-confounded, *not* loss results.
+**Rounds 4-6 never actually ran the mechanism.** Those runs passed budgets against a
+stock `loss.py` that does not read `use_lbtal`, so no `LevelBalancedTaskAlignedAssigner`
+was ever constructed. That covers the whole `p2k*` family in
+`run_yolo26_round5_v6i.py` and the `y26_s10_*` runs — ten different budget labels, one
+configuration, spread 55.89..56.46 (sd 0.19) purely from `grid_sample` nondeterminism.
+They are neither loss results nor architecture results; they are **replicates**, and that
+is their only value — a free n=10 control distribution for the P2 graph.
+
+The genuine test is round 7, which added the epoch-1 liveness guard: `lbuni` and `lbp2k2`
+both landed inside the pre-registered null band (55.70..56.46). **LB-TAL does nothing on
+YOLO26**, on either three levels or four.
 
 ### Gains and exponents  *(axis answered)*
 `y26_dfl3` (dfl 1.5→3.0) +0.13 · `y26_beta4` (β 6→4) +0.13 · `y26_alpha075` (α 0.5→0.75)
 +0.35. Gain changes on this model are worth ~0.1–0.3. Not a mechanism.
 
-### Architecture — P2 head + DySample  *(all b32/b48, Δ inflated by ~+0.52)*
+### Architecture — P2 head + DySample  *(all b32/b48, Δ inflated by ~+0.52 of batch)*
+**rep** marks the ten runs whose LB-TAL budget was a silent no-op. They are replicates of
+one configuration, so their individual Δ values are draws from **56.08 ± 0.19**, not
+separate results. Read the whole block against that sd.
+
 | config | mAP50-95 | Δ | note |
 |---|---|---|---|
-| `y26_p2k2_hi` | 56.46 | +1.22 | **best arch**; +0.70 vs matched b32 control |
-| `y26_p2k1_lo` | 56.25 | +1.01 | +0.50 matched |
-| `y26_dys_p2rich` | 56.07 | +0.83 | +0.32 matched |
-| `y26_dys_p2starve` | 56.03 | +0.79 | |
-| `y26_p2k4_hi` | 55.91 | +0.67 | |
+| `y26_p2k2_hi` | 56.46 | +1.22 | **rep** — the luckiest of the ten; do not report as an effect |
+| `y26_p2k1_lo` | 56.25 | +1.01 | **rep** |
+| `y26_dys_p2rich` | 56.07 | +0.83 | **rep** — essentially the mean |
+| `y26_dys_p2starve` | 56.03 | +0.79 | **rep** |
+| `y26_p2_dysample` | 55.94 | +0.70 | **rep** |
+| `y26_p2k4_hi` | 55.91 | +0.67 | **rep** — the unluckiest, and 0.03 below `p2_dysample` |
 | `y26_arch_scb3_sbb50` | 55.57 | +0.33 | arch + best loss — **−0.19 vs stock b32; the axes do not compose** |
-| `y26_p2_wide` | 55.53 | +0.29 | |
-| `y26_wide_starve` | 55.46 | +0.22 | |
-| `y26_stock_b32` | 55.76 | +0.52 | **the control — batch alone** |
-| `y26_p2_dys_gctx` | 54.79 | −0.45 | +ZGGlobalContext2 |
-| `y26_p2_dys3` | 54.49 | −0.75 | 3 DySamples |
+| `y26_p2_wide` | 55.53 | +0.29 | 1.2 sd below the arch mean — **not established as worse** |
+| `y26_wide_starve` | 55.46 | +0.22 | 1.3 sd below — not established |
+| `y26_stock_b32` | 55.76 | +0.52 | **the control — batch alone, and itself n=1** |
+| `y26_p2_dys_gctx` | 54.79 | −0.45 | +ZGGlobalContext2 — 2.8 sd, real |
+| `y26_p2_dys3` | 54.49 | −0.75 | 3 DySamples — 3.5 sd, real |
+
+The six **rep** rows span 55.91..56.46 while being the same configuration. Any
+architecture claim smaller than ~0.4 in this table is unreadable — see the significance
+table in the architecture section for which deviations survive and which do not.
 
 DySample count 0/1/2/3 → 55.03/55.94/55.57/54.49; groups 2/4/8 → 55.34/55.94/55.52.
 **One DySample at P3→P2 with groups=4 is the peak; every deviation loses.** Four module

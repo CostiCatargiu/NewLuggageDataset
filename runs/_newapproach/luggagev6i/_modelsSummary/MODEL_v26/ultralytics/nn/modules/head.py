@@ -85,6 +85,7 @@ class Detect(nn.Module):
     strides = torch.empty(0)  # init
     legacy = False  # backward compatibility for v3/v5/v8/v9 models
     xyxy = False  # xyxy or xywh output
+    head_ch = 0  # >0 overrides ch[0] as the c2/c3 reference; 0 = stock. See __init__.
 
     @staticmethod
     def _grouped_topk(x: torch.Tensor, k: int, groups: int = 8) -> tuple[torch.Tensor, torch.Tensor]:
@@ -114,7 +115,12 @@ class Detect(nn.Module):
         self.reg_max = reg_max  # DFL channels
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.stride = torch.zeros(self.nl)  # strides computed during build
-        c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))  # channels
+        # Stock ties both head widths to ch[0], the FINEST level. With nc=3 the
+        # min(nc, 100) floor never binds, so adding a P2 level (64 ch) drops c3 from
+        # 128 to 64 on EVERY level -- "add P2" silently also halves both heads.
+        # head_ch pins the reference so the two can be varied independently.
+        ref = self.head_ch or ch[0]
+        c2, c3 = max((16, ref // 4, self.reg_max * 4)), max(ref, min(self.nc, 100))  # channels
         self.cv2 = nn.ModuleList(
             nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch
         )

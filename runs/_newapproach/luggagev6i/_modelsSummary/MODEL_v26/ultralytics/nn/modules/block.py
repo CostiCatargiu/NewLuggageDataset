@@ -2133,10 +2133,11 @@ class DySample(nn.Module):
     upsampling blurs exactly the detail small objects need. Channel-preserving;
     the offset conv is near-zero-init so it starts ~ bilinear (safe transfer).
 
-    YAML: drop-in for nn.Upsample ->  - [-1, 1, DySample, [2]]   (scale=2)
+    YAML: drop-in for nn.Upsample ->  - [-1, 1, DySample, [2]]        (scale=2)
+          dynamic scope             ->  - [-1, 1, DySample, [2, 4, True]]  (scale, groups, dyscope)
     """
 
-    def __init__(self, c1, scale=2, groups=4):
+    def __init__(self, c1, scale=2, groups=4, dyscope=False):
         super().__init__()
         assert c1 % groups == 0, "DySample: channels must be divisible by groups"
         self.scale = scale
@@ -2144,20 +2145,31 @@ class DySample(nn.Module):
         self.offset = nn.Conv2d(c1, 2 * groups * scale * scale, 1)
         nn.init.normal_(self.offset.weight, std=0.001)
         nn.init.zeros_(self.offset.bias)
+        # Dynamic scope (the paper's stronger variant): predict the offset MAGNITUDE per
+        # location instead of fixing it at 0.25. Zero-init makes sigmoid()=0.5, so
+        # 0.5 * 0.5 = 0.25 and epoch 0 is numerically identical to the static version.
+        self.scope = None
+        if dyscope:
+            self.scope = nn.Conv2d(c1, 2 * groups * scale * scale, 1)
+            nn.init.zeros_(self.scope.weight)
+            nn.init.zeros_(self.scope.bias)
         self.register_buffer("init_pos", self._init_pos())
 
     def _init_pos(self):
         h = torch.arange((-self.scale + 1) / 2, (self.scale - 1) / 2 + 1) / self.scale
-        return torch.stack(torch.meshgrid([h, h])).transpose(1, 2).repeat(
+        return torch.stack(torch.meshgrid([h, h], indexing="ij")).transpose(1, 2).repeat(
             1, self.groups, 1, 1).reshape(1, -1, 1, 1)
 
     def forward(self, x):
-        offset = self.offset(x) * 0.25 + self.init_pos
+        if self.scope is None:
+            offset = self.offset(x) * 0.25 + self.init_pos
+        else:
+            offset = self.offset(x) * self.scope(x).sigmoid() * 0.5 + self.init_pos
         B, _, H, W = offset.shape
         offset = offset.view(B, 2, -1, H, W)
         coords_h = torch.arange(H, device=x.device) + 0.5
         coords_w = torch.arange(W, device=x.device) + 0.5
-        coords = torch.stack(torch.meshgrid([coords_w, coords_h])).transpose(
+        coords = torch.stack(torch.meshgrid([coords_w, coords_h], indexing="ij")).transpose(
             1, 2).unsqueeze(1).unsqueeze(0).type(x.dtype).to(x.device)
         normalizer = torch.tensor([W, H], dtype=x.dtype, device=x.device).view(1, 2, 1, 1, 1)
         coords = 2 * (coords + offset) / normalizer - 1
