@@ -1,0 +1,40 @@
+# Bidirectional P4: double refinement at the dominant object scale
+nc: 3
+scales:
+  n: [0.50, 0.50, 1024]
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]
+  - [-1, 2, C3k2,  [256, False, 0.25]]
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]
+  - [-1, 2, C3k2,  [512, False, 0.25]]
+  - [-1, 1, Conv,  [512, 3, 2]]
+  - [-1, 4, A2C2f, [512, True, 4]]     # P4 backbone features  [layer 6]
+  - [-1, 1, Conv,  [1024, 3, 2]]
+  - [-1, 3, A2C2f, [1024, True, 1]]    # P5 backbone  [layer 8]
+
+head:
+  # top-down pass
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]   # first P4 refinement  [layer 11]
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]   # P3 features  [layer 14]
+
+  # bottom-up pass
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 3, A2C2f, [512, False, -1]]   # second P4 refinement: top-down + bottom-up  [layer 17]
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 2, C3k2, [1024, True]]        # P5  [layer 20]
+
+  # P4 gets a third fusion: merge first and second refinements
+  - [[11, 17], 1, Concat, [1]]         # [layer 21] — bidirectional P4 merge
+  - [-1, 1, Conv, [512, 1, 1]]         # [layer 22] — project back to 512
+
+  - [[14, 22, 20], 1, Detect, [nc]]    # P3, P4-bidi, P5

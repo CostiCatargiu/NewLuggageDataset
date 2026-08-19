@@ -1,0 +1,55 @@
+# YOLOv12 Weapon - P2 with P1 Skip
+# P2 Head with P1 skip connection for maximum detail preservation
+# P1 features (1/2 resolution) provide finest spatial details
+
+nc: 4
+scales:
+  n: [0.50, 0.25, 1024]
+
+backbone:
+  - [-1, 1, Conv, [64, 3, 2]]           # 0 - P1/2 (keep for skip)
+  - [-1, 1, Conv, [128, 3, 2, 1, 2]]    # 1 - P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]]   # 2
+  - [-1, 1, Conv, [256, 3, 2, 1, 4]]    # 3 - P3/8
+  - [-1, 3, C3k2, [512, False, 0.25]]   # 4
+  - [-1, 1, Conv, [512, 3, 2]]          # 5 - P4/16
+  - [-1, 4, A2C2f, [512, True, 4]]      # 6
+  - [-1, 1, Conv, [1024, 3, 2]]         # 7 - P5/32
+  - [-1, 5, A2C2f, [1024, True, 1]]     # 8
+
+head:
+  # Top-down path
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]    # 11
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]    # 14
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 2], 1, Concat, [1]]
+  - [-1, 2, C3k2, [128, False, 0.25]]   # 17 - P2 features
+
+  # P1 enhancement branch (NEW!)
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 0], 1, Concat, [1]]           # 19 - Concat with P1 backbone!
+  - [-1, 1, Conv, [96, 3, 1]]           # 20 - Process P1 features
+  - [-1, 1, Conv, [128, 3, 2]]          # 21 - Downsample back to P2
+  - [[-1, 17], 1, Concat, [1]]          # 22 - Fuse with P2
+  - [-1, 2, C3k2, [128, False, 0.25]]   # 23 - Enhanced P2 output
+
+  # Bottom-up path
+  - [-1, 1, Conv, [128, 3, 2]]
+  - [[-1, 14], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [256, False, -1]]    # 26
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]
+  - [-1, 2, A2C2f, [512, False, -1]]    # 29
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 8], 1, Concat, [1]]
+  - [-1, 3, C3k2, [1024, True]]         # 32
+
+  - [[23, 26, 29, 32], 1, Detect, [nc]]
