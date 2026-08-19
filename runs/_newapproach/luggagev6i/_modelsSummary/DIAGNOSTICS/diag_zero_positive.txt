@@ -99,5 +99,3 @@ VERDICT
      so the mechanism needs a different justification before spending runs.
 ==============================================================================
 
-
-Process finished with exit code 0
