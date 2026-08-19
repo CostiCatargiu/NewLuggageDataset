@@ -102,8 +102,19 @@ DATA_YAML = "/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml"
 WEIGHTS = "yolo26s.pt"
 BATCH = 82  # match the loss campaign so anchor/GT statistics are comparable
 IMG_SIZE = 640
-FRACTION = 0.10  # of the train split; ~11 iterations at b82
+FRACTION = 0.10  # of the train split; ~11 iterations at b82. Raise to 0.30 when MOSAIC=0.0,
+#                  which drops GTs per sample ~4x (18.7 -> 4.6).
 SEED = 0
+
+# Mosaic tiles 4 images per sample, shrinking objects and shifting the size histogram.
+# The real runs use close_mosaic=10, so the final 10 epochs — and inference — see none.
+# Set 0.0 to measure the regime the converged model actually ends in.
+MOSAIC = 1.0
+
+# The probe TRAINS: 12 AdamW steps at lr 1.4e-3 moved y26_identity from ~0.55 to 0.371
+# mAP50-95. Set 0.0 for a true snapshot of the checkpoint (weights cannot move at lr=0;
+# an explicit optimizer is required because optimizer='auto' ignores lr0).
+LR0 = None  # None = ultralytics auto, 0.0 = frozen
 
 # Max-side edges in px. Same convention as diag_miss_vs_score.py so the buckets
 # line up with the existing diagnostics (NOT the COCO area buckets in the JSONs).
@@ -236,7 +247,7 @@ def report() -> None:
             n = s["n_gt_kept"]
             sm, sb, ab = s["sel_mean"] / n, s["sel_best"] / n, s["avail_best"] / n
             print(f"  {names[k]:<8}{int(n):>10}{sm:>11.3f}{sb:>11.3f}{ab:>12.3f}{ab - sb:>15.3f}")
-            quality[(branch, k)] = sm
+            quality[(branch, k)] = (sm, ab)
 
     print("\n" + "-" * 78)
     print("VERDICT 1 — dropped ground truths")
@@ -252,25 +263,30 @@ def report() -> None:
         print(f"  small {small:.2f}% vs large {large:.2f}% — present but FLAT across sizes.")
         print("  -> Real but not a small-object story. It would not explain NWD's +0.89.")
 
-    print("\nVERDICT 2 — does one2one's regression deficit reach the output?")
+    # Compare the branches on CIoU@avail, not CIoU@sel: both heads see the SAME candidate
+    # anchors, so @avail is the best box each head can produce on identical input. @sel is
+    # a max-over-1 for one2one against a mean-over-9.8 for one2many and is not comparable.
+    print("\nVERDICT 2 — is one2one's box head actually worse, on identical candidates?")
     deltas = {}
     for k in range(3):
         a, o = quality.get(("one2many", k)), quality.get(("one2one", k))
         if a is None or o is None:
             continue
-        deltas[k] = o - a
-        print(f"  {names[k]:<8}one2many {a:.3f}   one2one {o:.3f}   delta {o - a:+.3f}")
+        deltas[k] = o[1] - a[1]
+        print(f"  {names[k]:<8}one2many@avail {a[1]:.3f}   one2one@avail {o[1]:.3f}   "
+              f"delta {o[1] - a[1]:+.3f}   (one2one ships {o[0]:.3f})")
     if not deltas:
         print("  no paired data.")
-    elif all(d > -0.02 for d in deltas.values()):
-        print("  one2one matches or beats one2many at the anchors that ship.")
-        print("  -> Widening one2one's REGRESSION assignment has nothing to fix. DEAD, 0 GPU-h.")
-    elif deltas.get(2, 0.0) < deltas.get(0, 0.0) - 0.02:
+    elif all(d > -0.005 for d in deltas.values()):
+        print("  one2one matches or beats one2many on identical candidates, despite training")
+        print("  1 anchor per GT against ~9.8. Extra regression supervision has nothing to")
+        print("  add. -> o2o_reg_k DEAD, 0 GPU-h.")
+    elif deltas.get(2, 0.0) < deltas.get(0, 0.0) - 0.01:
         print("  one2one is worse AND the gap widens with size — matches the 1-vs-9.8")
         print("  supervision ratio. -> Measured target. Build o2o_reg_k.")
     else:
-        print("  one2one is worse but the gap does NOT widen with size, so the")
-        print("  supervision-ratio account does not explain it. Find the real cause first.")
+        print("  one2one is worse but the gap does not widen with size, so the")
+        print("  supervision-ratio account does not explain it. Find the cause first.")
     print("=" * 78 + "\n")
 
 
@@ -282,6 +298,7 @@ def main() -> None:
     TaskAlignedAssigner.select_highest_overlaps = patched_select_highest_overlaps
 
     print(f"[patch] instrumented TaskAlignedAssigner (both branches)\n[run]   {weights} on {DATA_YAML}")
+    frozen = dict(optimizer="SGD", lr0=0.0, momentum=0.0, warmup_epochs=0.0, warmup_bias_lr=0.0) if LR0 == 0.0 else {}
     YOLO(weights).train(
         data=DATA_YAML,
         epochs=1,
@@ -289,6 +306,7 @@ def main() -> None:
         imgsz=IMG_SIZE,
         batch=BATCH,
         seed=SEED,
+        mosaic=MOSAIC,
         device=0 if torch.cuda.is_available() else "cpu",
         val=False,
         save=False,
@@ -297,6 +315,7 @@ def main() -> None:
         name="probe",
         exist_ok=True,
         verbose=False,
+        **frozen,
     )
 
     if not STATS:
