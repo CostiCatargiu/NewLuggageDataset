@@ -39,11 +39,11 @@ AMP: running Automatic Mixed Precision (AMP) checks...
 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
   sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
 AMP: checks passed ✅
-train: Fast image access ✅ (ping: 0.0±0.0 ms, read: 4538.6±1216.7 MB/s, size: 51.5 KB)
-train: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/labels.cache... 914 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 914/914 348.5Mit/s 0.0s
+train: Fast image access ✅ (ping: 0.0±0.0 ms, read: 4981.9±1495.2 MB/s, size: 51.5 KB)
+train: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/labels.cache... 914 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 914/914 383.4Mit/s 0.0s
 train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/LuggageDatasett1698_png.rf.c73555c0487aff417c73fce0f7ff3172.jpg: 1 duplicate labels removed
-val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 1650.7±597.4 MB/s, size: 51.4 KB)
-val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/labels.cache... 1827 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1827/1827 273.7Mit/s 0.0s
+val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 3241.1±1630.4 MB/s, size: 51.4 KB)
+val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/labels.cache... 1827 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1827/1827 247.2Mit/s 0.0s
 val: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/images/LuggageDatasett2538_png.rf.6465967949862aac4e22edcd41ef5718.jpg: 1 duplicate labels removed
 optimizer: 'optimizer=auto' found, ignoring 'lr0=0.01' and 'momentum=0.937' and determining best 'optimizer', 'lr0' and 'momentum' automatically...
 optimizer: AdamW(lr=0.001429, momentum=0.9) with parameter groups 114 weight(decay=0.0), 126 weight(decay=0.000640625), 126 bias(decay=0.0)
@@ -61,14 +61,14 @@ Starting training for 1 epochs...
                  Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 12/12 5.3it/s 2.3s
                    all       1827       9818      0.686      0.578       0.64      0.371
 
-1 epochs completed in 0.003 hours.
+1 epochs completed in 0.002 hours.
 Optimizer stripped from /home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe/weights/last.pt, 20.3MB
 Optimizer stripped from /home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe/weights/best.pt, 20.3MB
 
 Validating /home/constantin/Doctorat/YoloLib/runs/detect/diag_zero_positive/probe/weights/best.pt...
 Ultralytics 8.4.117 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
 YOLO26s summary (fused): 122 layers, 9,466,341 parameters, 0 gradients
-                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 12/12 6.9it/s 1.7s
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 12/12 6.8it/s 1.8s
                    all       1827       9818      0.662      0.597      0.641      0.371
 Speed: 0.1ms preprocess, 0.5ms inference, 0.0ms loss, 0.0ms postprocess per image
 
@@ -111,12 +111,13 @@ VERDICT 1 — dropped ground truths
   small 0.72% vs large 0.61% — present but FLAT across sizes.
   -> Real but not a small-object story. It would not explain NWD's +0.89.
 
-VERDICT 2 — does one2one's regression deficit reach the output?
-  small   one2many 0.742   one2one 0.793   delta +0.051
-  medium  one2many 0.821   one2one 0.838   delta +0.016
-  large   one2many 0.798   one2one 0.819   delta +0.021
-  one2one matches or beats one2many at the anchors that ship.
-  -> Widening one2one's REGRESSION assignment has nothing to fix. DEAD, 0 GPU-h.
+VERDICT 2 — is one2one's box head actually worse, on identical candidates?
+  small   one2many@avail 0.823   one2one@avail 0.834   delta +0.011   (one2one ships 0.793)
+  medium  one2many@avail 0.878   one2one@avail 0.880   delta +0.002   (one2one ships 0.838)
+  large   one2many@avail 0.861   one2one@avail 0.864   delta +0.003   (one2one ships 0.819)
+  one2one matches or beats one2many on identical candidates, despite training
+  1 anchor per GT against ~9.8. Extra regression supervision has nothing to
+  add. -> o2o_reg_k DEAD, 0 GPU-h.
 ==============================================================================
 
 
