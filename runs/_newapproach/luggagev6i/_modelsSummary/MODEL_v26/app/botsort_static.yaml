@@ -1,0 +1,20 @@
+# BoT-SORT tuned for fixed CCTV + long-static objects (luggage).
+# Differences from the shipped botsort.yaml that matter here:
+#   gmc_method: none  -- camera is fixed, so global motion compensation is pure cost
+#   track_buffer: 150 -- a bag occluded by its owner for 5 s at 30 fps must keep its ID,
+#                        otherwise it re-enters as a new track and the abandonment timer resets
+tracker_type: botsort
+
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 150
+match_thresh: 0.8
+fuse_score: True
+
+gmc_method: none
+
+proximity_thresh: 0.5
+appearance_thresh: 0.25
+with_reid: False # try True if owners swap IDs after crossing; costs speed
+model: auto
