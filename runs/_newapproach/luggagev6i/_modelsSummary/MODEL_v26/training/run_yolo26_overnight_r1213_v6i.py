@@ -94,6 +94,7 @@ import gc
 import inspect
 import json
 import os
+import re
 import sys
 import time
 
@@ -105,8 +106,11 @@ from ultralytics.nn.modules.head import Detect
 DATA_YAML = "/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml"
 MODEL_WEIGHTS = "yolo26s.pt"
 PROJECT_DIR = "runs_yolo26_overnight_r1213_v6i"
-CFG_P2 = "yolo26-p2.yaml"  # 4 levels, plain nn.Upsample -> deterministic
-CFG_3LVL = "yolo26.yaml"  # 3 levels, stock graph
+CFG_P2 = "yolo26s-p2.yaml"  # 4 levels, plain nn.Upsample -> deterministic
+CFG_3LVL = "yolo26s.yaml"  # 3 levels, stock graph
+# The 's' is load-bearing: guess_model_scale needs [nslmx] immediately after the digits,
+# else parse_model falls back to the FIRST scales key ('n') without failing.
+CFG_P2ADD = "yolo26s-p2add.yaml"  # 4 levels, P2 appended so rows 0-22 keep their names
 
 EPOCHS = 70
 IMG_SIZE = 640
@@ -118,12 +122,17 @@ SEED = 0
 CLOSE_MOSAIC = 10
 PATIENCE = 100
 OVERWRITE_EXISTING = False
+REMAP_SHIFT = 6  # yolo26-p2 pushes stock head rows 17-22 down to 23-28
+REMAP_ROWS = range(17, 23)
 
 BASELINE = 55.24  # y26_base_rep      b82, 3 levels
 BEST_LOSS = 55.65  # y26_scb3_sbb50    the base config for the loss arm
 BEST_RAW = 55.70  # y26_scb2_sbb50    the loss bar
 STOCK_B32 = 55.76  # y26_stock_b32     3 lvl, c3=128, PRETRAINED head
-P2_B32 = 55.03  # y26_p2_b32        4 lvl, c3= 64, fresh head
+P2_B32 = 55.03  # y26_p2_b32        4 lvl, c3= 64, fresh head + fresh PAN
+P2_128 = 54.61  # y26_p2_headref128 4 lvl, c3=128, fresh head + fresh PAN
+L3_64 = 55.25  # y26_3lvl_head64   3 lvl, c3= 64, PRETRAINED head
+CLS075_SEED0 = 55.89  # y26_scb3_sbb50_cls075 — the bar the loss search has to beat
 
 _ALL_OFF = dict(
     alpha_start=0.0, alpha_end=0.0, alpha_min=0.0, alpha_max=0.0,
@@ -153,49 +162,130 @@ def cfg(**over):
 
 RUNS = [
     # ---------------------------------------------------------------- ARCH
-    {"name": "y26_p2_headref128", "arm": "arch", "cfg": CFG_P2, "head_ch": 128,
-     "want_c3": 128, "want_nl": 4,
-     "label": "yolo26-p2, head width pinned at 128 (the stock 3-level value)",
-     "why": "Isolates head width from pyramid depth. Compare against y26_p2_b32 = 55.03: "
-            "both 4-level, both fresh-head, so c3 is the only variable."},
+    # COMPLETED — commented out so the clash guard does not abort on their run dirs.
+    # Values live in the constants above and summarise() falls back to them.
+    #
+    # {"name": "y26_p2_headref128", "arm": "arch", "cfg": CFG_P2, "head_ch": 128,   -> 54.61
+    #  "want_c3": 128, "want_nl": 4,
+    #  "label": "yolo26-p2, head width pinned at 128 (the stock 3-level value)",
+    #  "why": "Isolates head width from pyramid depth."},
+    #
+    # {"name": "y26_3lvl_head64", "arm": "arch", "cfg": CFG_3LVL, "head_ch": 64,     -> 55.25
+    #  "want_c3": 64, "want_nl": 3,
+    #  "label": "stock 3-level with the head SHRUNK to 64 (the P2 graph's value)",
+    #  "why": "The cell that makes the square attributable."},
 
-    {"name": "y26_3lvl_head64", "arm": "arch", "cfg": CFG_3LVL, "head_ch": 64,
-     "want_c3": 64, "want_nl": 3,
-     "label": "stock 3-level with the head SHRUNK to 64 (the P2 graph's value)",
-     "why": "The cell that makes run 1 attributable. Gives p2@64 - 3lvl@64 as the pure "
-            "P2-level effect with width AND transfer held, and exposes the pretrained-head "
-            "penalty by subtraction. Without it run 1 cannot attribute anything."},
+    # ------------------------------------------------------- ARCH / ADDITIVE P2
+    # headref0 runs FIRST: it is the paired control for the two p2add runs, not just a
+    # determinism check. 55.03 came from run_yolo26_arch2_v6i.py in a tree that predates
+    # the head_ch and loss patches, so p2add - 55.03 is cross-runner and uncontrolled.
+    # p2add - headref0 is same night, same code, same box.
+    {"name": "y26_p2_headref0", "arm": "arch", "cfg": CFG_P2, "head_ch": 0,
+     "want_c3": 64, "want_nl": 4,
+     "label": "yolo26-p2 at stock head width — in-batch control for the p2add runs",
+     "why": "Must reproduce y26_p2_b32 = 55.03. Config is identical to arch2_v6i (70 ep, "
+            "640, b32, seed 0, close_mosaic 10, patience 100, same YOLO(cfg)->load->train "
+            "path), so a miss is drift from the head_ch/loss patches rather than the graph. "
+            "It also validates that this graph is bit-deterministic: no DySample means no "
+            "F.grid_sample and no atomic-add nondeterminism, verified for the stock 3-level "
+            "graph but never directly for yolo26-p2. If it misses by more than 0.05, read "
+            "the p2add runs ONLY against this number and never against 55.03."},
+
+    {"name": "y26_p2add_h0", "arm": "arch", "cfg": CFG_P2ADD, "head_ch": 0,
+     "want_c3": 64, "want_nl": 4,
+     "label": "P2 as a LEAF branch off P3 — stock P3/P4/P5 kept byte-identical",
+     "why": "NOT the same graph as yolo26-p2 with better loading — it is a different, "
+            "cheaper design, and it changes two things at once. (1) Topology: yolo26-p2 "
+            "starts the bottom-up path at P2, so P2 feeds P3 feeds P4 feeds P5 and all four "
+            "levels are perturbed; here P2 hangs off the P3 head as a leaf and P3/P4/P5 stay "
+            "exactly stock, so the extra level can only ADD a scale, never disturb the three "
+            "that already work. It also drops yolo26-p2's extra Conv[128]+C3k2[256] stage, so "
+            "it is smaller. (2) Transfer: because rows 0-22 keep their stock INDEX, "
+            "intersect_dicts matches them by name and the whole bottom-up PAN loads from "
+            "yolo26s.pt. In yolo26-p2 those same six layers are shape-identical but sit at "
+            "rows 23-28, so they miss and train from scratch. Read the result as 'is this "
+            "design better than 55.03', not as 'transfer is worth X' — the two are confounded "
+            "here, and the preflight transfer table quantifies only the second."},
+
+    {"name": "y26_p2add_h128", "arm": "arch", "cfg": CFG_P2ADD, "head_ch": 128,
+     "want_c3": 128, "want_nl": 4,
+     "label": "additive P2 with the head pinned at 128 — retests the refuted width hypothesis",
+     "why": "p2@128 lost 0.42 to p2@64, which refuted the head-width hypothesis. But under "
+            "broken transfer a WIDER head means more randomly-initialised parameters to fit "
+            "in 70 epochs, so that test was confounded by the same defect. With the PAN "
+            "transferred the width comparison is fair for the first time. If 128 wins here, "
+            "the -0.42 was initialisation rather than width and the axis reopens."},
+
+    {"name": "y26_p2_remap", "arm": "arch", "cfg": CFG_P2, "head_ch": 0, "remap": True,
+     "want_c3": 64, "want_nl": 4,
+     "label": "THE yolo26-p2 graph, with the shifted PAN rows loaded by key remap",
+     "why": "The clean version of the experiment p2add cannot give you. p2add changes the "
+            "topology AND the transfer at once; this changes ONLY the transfer. Identical "
+            "graph, identical parameter count, identical everything to y26_p2_b32 = 55.03 "
+            "except that stock rows 17-22 are copied into p2 rows 23-28 before training, "
+            "which is legitimate because those six layers are shape-identical in the two "
+            "graphs and differ only in the index intersect_dicts reads. If this lands near "
+            "55.8 then 'adding P2 costs 0.73' was never an architecture result, and the "
+            "reading of all ten DySample replicates and the 56.08 arch mean has to change. "
+            "If it stays near 55.03, the P2 penalty is real and the campaign's arch "
+            "conclusion survives — which is equally worth knowing and closes the question."},
 
     # ---------------------------------------------------------------- LOSS
-    {"name": "y26_scb3_sbb50_cls075", "arm": "loss", "params": cfg(cls=0.75),
-     "expect": {**_BASE_EXPECT, "cls": 0.75},
-     "label": "cls gain 0.5 -> 0.75 on the best config",
-     "why": "The only untouched gain in 73 runs. loss[1] *= hyp.cls is the only term it "
-            "scales, and wrong-class is 32-37% of what outranks the median TP. Low point "
-            "first: loss[1] sums BCE over every anchor while loss[0] sums over positives "
-            "only, so the balance is already tilted."},
+    # COMPLETED — cls075 55.89 (campaign max), cls10 55.17, a075 55.03, diou 55.14.
+    # cls is now a shape, not a point: 0.5 -> 55.65, 0.75 -> 55.89, 1.0 -> 55.17.
+    # a075 and diou both LOST, closing the exponent and overlap-metric axes.
+    #
+    # {"name": "y26_scb3_sbb50_cls075", "arm": "loss", "params": cfg(cls=0.75),      -> 55.89
+    #  "expect": {**_BASE_EXPECT, "cls": 0.75}, "label": "cls gain 0.5 -> 0.75"},
+    # {"name": "y26_scb3_sbb50_cls10", "arm": "loss", "params": cfg(cls=1.0),        -> 55.17
+    #  "expect": {**_BASE_EXPECT, "cls": 1.0}, "label": "cls gain 0.5 -> 1.0"},
+    # {"name": "y26_a075_scb3_sbb50", "arm": "loss", "params": cfg(tal_alpha=0.75),  -> 55.03
+    #  "expect": {**_BASE_EXPECT, "alpha": 0.75}, "label": "tal_alpha 0.5 -> 0.75"},
+    # {"name": "y26_scb3_sbb50_diou", "arm": "loss", "params": cfg(iou_type="diou"), -> 55.14
+    #  "expect": {**_BASE_EXPECT, "iou_type": "diou"}, "label": "DIoU"},
 
-    {"name": "y26_scb3_sbb50_cls10", "arm": "loss", "params": cfg(cls=1.0),
-     "expect": {**_BASE_EXPECT, "cls": 1.0},
-     "label": "cls gain 0.5 -> 1.0 on the best config",
-     "why": "Second point makes cls a DIRECTION rather than a lone guess. Both flat closes "
-            "the axis and confirms the classification deficit is immovable from the loss."},
+    # ====================================================== LOSS SEARCH (b82)
+    # New bar: y26_scb3_sbb50_cls075 = 55.89. Everything below is a NEW config that can
+    # beat it. Already swept, do not repeat: SCB beta_small 2/3/4, SCB ref 32/64/128
+    # (flat, -0.02/-0.04), SBB q 0.25/0.50/0.75 on scb3, SBB invert both ways, SNL1
+    # (does not stack), cls_pw 0.25/0.50, tal_alpha 0.75 on the pair (-0.62), eiou, diou.
+    {"name": "y26_scb2_sbb50_cls075", "arm": "loss", "params": cfg(tal_beta_small=2.0, cls=0.75),
+     "expect": {"scb": (2.0, 64.0), "sbb": 0.5, "cls": 0.75},
+     "label": "cls=0.75 moved onto the OTHER top config, scb2_sbb50 (55.70)",
+     "why": "The campaign has two co-equal loss configs: scb3_sbb50 55.65 and scb2_sbb50 "
+            "55.70, the raw maximum. cls=0.75 has only ever been applied to scb3. If the "
+            "+0.24 is a generic gain it lands here too and this becomes the campaign max at "
+            "~55.94. If it does not transfer, cls=0.75 is specific to beta_small=3.0, which "
+            "is itself the finding. Highest prior in the batch, and it doubles as the "
+            "generality test that a bare seed repeat cannot give you."},
 
-    {"name": "y26_a075_scb3_sbb50", "arm": "loss", "params": cfg(tal_alpha=0.75),
-     "expect": {**_BASE_EXPECT, "alpha": 0.75},
-     "label": "tal_alpha 0.5 -> 0.75 on top of SCB + SBB",
-     "why": "align_metric = score^alpha * IoU^beta. The two best single mechanisms "
-            "(alpha075 +0.35, beta_small=3.0 +0.42) live in that one expression and have "
-            "never been combined. Unlike SNL1+SCB they compose multiplicatively."},
+    {"name": "y26_b8_scb3_sbb50_cls075", "arm": "loss", "params": cfg(tal_beta=8.0, cls=0.75),
+     "expect": {**_BASE_EXPECT, "cls": 0.75, "beta": 8.0},
+     "label": "widen the SCB gap from the TOP: beta 6 -> 8 with beta_small held at 3.0",
+     "why": "SCB's mechanism is the GAP between beta_small and beta, and every run so far "
+            "moved the small end (2/3/4 at beta=6) or narrowed the gap (b4s2, +0.25). The "
+            "gap has never been widened. beta=8, beta_small=3 gives a gap of 5 against the "
+            "winning config's 3 — more IoU trust on large, unchanged on small, exactly the "
+            "direction the SCB+SBB pairing result says should work. Also the only untested "
+            "direction on the axis that produced the campaign's best single mechanism."},
 
-    {"name": "y26_scb3_sbb50_diou", "arm": "loss", "params": cfg(iou_type="diou"),
-     "expect": {**_BASE_EXPECT, "iou_type": "diou"},
-     "label": "DIoU — delete CIoU's aspect term instead of replacing it",
-     "why": "EIoU REPLACED it and cost 7.80 on large. DIoU deletes it. CIoU's aspect "
-            "gradients satisfy dv/dw = -(h/w) dv/dh, always opposite in sign, so it "
-            "regresses aspect RATIO and never magnitude — and this dataset is 70.6% tall "
-            "boxes at class-stable ratios. giou/diou were in IOU_FLAGS all campaign and "
-            "only eiou was ever run."},
+    {"name": "y26_scb3_sbb50_cls065", "arm": "loss", "params": cfg(cls=0.65),
+     "expect": {**_BASE_EXPECT, "cls": 0.65},
+     "label": "locate the cls peak on the low side: 0.5 -> 55.65, 0.65 -> ?, 0.75 -> 55.89",
+     "why": "The cls curve is sharply asymmetric — +0.24 from 0.5 to 0.75, then -0.72 from "
+            "0.75 to 1.0. A peak that falls off three times faster on one side is usually "
+            "not centred on the sampled point. Cheapest shot at a better operating point, "
+            "and a third interior point turns cls from three scattered numbers into a curve "
+            "you can plot in the paper."},
+
+    # ==================================================================== CONFIRM
+    # DEFERRED — seed and attribution runs, to be run once the search above settles on a
+    # final config. Replicating a number that is about to be superseded wastes the GPU.
+    #
+    # {"name": "y26_cls075_only", "arm": "confirm", "params": dict(_ALL_OFF, cls=0.75),
+    #  "expect": {"cls": 0.75}, "label": "cls=0.75 ALONE, against baseline 55.24"},
+    # {"name": "y26_cls075_seed1", "arm": "confirm", "seed": 1, "params": cfg(cls=0.75),
+    #  "expect": {**_BASE_EXPECT, "cls": 0.75}, "label": "SEED 1 replication"},
 ]
 
 
@@ -205,7 +295,7 @@ def preflight(todo):
     print("  PREFLIGHT")
     print("=" * 78)
     arch = [r for r in todo if r["arm"] == "arch"]
-    loss = [r for r in todo if r["arm"] == "loss"]
+    loss = [r for r in todo if r["arm"] != "arch"]
 
     if arch:
         if not hasattr(Detect, "head_ch"):
@@ -223,6 +313,34 @@ def preflight(todo):
                 print("  [ABORT] the head_ch knob is not doing what these runs claim.")
                 return False
         Detect.head_ch = 0
+
+        for c in sorted({r["cfg"] for r in arch}):
+            m = YOLO(c).model
+            sc, n = m.yaml.get("scale"), sum(p.numel() for p in m.parameters())
+            print(f"  {c:<22} scale={sc or 'NONE':<5} {n / 1e6:5.2f}M params")
+            if sc != "s":
+                print(f"  [ABORT] {c} resolved to scale '{sc}'. guess_model_scale needs a size "
+                      f"letter right after the digits; without one parse_model falls back to "
+                      f"the first scales key and yolo26s.pt may transfer nothing.")
+                return False
+
+        if any(r["cfg"] == CFG_P2ADD for r in arch):
+            from ultralytics.utils.torch_utils import intersect_dicts
+            ref = YOLO(MODEL_WEIGHTS).model.float().state_dict()
+            print(f"\n  weight transfer from {MODEL_WEIGHTS} — the premise of the p2add runs")
+            pct = {}
+            for tag, c in (("3 lvl  ", CFG_3LVL), ("p2     ", CFG_P2), ("p2add  ", CFG_P2ADD)):
+                sd = YOLO(c).model.float().state_dict()
+                tot = sum(v.numel() for v in sd.values())
+                hit = sum(v.numel() for v in intersect_dicts(ref, sd).values())
+                pct[c] = 100 * hit / tot
+                print(f"    {tag} {c:<22} {hit / 1e6:6.2f}M / {tot / 1e6:6.2f}M = {pct[c]:5.1f}%")
+            if pct[CFG_P2ADD] <= pct[CFG_P2] + 5:
+                print("  [ABORT] p2add transfers no more of the checkpoint than p2 — the "
+                      "premise is wrong, do not spend the GPU.")
+                return False
+            print(f"    -> additive recovers {pct[CFG_P2ADD] - pct[CFG_P2]:.0f} points of the "
+                  f"checkpoint that the inserted graph discards")
 
     if loss:
         try:
@@ -254,18 +372,25 @@ def preflight(todo):
     print()
     for r in todo:
         b = BATCH_ARCH if r["arm"] == "arch" else BATCH_LOSS
+        sd = r.get("seed", SEED)
         if r["arm"] == "arch":
             bits = f"{r['cfg']}  c3={r['want_c3']}  levels={r['want_nl']}"
         else:
-            p = r["params"]
-            bits = f"SCB {p['tal_beta_small']}@{p['tal_beta_ref_px']}px + SBB q={p['sbb_q']} inv={p['sbb_invert']}"
-            for k in ("cls", "alpha", "iou_type"):
-                if k in r["expect"]:
-                    bits += f"  +  {k}={r['expect'][k]}"
-        print(f"  {r['name']:<26}{r['arm']:<6}b{b:<4}{bits}")
+            p, e = r["params"], r["expect"]
+            parts = []
+            if "scb" in e:
+                parts.append(f"SCB {p['tal_beta_small']}@{p['tal_beta_ref_px']}px")
+            if "sbb" in e:
+                parts.append(f"SBB q={p['sbb_q']} inv={p['sbb_invert']}")
+            for k in ("cls", "alpha", "beta", "iou_type"):
+                if k in e:
+                    parts.append(f"{k}={e[k]}")
+            bits = "  +  ".join(parts) if parts else "stock"
+        print(f"  {r['name']:<26}{r['arm']:<6}b{b:<4}seed{sd:<3}{bits}")
 
     print()
-    print(f"  loss bar {BEST_RAW} (base {BEST_LOSS})   arch refs: stock_b32 {STOCK_B32}, p2_b32 {P2_B32}")
+    print(f"  loss bar {CLS075_SEED0} (scb3_sbb50 {BEST_LOSS}, scb2_sbb50 {BEST_RAW})   "
+          f"arch refs: stock_b32 {STOCK_B32}, p2_b32 {P2_B32}")
     clash = [os.path.join(PROJECT_DIR, r["name"]) for r in todo
              if os.path.isdir(os.path.join(PROJECT_DIR, r["name"]))] if not OVERWRITE_EXISTING else []
     if clash:
@@ -333,6 +458,11 @@ def attach_guard(model, rc):
                 if abs(float(a.alpha) - e["alpha"]) > 1e-6:
                     raise RuntimeError(f"{rc['name']}: {tag} alpha={a.alpha}, expected {e['alpha']}")
             seen.append(f"tal_alpha={a2.alpha} BOTH branches")
+        if "beta" in e:
+            for tag, a in (("one2many", a1), ("one2one", a2)):
+                if abs(float(a.beta) - e["beta"]) > 1e-6:
+                    raise RuntimeError(f"{rc['name']}: {tag} beta={a.beta}, expected {e['beta']}")
+            seen.append(f"tal_beta={a2.beta} BOTH branches")
         if "iou_type" in e:
             from ultralytics.utils.metrics import IOU_FLAGS
 
@@ -371,20 +501,46 @@ def attach_guard(model, rc):
     return state
 
 
+def remap_pan(model, weights):
+    """Copy stock head rows 17-22 into the p2 graph's rows 23-28, which hold the same layers."""
+    ckpt = YOLO(weights).model.float().state_dict()
+    sd = model.model.state_dict()
+    moved = {}
+    for k, v in ckpt.items():
+        m = re.match(r"model\.(\d+)\.(.+)", k)
+        if not m or int(m.group(1)) not in REMAP_ROWS:
+            continue
+        k2 = f"model.{int(m.group(1)) + REMAP_SHIFT}.{m.group(2)}"
+        if k2 in sd and sd[k2].shape == v.shape:
+            moved[k2] = v
+    if not moved:
+        raise RuntimeError("remap matched nothing — the row shift or the graph is not what "
+                           "this run assumes")
+    model.model.load_state_dict(moved, strict=False)
+    after = model.model.state_dict()
+    for k2, v in moved.items():
+        if not torch.equal(after[k2].float(), v.float()):
+            raise RuntimeError(f"remap did not stick on {k2}")
+    print(f"  [remap] {len(moved)} tensors, {sum(v.numel() for v in moved.values()) / 1e6:.2f}M "
+          f"params copied from rows {REMAP_ROWS.start}-{REMAP_ROWS.stop - 1} "
+          f"to {REMAP_ROWS.start + REMAP_SHIFT}-{REMAP_ROWS.stop - 1 + REMAP_SHIFT}")
+
+
 def run_one(rc):
     name, arm = rc["name"], rc["arm"]
     batch = BATCH_ARCH if arm == "arch" else BATCH_LOSS
+    seed = rc.get("seed", SEED)
     print()
     print("=" * 78)
     print(f"  RUN {name}   [{arm.upper()}]")
     print(f"  {rc['label']}")
     print("=" * 78)
-    print(f"  batch={batch}  imgsz={IMG_SIZE}  epochs={EPOCHS}  seed={SEED}")
-    if arm == "loss":
+    print(f"  batch={batch}  imgsz={IMG_SIZE}  epochs={EPOCHS}  seed={seed}")
+    if "cfg" in rc:
+        print(f"  cfg={rc['cfg']}  head_ch={rc['head_ch']}  -> c3={rc['want_c3']}, levels={rc['want_nl']}")
+    else:
         diff = {k: v for k, v in rc["params"].items() if _ALL_OFF.get(k, "__") != v}
         print(f"  differs from _ALL_OFF: {diff}")
-    else:
-        print(f"  cfg={rc['cfg']}  head_ch={rc['head_ch']}  -> c3={rc['want_c3']}, levels={rc['want_nl']}")
     print()
     t0 = time.time()
 
@@ -393,6 +549,8 @@ def run_one(rc):
         if arm == "arch":
             model = YOLO(rc["cfg"])
             model.load(MODEL_WEIGHTS)  # backbone/neck transfer; heads only where shapes match
+            if rc.get("remap"):
+                remap_pan(model, MODEL_WEIGHTS)
             extra = {}
         else:
             model = YOLO(MODEL_WEIGHTS)
@@ -400,7 +558,7 @@ def run_one(rc):
         state = attach_guard(model, rc)
         results = model.train(data=DATA_YAML, epochs=EPOCHS, imgsz=IMG_SIZE, batch=batch,
                               device=DEVICE, workers=WORKERS, project=PROJECT_DIR, name=name,
-                              patience=PATIENCE, close_mosaic=CLOSE_MOSAIC, seed=SEED,
+                              patience=PATIENCE, close_mosaic=CLOSE_MOSAIC, seed=seed,
                               deterministic=True, exist_ok=OVERWRITE_EXISTING, **extra)
     finally:
         Detect.head_ch = 0  # never leak the class attribute into a later build
@@ -411,7 +569,7 @@ def run_one(rc):
     hours = (time.time() - t0) / 3600
     save_dir = str(getattr(getattr(model, "trainer", None), "save_dir", os.path.join(PROJECT_DIR, name)))
     weights = os.path.join(save_dir, "weights", "best.pt")
-    out = {"name": name, "arm": arm, "batch": batch, "seed": SEED, "hours": hours,
+    out = {"name": name, "arm": arm, "batch": batch, "seed": seed, "hours": hours,
            "weights": weights, "mechanism_verified": True,
            "test_map50": float("nan"), "test_map5095": float("nan")}
     out.update({"cfg": rc["cfg"], "c3": rc["want_c3"], "nl": rc["want_nl"]} if arm == "arch"
@@ -463,7 +621,8 @@ def summarise(res):
             print(f"{r['name']:<24}{r['nl']:>5}{r['c3']:>5}{'fresh':>12}"
                   f"{r['test_map5095'] * 100:>10.2f}{r['hours']:>8.2f}")
 
-        p2_128, l3_64 = by.get("y26_p2_headref128"), by.get("y26_3lvl_head64")
+        p2_128 = by.get("y26_p2_headref128", P2_128)  # fall back to the completed run's value
+        l3_64 = by.get("y26_3lvl_head64", L3_64)
         print("\n  THE SQUARE (fresh-head cells only)")
         print(f"{'':<14}{'c3=64':>10}{'c3=128':>10}")
         print(f"{'3 levels':<14}{(f'{l3_64:.2f}' if l3_64 else '-'):>10}{f'{STOCK_B32:.2f}*':>10}")
@@ -487,37 +646,91 @@ def summarise(res):
             print("    The pretrained head is worth a lot. EVERY 4-level run in this project")
             print("    paid that penalty — state it as a limitation of the P2 comparison.")
 
-    loss = [r for r in ok if r["arm"] == "loss"]
+        ctrl = by.get("y26_p2_headref0")
+        if ctrl is not None:
+            d = abs(ctrl - P2_B32)
+            print(f"\n    CONTROL: {ctrl:.2f} vs y26_p2_b32 {P2_B32} — differs by {d:.2f}")
+            if d <= 0.05:
+                print("    Reproduced. The tree is calibrated against the old campaign and")
+                print("    yolo26-p2 is bit-deterministic here, so n=1 is an exact measurement.")
+            else:
+                print("    NOT reproduced. Read the p2add rows against THIS number only — the")
+                print("    stored 55.03 came from a different tree and is not comparable.")
+
+        remap = by.get("y26_p2_remap")
+        if remap is not None:
+            base = ctrl if ctrl is not None else P2_B32
+            print(f"\n  TRANSFER, ISOLATED — same yolo26-p2 graph, PAN rows loaded by remap")
+            print(f"    y26_p2_remap {remap:.2f} vs {base:.2f} without the remap "
+                  f"({remap - base:+.2f})")
+            if remap - base > 0.3:
+                print("    The shifted-key weight loss WAS costing accuracy. 'Adding P2 costs")
+                print("    0.73' is not an architecture result — it is an artifact of the yaml")
+                print("    row order, and the reading of the ten DySample replicates and the")
+                print("    56.08 arch mean has to be revised.")
+            else:
+                print("    Transfer was NOT the explanation. The P2 penalty is a real property")
+                print("    of the architecture on this dataset, the campaign's arch conclusion")
+                print("    stands, and the question is now closed rather than open.")
+
+        add0, add128 = by.get("y26_p2add_h0"), by.get("y26_p2add_h128")
+        if add0 is not None or add128 is not None:
+            print("\n  ADDITIVE P2 — P2 as a leaf branch, stock P3/P4/P5 kept intact")
+            print(f"{'':<22}{'inserted':>11}{'additive':>11}{'delta':>11}")
+            if add0 is not None:
+                print(f"{'c3=64  (head_ch 0)':<22}{P2_B32:>11.2f}{add0:>11.2f}{add0 - P2_B32:>+11.2f}")
+            if add128 is not None:
+                print(f"{'c3=128 (head_ch 128)':<22}{P2_128:>11.2f}{add128:>11.2f}{add128 - P2_128:>+11.2f}")
+            best = max(v for v in (add0, add128) if v is not None)
+            if ctrl is not None and add0 is not None:
+                print(f"    against the IN-BATCH control {ctrl:.2f}: h0 {add0 - ctrl:+.2f}")
+            if best > STOCK_B32:
+                print(f"\n    {best:.2f} BEATS the 3-level stock {STOCK_B32}. A P2 leaf branch pays")
+                print("    on this dataset, and it does so without touching P3/P4/P5 at all.")
+            elif best > P2_B32 + 0.3:
+                print(f"\n    The leaf design is worth {best - P2_B32:+.2f} over the inserted one, but")
+                print(f"    still trails stock {STOCK_B32}. Use y26_p2_remap to see how much of")
+                print("    that gap was topology and how much was the weight transfer.")
+            else:
+                print("\n    Fair transfer does NOT rescue P2. The extra level genuinely does not")
+                print("    pay here — now a clean result instead of a confounded one, and that")
+                print("    is the version worth publishing.")
+            if add0 is not None and add128 is not None:
+                print(f"    head width, transfer-fair   128 - 64 = {add128 - add0:+.2f}"
+                      f"   (inserted graph said {P2_128 - P2_B32:+.2f})")
+
+    loss = [r for r in ok if r["arm"] != "arch"]
     if loss:
         print("\n" + "=" * 78)
-        print("  LOSS — vs base 55.65, bar 55.70")
+        print(f"  LOSS — bar is {CLS075_SEED0} (scb3_sbb50_cls075); base {BEST_LOSS}, baseline {BASELINE}")
         print("=" * 78)
-        print(f"{'run':<26}{'mAP50-95':>10}{'vs base':>10}{'vs bar':>9}{'hours':>8}")
-        print("-" * 63)
+        print(f"{'run':<26}{'seed':>5}{'mAP50-95':>10}{'vs base':>10}{'vs max':>9}{'hours':>8}")
+        print("-" * 68)
         for r in sorted(loss, key=lambda x: -x["test_map5095"]):
             v = r["test_map5095"] * 100
-            print(f"{r['name']:<26}{v:>10.2f}{v - BEST_LOSS:>+10.2f}{v - BEST_RAW:>+9.2f}{r['hours']:>8.2f}")
+            print(f"{r['name']:<26}{r['seed']:>5}{v:>10.2f}{v - BEST_LOSS:>+10.2f}"
+                  f"{v - CLS075_SEED0:>+9.2f}{r['hours']:>8.2f}")
 
-        c = sorted((r for r in loss if "cls" in r.get("expect", {})),
-                   key=lambda x: x["expect"]["cls"])
-        if len(c) == 2:
-            d = [r["test_map5095"] * 100 - BEST_LOSS for r in c]
-            print(f"\n    cls 0.75 -> {d[0]:+.2f}   cls 1.00 -> {d[1]:+.2f}")
-            if max(d) < 0.2:
-                print("    Both flat. The last untouched gain is closed and the classification")
-                print("    deficit is confirmed immovable from the loss.")
-            elif d[1] > d[0] > 0:
-                print("    Monotone and positive — a real direction. A third point is justified.")
+        scb2 = by.get("y26_scb2_sbb50_cls075")
+        if scb2 is not None:
+            print(f"\n    cls=0.75 on scb2_sbb50: {scb2:.2f} vs {BEST_RAW} without it "
+                  f"({scb2 - BEST_RAW:+.2f})")
+            if scb2 - BEST_RAW > 0.15:
+                print("    The gain TRANSFERS — cls=0.75 is a generic operating point, not a")
+                print("    quirk of beta_small=3.0. Report it as a tuned gain on both configs.")
             else:
-                print("    Non-monotone. Single-seed spikes on a knife-edge base are how SCB")
-                print("    looked for two days. Do not promote without a second seed.")
+                print("    The gain does NOT transfer — it is specific to beta_small=3.0. That is")
+                print("    an interaction between the assignment metric and the cls weight, and")
+                print("    a stronger claim than another +0.2.")
+
         best = max(r["test_map5095"] * 100 for r in loss)
-        if best <= BEST_RAW:
-            print(f"\n    Nothing beat {BEST_RAW}. With four single-seed draws that is the")
-            print("    expected outcome and it leaves the campaign's conclusions intact.")
+        if best <= CLS075_SEED0:
+            print(f"\n    Nothing beat {CLS075_SEED0}. The loss axis is at its practical ceiling —")
+            print("    spend the next night on a seed repeat of that config, not on more search.")
         else:
-            print(f"\n    Best is {best:.2f}. The expected MAXIMUM of four draws sits ~0.25-0.35")
-            print("    above the mean by selection alone — confirm on a second seed first.")
+            print(f"\n    New maximum {best:.2f}. Seed-repeat it before it goes in the paper: the")
+            print("    expected MAXIMUM of three draws sits ~0.2-0.3 above the mean by selection")
+            print("    alone, and every v26 number is single-seed.")
     print("=" * 78 + "\n")
 
 
