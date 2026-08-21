@@ -2161,10 +2161,11 @@ class DySample(nn.Module):
             1, self.groups, 1, 1).reshape(1, -1, 1, 1)
 
     def forward(self, x):
-        if self.scope is None:
+        scope = getattr(self, "scope", None)  # checkpoints pickled before dyscope existed lack the attribute
+        if scope is None:
             offset = self.offset(x) * 0.25 + self.init_pos
         else:
-            offset = self.offset(x) * self.scope(x).sigmoid() * 0.5 + self.init_pos
+            offset = self.offset(x) * scope(x).sigmoid() * 0.5 + self.init_pos
         B, _, H, W = offset.shape
         offset = offset.view(B, 2, -1, H, W)
         coords_h = torch.arange(H, device=x.device) + 0.5
