@@ -3,13 +3,94 @@
 **Baseline** `y26_base_rep` = `yolo26_custom-9` — 55.24 mAP50-95 / 80.18 mAP50, stock
 yolo26s, 640 px, 70 epochs, seed 0, **batch 82**.
 
-**73 runs** across 16 result files. All numbers are the v6i **test** split
-(1219 images, 6172 instances).
+**92 runs** across 17 result files (73 through round 11, plus 19 from rounds 12–15).
+All numbers are the v6i **test** split (1219 images, 6172 instances).
+A further **8 runs exist only as diagnostics** — see the last section.
 
 **Training on this box is deterministic** — `y26_base_rep` came back bit-identical to
 `yolo26_custom-9` across all 118 metric values, and `y26_identity` reproduced it again
 through a rebuilt `metrics.py`. So every delta below is *exact*, not an average. It is
 also **single-seed**: exact does not mean general, and that belongs in the limitations.
+
+---
+
+## BASELINE AND CONTROL RUNS — the reference points every delta is taken against
+
+Every run below uses **stock loss** (`_ALL_OFF`, no mechanism live), 640 px, 70 epochs,
+seed 0. They differ only in batch size and in graph. Test split, COCO-area size buckets.
+
+| run | batch | graph | mAP50-95 | mAP50 | P | R | S50 | M50 | L50 | S95 | M95 | L95 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `yolo26_custom-9` | 82 | 3-lvl stock | **55.24** | 80.18 | 80.32 | 71.43 | 77.30 | 86.45 | 81.75 | 51.00 | 65.98 | **60.87** |
+| `y26_base_rep` | 82 | 3-lvl stock | 55.24 | 80.18 | 80.32 | 71.43 | 77.30 | 86.45 | 81.75 | 51.00 | 65.98 | 60.87 |
+| `y26_identity` | 82 | 3-lvl stock | 55.24 | 80.18 | 80.32 | 71.43 | 77.30 | 86.45 | 81.75 | 51.00 | 65.98 | 60.87 |
+| `y26_stock_b48` | **48** | 3-lvl stock | **55.76** | 80.96 | 79.59 | 73.18 | 77.68 | **87.46** | 82.80 | 50.96 | **67.31** | 59.28 |
+| `y26_3lvl_head64` | 32 | 3-lvl, c3=64 | 55.25 | 79.86 | 79.02 | 73.83 | 77.26 | 85.96 | 81.19 | 51.22 | 65.83 | 57.15 |
+| `y26_p2_headref0` | 32 | P2, c3=64 | 55.76 | 81.05 | 80.16 | 73.34 | 78.57 | 86.71 | 78.60 | **52.17** | 65.59 | 54.87 |
+| `y26_p2_headref128` | 32 | P2, c3=128 | 54.61 | 80.18 | 80.20 | 73.29 | 77.81 | 85.87 | 80.31 | 51.19 | 64.11 | 58.18 |
+| `y26_p2_remap` | 32 | P2 + **remap** | **55.84** | 80.78 | **80.69** | 72.82 | 77.63 | 87.19 | 81.10 | 51.54 | 66.47 | 58.53 |
+| `y26_p2add_h0` | 32 | P2add + remap | 55.83 | 80.83 | 79.10 | 74.48 | 77.98 | 86.78 | 81.02 | 51.48 | 66.46 | 58.51 |
+| `y26_remap_dys_stock` | 32 | P2+DySample+remap | 55.70 | 80.69 | 79.84 | **74.59** | **78.39** | 85.82 | 79.07 | 51.93 | 65.44 | 57.05 |
+
+Per-class AP50-95, same runs:
+
+| run | backpack | bag | trolley | AR50 small | R50 small |
+|---|---|---|---|---|---|
+| `y26_base_rep` (=custom-9, =identity) | 56.16 | 47.38 | **62.18** | **96.31** | 70.67 |
+| `y26_stock_b48` | 57.07 | 48.27 | 61.93 | **96.66** | 71.67 |
+| `y26_3lvl_head64` | 56.84 | 47.52 | 61.40 | 94.85 | 71.33 |
+| `y26_p2_headref0` | 57.13 | 47.93 | 62.22 | 96.17 | 72.33 |
+| `y26_p2_headref128` | 55.98 | 46.44 | 61.42 | 95.17 | 72.67 |
+| `y26_p2_remap` | 57.24 | 47.80 | **62.47** | 95.92 | 70.67 |
+| `y26_p2add_h0` | 57.40 | **48.39** | 61.69 | 94.96 | 71.67 |
+| `y26_remap_dys_stock` | **57.45** | 47.73 | 61.92 | 94.53 | **74.33** |
+
+For reference, YOLOv12: **`yolov12s_default` = 54.77 / 79.75**, P 80.37 R 72.16,
+S50 76.65 M50 86.59 L50 81.87, S95 49.98 M95 65.07 L95 57.73,
+backpack 55.81 / bag 46.66 / trolley 61.85.
+
+### How many baselines actually exist
+
+Ten rows above, but far fewer independent measurements:
+
+- **b82 stock: one.** `yolo26_custom-9`, `y26_base_rep` and `y26_identity` are
+  **bit-identical to 10 decimal places** — same mAP50, same S95, same L95, run from three
+  different scripts on three different dates. That is a *determinism proof* (and it is what
+  certifies the round-11 `metrics.py` rebuild as inert), **not a replication**. Three
+  identical draws of a deterministic computation carry the information of one.
+- **b48 stock: one.** `y26_stock_b48`.
+- **b32 stock 3-level: none.** `y26_3lvl_head64` is 3-level but with the head shrunk to
+  c3=64, so it is not a stock control.
+- **Seed-varied baselines: zero.** No baseline has ever been run at a second seed, on
+  either model.
+
+So the reference point for 73 loss deltas is one number with no error bar, and the
+reference for the arch deltas is a different one number at a different batch.
+
+### ⚠ `y26_stock_b48` was called `y26_stock_b32` until now
+
+The run was **batch 48**, changed on the training box; the runner script still said 32 and
+the name followed the script. Renamed everywhere on 2026-08-21. Consequences:
+
+1. **`y26_p2k2_hi` / `y26_p2k1_lo` (b48) now HAVE a matched control.** The "still open"
+   item below — *"p2k2_hi/p2k1_lo ran at b48 against a b32 control, the b48 stock run does
+   not exist"* — is **closed**. It does exist; it is this run. Those two arch numbers are
+   batch-matched after all.
+2. **Rounds 13/14/15 are NOT matched.** They ran at b32 against 55.76 believing it was b32.
+   `BATCH = 32 # matches ... y26_stock_b48` in `run_yolo26_round13_v6i.py` and
+   `BATCH_ARCH` in `run_yolo26_overnight_r1213_v6i.py` were wrong; both now carry a warning.
+3. **It may explain the control failure.** `y26_p2_headref0` (b32) returned 55.76 where
+   `y26_p2_b32` = 55.03 was expected. If the earlier P2 run was also b48, that 0.73 gap is
+   a *batch* effect, not the tree change it was read as — which would partly un-void the
+   earlier arch deltas rather than voiding them.
+4. **"batch alone: +0.52" is now b82→b48, not b82→b32.** Every statement in the confound
+   section below that says "b32" for the control means **b48**.
+
+**Unresolved and only you can answer:** the actual batch used for `y26_p2_b32`,
+`y26_p2k2_hi`, `y26_p2k1_lo` and the DySample family. `params` and `run_meta` are empty
+dicts in every results JSON and no `args.yaml` was captured, so **the repo has no record of
+the batch size for any run** — only what the scripts claim, and the scripts have now been
+wrong once. Worth capturing `args.yaml` alongside results from here on.
 
 ---
 
@@ -19,7 +100,7 @@ also **single-seed**: exact does not mean general, and that belongs in the limit
 |---|---|---|---|---|
 | **Best loss** | `y26_scb3_sbb50` | 55.65 | +0.41 | +0.74% |
 | Best loss (raw mAP) | `y26_scb2_sbb50` | 55.70 | +0.46 | +0.83% |
-| **Best arch** | P2 + DySample, **n=10** | **56.08 ± 0.19** | **+0.32** vs matched b32 | +0.57% |
+| **Best arch** | P2 + DySample, **n=10** | **56.08 ± 0.19** | **+0.32** vs `y26_stock_b48` | +0.57% |
 
 `scb3_sbb50` is the config to report even though `scb2_sbb50` has the higher mAP: it is
 the only configuration in the campaign that gains overall **without giving up the large
@@ -87,7 +168,7 @@ One `DySample` at P3→P2, groups=4. Deviations: count 0/1/2/3 →
 (`ZGGlobalContext2`, `ZGDSConv`, others) lost.
 
 The architecture figure is the **mean of the ten collapsed budget runs, 56.08 ± 0.19**,
-not the best of them — **+0.32** against the matched b32 control (55.76). Recall +1.78%,
+not the best of them — **+0.32** against the `y26_stock_b48` control (55.76). Recall +1.78%,
 small +1.41%, paid for on large −2.28%.
 
 **Which of those claims actually survive the noise.** Every architecture run is n=1, and
@@ -111,7 +192,7 @@ draw each from a distribution whose sd is comparable to the whole spread. Report
 module choice as "1 DySample, groups=4, chosen from an underpowered sweep", not as an
 optimum.
 
-**The control is also n=1.** The +0.32 is `56.08 ± 0.19` against a single `y26_stock_b32`
+**The control is also n=1.** The +0.32 is `56.08 ± 0.19` against a single `y26_stock_b48`
 run with no error bar of its own. The stock model is deterministic, so three seeds
 (~5 GPU-h) would put an interval on both sides of the comparison. That is the cheapest
 run in the project that strengthens an existing headline instead of chasing a new one.
@@ -149,12 +230,12 @@ regression (`reg_max = 1`) and an NMS-free one2one head.
 
 ### Batch size is worth more than architecture
 ```
-stock @ b82   55.24        stock @ b32   55.76        batch alone: +0.52
+stock @ b82   55.24        stock @ b48   55.76        batch alone: +0.52  (b82 -> b48)
 ```
 Every arch run was b32/b48 against a **b82** baseline. Between **42% and 62%** of each
 published architecture gain is batch, not architecture:
 
-| config | vs b82 | vs b32 | batch share |
+| config | vs b82 | vs b48 | batch share |
 |---|---|---|---|
 | `y26_p2k2_hi` | +1.22 | **+0.70** | 42% |
 | `y26_p2k1_lo` | +1.01 | +0.50 | 51% |
@@ -163,8 +244,16 @@ published architecture gain is batch, not architecture:
 It distorts the size columns too: against b82, `p2k2_hi` reads large at −1.02%; against
 the matched control it is −2.28%. The confounded version *understates* the cost.
 
-**Still open:** `p2k2_hi`/`p2k1_lo` ran at b48 against a b32 control. The b48 stock run
-makes this final.
+**RESOLVED 2026-08-21.** This section previously read *"still open: p2k2_hi/p2k1_lo ran at
+b48 against a b32 control; the b48 stock run makes this final."* That b48 stock run
+**exists** — it is `y26_stock_b48`, which was mislabelled `y26_stock_b32` because the
+runner script said 32 while 48 was used on the training box. So the `vs b48` column above
+is batch-matched for `p2k2_hi`/`p2k1_lo` after all.
+
+What this breaks instead: **rounds 13/14/15 ran at b32 against this b48 control.** Every
+delta in the round-13 head-width square and the round-14/15 remap decomposition is
+cross-batch. And the batch used for `y26_p2_b32` and the DySample family is **unrecorded** —
+see the baseline section above.
 
 ### A second confound stacked on the first: 56.46 is the max of ten replicates
 After removing batch, what is left of `y26_p2k2_hi`'s +0.70 is still not a single
@@ -173,7 +262,7 @@ budget against a **stock** `loss.py` that never read the flag — so the assigne
 built and all ten are the SAME configuration:
 
 ```
-stock b32 control                          55.76
+stock b48 control (y26_stock_b48)          55.76
 P2 + DySample, ten replicates    mean      56.08   sd 0.19    -> architecture  +0.32
                                  best      56.46              -> the reported number
 ```
@@ -191,10 +280,10 @@ it.
 
 ### The loss axis is the productive one, once batch is controlled
 ```
-batch alone (b82 -> b32)     -1.83 missed detections
+batch alone (b82 -> b48)     -1.83 missed detections
 LOSS axis at fixed b82       -1.62
-ARCH b48 vs a b32 control    -0.42
-ARCH + loss, b32 vs b32      -0.06   (clean)
+ARCH b48 vs the b48 control  -0.42   (now batch-matched)
+ARCH + loss, b32 vs b48      -0.06   (NOT batch-matched)
 ```
 
 The "ARCH" rows inherit the replicate problem above: if they were computed from
@@ -261,7 +350,7 @@ patch/      the patched loss.py, tal.py, metrics.py, default.yaml
 
 ```
 y26_base_rep        runs_yolo26_sbb_overnight_v6i__test_full_dataset.json
-y26_stock_b32       runs_yolo26_round10_v6i__test_full_dataset.json
+y26_stock_b48       runs_yolo26_round10_v6i__test_full_dataset.json
 y26_scb2_sbb50      runs_yolo26_round10_v6i__test_full_dataset.json
 y26_scb_b3          runs_yolo26_loss_study_v6i__test_full_dataset.json
 y26_scb3_sbb50      runs_yolo26_combo_v6i__test_full_dataset.json
@@ -480,7 +569,7 @@ separate results. Read the whole block against that sd.
 | `y26_arch_scb3_sbb50` | 55.57 | +0.33 | arch + best loss — **−0.19 vs stock b32; the axes do not compose** |
 | `y26_p2_wide` | 55.53 | +0.29 | 1.2 sd below the arch mean — **not established as worse** |
 | `y26_wide_starve` | 55.46 | +0.22 | 1.3 sd below — not established |
-| `y26_stock_b32` | 55.76 | +0.52 | **the control — batch alone, and itself n=1** |
+| `y26_stock_b48` | 55.76 | +0.52 | **the control — batch alone, and itself n=1** |
 | `y26_p2_dys_gctx` | 54.79 | −0.45 | +ZGGlobalContext2 — 2.8 sd, real |
 | `y26_p2_dys3` | 54.49 | −0.75 | 3 DySamples — 3.5 sd, real |
 
@@ -507,3 +596,103 @@ Uninterpretable. `y26_sqrt0703-4` is a failed run (39.50 missed).
 the project — batch pinned so the deltas are attributable — and it would answer the
 **resolution** question, which is the largest untested effect. Note the source images are
 natively 640×360, so 896 is *upsampling*: more pixels, not more information.
+
+---
+
+## APPENDIX — 8 runs with NO results JSON, and their reconstruction
+
+**Completeness audit, 2026-08-21.** Every YOLO26 run that has a
+`__test_full_dataset.json` anywhere in the repo (92 distinct runs, checked across
+`MODEL_v26/results/`, `archAblation/`, `round8_deploy/`, `round11_deploy/` and the
+top-level scratch copies) **is** in `MODEL_v26/results/`. Nothing missing, nothing
+orphaned, no run present in one tree and absent from the other.
+
+But `DIAGNOSTICS/confusion_collected/` holds **80** YOLO26 run folders, and only 72 of
+them have a results JSON. These 8 trained and were collected, but were never evaluated
+into a results file — so any figure quoted for them elsewhere in this document came from
+**console output**, not from a file in this repo.
+
+### Reconstruction
+
+`results.csv` survives for all 8, giving per-epoch **val** mAP. Calibrating val→test on
+the 72 runs where both exist:
+
+```
+test mAP50-95  =  val(best epoch)  +  0.69      mean over n=72
+                                     sd 0.30,  range +0.06 .. +1.30
+```
+
+| run | epochs | val best | @ep | **est. test** | quoted elsewhere | verdict |
+|---|---|---|---|---|---|---|
+| `y26_p2_b32` | 70 | 54.43 | 50 | **55.12** ± 0.30 | **55.03** | **corroborated** |
+| `y26_snt_t25` | 70 | 50.55 | 58 | **51.24** ± 0.30 | **51.31** | **corroborated** |
+| `y26_snt_t50` | 70 | 41.92 | 68 | **42.61** ± 0.30 | **43.24** | within ~2 sd |
+| `y26_p2_dysample` | 70 | 55.10 | 48 | 55.79 ± 0.30 | — | new |
+| `y26_p2_dys_snake` | 70 | 54.70 | 50 | 55.39 ± 0.30 | — | new |
+| `y26_p2_snake_p3p4` | 70 | 54.39 | 57 | 55.08 ± 0.30 | — | new |
+| `y26_levelspec` | **25** | 51.02 | 24 | — | — | **incomplete run — do not use** |
+| `y26_sqrt0703-4` | **1** | 36.35 | 1 | — | — | **failed run — do not use** |
+
+### What this settles
+
+1. **The console numbers were real.** `y26_p2_b32` = 55.03 and the two SNT figures are
+   independently corroborated from `results.csv`, which is a different artifact produced
+   by a different code path. The −3.93 / −12.00 SNT result and the P2-costs-0.73 story
+   both rest on genuine measurements.
+2. **Therefore `y26_p2_headref0` really did fail to reproduce `y26_p2_b32`.** 55.76 vs a
+   corroborated 55.03 is a real 0.73 discrepancy, not a mis-transcription — so it needs
+   the batch or tree-change explanation, and cannot be waved away.
+3. **Two runs in the confusion set are not results at all.** `y26_levelspec` stopped at
+   epoch 25 and `y26_sqrt0703-4` at epoch 1. Both appear in
+   `confusion_collected/ALL_RUNS_REPORT.txt` alongside completed runs with no marker
+   distinguishing them. Anything read off that report should skip these two.
+
+### Incidental finding — the val→test offset
+
+`test = val_best + 0.69 ± 0.30` over 72 runs. Two consequences worth carrying:
+
+- The **sd of 0.30** is a third independent estimate of this project's noise floor,
+  matching the round-12 cls scatter (~0.3) and the last-10-epoch val swing (0.49–0.93),
+  and contradicting the 0.12 figure taken from the single v12 `lb_uniform` seed pair.
+- The offset is a **selection artifact**: `val best` is the max of ~70 correlated noisy
+  evaluations, so it is biased high on val, yet test still comes in 0.69 *above* it. Test
+  being systematically easier than val is consistent with the dataset finding that the val
+  split carries smaller objects (mean box area 23% below test) and fewer large instances
+  (7.7% vs 9.8%). See `DATASET_v6i/DATASET_ANALYSIS_v6i.md` §5.
+
+### Known non-repo gap
+
+`round8_deploy/run_yolo26_round10_v6i.py` is the real round-10 runner, but the copies at
+`MODEL_v26/training/run_yolo26_round10_v6i.py` and at the repo root are **a Windows
+disk-space scanner** that was saved over the filename. The genuine runner is only in
+`round8_deploy/`. Fix before archiving.
+
+### Script-side audit — configs defined but never produced a result
+
+Cross-checking every `{"name": ...}` in `MODEL_v26/training/*.py` against the 92 captured
+runs. Two distinct categories:
+
+**Ran, but never evaluated into a results JSON (7)** — all have a
+`DIAGNOSTICS/confusion_collected/` folder with 70 epochs of `results.csv`, and all are
+reconstructed in the table above:
+
+| script | configs |
+|---|---|
+| `run_yolo26_arch2_v6i.py` | `y26_p2_b32`, `y26_p2_dysample`, `y26_p2_dys_snake`, `y26_p2_snake_p3p4`, `y26_levelspec` |
+| `run_yolo26_snt_v6i.py` | `y26_snt_t25`, `y26_snt_t50` |
+
+`run_yolo26_arch2_v6i.py` is the single largest evaluation gap in the project — an entire
+5-run architecture round whose numbers were only ever read off the console.
+
+**Never ran at all (7)** — no result, no confusion folder, no `results.csv`:
+
+| script | configs | note |
+|---|---|---|
+| `run_yolo26_overnight_v6i.py` | `y26_3lvl_640_b16`, `y26_3lvl_896_b16`, `y26_p2_896_b16`, `y26_m_640_b16`, `y26_m_p2_640_b16` | **the resolution + capacity grid.** Fully written, requires nothing custom, never executed. The two axes with the largest evidence behind them (896 gave +1.41 mean, 4/4 on v5i) and zero v6i measurements. |
+| `run_yolo26_dysample_sweep_v6i.py` | `y26_dys_g16` | groups=16 arm of the DySample sweep — so that sweep is 3 points, not 4 |
+| `run_yolo26_loss_isolated_v6i.py`, `run_yolo26_port_v6i.py` | `y26_anchor` | defined in two scripts, run in neither |
+
+Everything else in `MODEL_v26/training/` maps to a captured result.
+`run_yolo26_round12_v6i.py` and `run_yolo26_round13_v6i.py` report into the shared
+`runs_yolo26_overnight_r1213_v6i` file rather than their own, which is why a filename-based
+check flags them; their 7 configs are all present.
