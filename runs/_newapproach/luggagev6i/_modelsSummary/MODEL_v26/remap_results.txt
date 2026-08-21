@@ -1,0 +1,325 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/run_yolo26_overnight_r1213_v6i.py
+==============================================================================
+  PREFLIGHT
+==============================================================================
+  yolo26-p2 (4 lvl)  head_ch=0    -> c3=64   expected 64
+  yolo26-p2 (4 lvl)  head_ch=128  -> c3=128  expected 128
+  yolo26    (3 lvl)  head_ch=0    -> c3=128  expected 128
+  yolo26    (3 lvl)  head_ch=64   -> c3=64   expected 64
+  yolo26s-p2.yaml        scale=s      9.77M params
+  yolo26s-p2addw.yaml    scale=s     10.30M params
+  loss.py reads tal_beta_small                True
+  loss.py reads tal_alpha                     True
+  loss.py reads iou_type                      True
+  E2ELoss reads sbb_q                         True
+  IOU_FLAGS has diou                          True
+  TSH / SNT / SBAL inert at defaults          True
+
+  y26_remap_scb2          combo  b32  seed0  yolo26s-p2.yaml c3=64 nl=4 +remap  |  SCB 2.0@64.0px
+  y26_remap_scb3          combo  b32  seed0  yolo26s-p2.yaml c3=64 nl=4 +remap  |  SCB 3.0@64.0px
+  y26_remap_base          combo  b32  seed0  yolo26s-p2.yaml c3=64 nl=4 +remap  |  SCB 3.0@64.0px  +  SBB q=0.5 inv=True
+  y26_p2addw_base         combo  b32  seed0  yolo26s-p2addw.yaml c3=64 nl=4  |  SCB 3.0@64.0px  +  SBB q=0.5 inv=True
+
+  loss bar 55.89 (scb3_sbb50 55.65, scb2_sbb50 55.7)   arch refs: stock_b32 55.76, p2_b32 55.03
+
+  4 runs, ~4.0 GPU-h
+
+
+==============================================================================
+  RUN y26_remap_scb2   [COMBO]
+  remap arch + SCB beta_small=2.0, NO SBB — the primary proposal
+==============================================================================
+  batch=32  imgsz=640  epochs=70  seed=0
+  cfg=yolo26s-p2.yaml  head_ch=0  -> c3=64, levels=4  +remap
+  differs from _ALL_OFF: {'tal_beta_small': 2.0}
+
+Transferred 360/902 items from pretrained weights
+  [remap] 120 tensors, 2.97M params copied from rows 17-22 to 23-28
+New https://pypi.org/project/ultralytics/8.4.124 available 😃 Update with 'pip install -U ultralytics'
+Ultralytics 8.4.117 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
+engine/trainer: agnostic_nms=False, alpha_end=0.0, alpha_max=0.0, alpha_min=0.0, alpha_start=0.0, amp=True, angle=1.0, area_weight_mode=inv, area_weight_norm=max, augment=False, auto_augment=randaugment, batch=32, bgr=0.0, box=7.5, cache=False, cfg=None, channels_last=False, classes=None, close_mosaic=10, cls=0.5, cls_pw=0.0, cls_remap=True, compile=False, conf=None, copy_paste=0.0, copy_paste_mode=flip, cos_lr=False, cutmix=0.0, data=/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml, degrees=0.0, deterministic=True, device=0, dfl=1.5, dgrad=0.5, dis=6.0, distill_model=None, dlam=1.0, dlog=1.0, dnn=False, dropout=0.0, dynamic=False, embed=None, end2end=None, epochs=70, erasing=0.4, exist_ok=False, fliplr=0.5, flipud=0.0, format=torchscript, fraction=1.0, freeze=None, hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, imgsz=640, iou=0.7, iou_type=ciou, keras=False, kobj=1.0, l1_scale_p=0.0, lbtal_level_topk=None, lbtal_min_level_k=1, lbtal_mode=uniform, lbtal_quality_gate=0.0, line_width=None, lr0=0.01, lrf=0.01, mask_ratio=4, max_det=300, mixup=0.0, mode=train, model=yolo26s-p2.yaml, momentum=0.937, mosaic=1.0, multi_scale=0.0, name=y26_remap_scb2-2, nbs=64, nms=False, nwd=0.0, nwd_c=24.0, opset=None, optimize=False, optimizer=auto, overlap_mask=True, patience=100, perspective=0.0, plots=True, pose=12.0, pretrained=yolo26s.pt, profile=False, project=runs_yolo26_overnight_r1213_v6i, quantize=None, rect=False, resume=False, retina_masks=False, rle=1.0, save=True, save_conf=False, save_crop=False, save_dir=/home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight_r1213_v6i/y26_remap_scb2-2, save_frames=False, save_json=False, save_period=-1, save_txt=False, sbb_invert=False, sbb_q=0.0, sbb_ref_px=64.0, scale=0.5, scale_balance=0.0, seed=0, sharp_rho=1.0, shear=0.0, show=False, show_boxes=True, show_conf=True, show_labels=True, simplify=True, single_cls=False, small_obj_boost=1.0, small_obj_px=0, snt_gamma=2.0, snt_min_iou=0.5, snt_tau=0.0, source=None, split=val, stream_buffer=False, tal_alpha=0.5, tal_beta=6.0, tal_beta_ref_px=64.0, tal_beta_small=2.0, task=detect, time=None, tracker=tracktrack.yaml, translate=0.1, use_lbtal=False, val=True, verbose=True, vid_stride=1, visualize=False, warmup_bias_lr=0.1, warmup_epochs=3.0, warmup_momentum=0.8, weight_decay=0.0005, workers=8, workspace=None
+Overriding model.yaml nc=80 with nc=3
+
+                   from  n    params  module                                       arguments
+  0                  -1  1       928  ultralytics.nn.modules.conv.Conv             [3, 32, 3, 2]
+  1                  -1  1     18560  ultralytics.nn.modules.conv.Conv             [32, 64, 3, 2]
+  2                  -1  1     26080  ultralytics.nn.modules.block.C3k2            [64, 128, 1, False, 0.25]
+  3                  -1  1    147712  ultralytics.nn.modules.conv.Conv             [128, 128, 3, 2]
+  4                  -1  1    103360  ultralytics.nn.modules.block.C3k2            [128, 256, 1, False, 0.25]
+  5                  -1  1    590336  ultralytics.nn.modules.conv.Conv             [256, 256, 3, 2]
+  6                  -1  1    346112  ultralytics.nn.modules.block.C3k2            [256, 256, 1, True]
+  7                  -1  1   1180672  ultralytics.nn.modules.conv.Conv             [256, 512, 3, 2]
+  8                  -1  1   1380352  ultralytics.nn.modules.block.C3k2            [512, 512, 1, True]
+  9                  -1  1    656896  ultralytics.nn.modules.block.SPPF            [512, 512, 5, 3, True]
+ 10                  -1  1    990976  ultralytics.nn.modules.block.C2PSA           [512, 512, 1]
+ 11                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 12             [-1, 6]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 13                  -1  1    477184  ultralytics.nn.modules.block.C3k2            [768, 256, 1, True]
+ 14                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 15             [-1, 4]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 16                  -1  1    136192  ultralytics.nn.modules.block.C3k2            [512, 128, 1, True]
+ 17                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 18             [-1, 2]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 19                  -1  1     34304  ultralytics.nn.modules.block.C3k2            [256, 64, 1, True]
+ 20                  -1  1     36992  ultralytics.nn.modules.conv.Conv             [64, 64, 3, 2]
+ 21            [-1, 16]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 22                  -1  1     95232  ultralytics.nn.modules.block.C3k2            [192, 128, 1, True]
+ 23                  -1  1    147712  ultralytics.nn.modules.conv.Conv             [128, 128, 3, 2]
+ 24            [-1, 13]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 25                  -1  1    378880  ultralytics.nn.modules.block.C3k2            [384, 256, 1, True]
+ 26                  -1  1    590336  ultralytics.nn.modules.conv.Conv             [256, 256, 3, 2]
+ 27            [-1, 10]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 28                  -1  1   1843712  ultralytics.nn.modules.block.C3k2            [768, 512, 1, True, 0.5, True]
+ 29    [19, 22, 25, 28]  1    481976  ultralytics.nn.modules.head.Detect           [3, 1, True, [64, 128, 256, 512]]
+YOLO26s-p2 summary: 329 layers, 9,664,504 parameters, 9,664,504 gradients
+
+Transferred 766/902 items from pretrained weights
+AMP: running Automatic Mixed Precision (AMP) checks...
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
+AMP: checks passed ✅
+train: Fast image access ✅ (ping: 0.0±0.0 ms, read: 4492.1±2235.4 MB/s, size: 50.8 KB)
+train: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/labels.cache... 9138 images, 0 backgrounds, 2 corrupt: 100% ━━━━━━━━━━━━ 9138/9138 2.7Git/s 0.0s
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/LuggageDatasett1698_png.rf.c73555c0487aff417c73fce0f7ff3172.jpg: 1 duplicate labels removed
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/Screenshot-from-2025-10-27-15-23-44_png.rf.55c77ccf09439052adb6921681e5bea0.jpg: ignoring corrupt image/label: labels mix segment and detection rows
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/Screenshot-from-2025-10-27-15-24-40_png.rf.70c6247da3192946a026b86d1fcacb94.jpg: ignoring corrupt image/label: labels mix segment and detection rows
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/train_Handbag_d7994600d2ee72d9_jpg.rf.03a5be757a0cfe719cdaed5f78c75368.jpg: 1 duplicate labels removed
+val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 2840.1±1310.5 MB/s, size: 51.8 KB)
+val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/labels.cache... 1827 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1827/1827 182.5Mit/s 0.0s
+val: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/images/LuggageDatasett2538_png.rf.6465967949862aac4e22edcd41ef5718.jpg: 1 duplicate labels removed
+optimizer: 'optimizer=auto' found, ignoring 'lr0=0.01' and 'momentum=0.937' and determining best 'optimizer', 'lr0' and 'momentum' automatically...
+optimizer: MuSGD(lr=0.01, momentum=0.9) with parameter groups 145 weight(decay=0.0), 161 weight(decay=0.0005), 161 bias(decay=0.0)
+Plotting labels to /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight_r1213_v6i/y26_remap_scb2-2/labels.jpg...
+Image sizes 640 train, 640 val
+Using 8 dataloader workers
+Logging results to /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight_r1213_v6i/y26_remap_scb2-2
+Starting training for 70 epochs...
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
+
+      Epoch    GPU_mem   box_loss   cls_loss    l1_loss  Instances       Size
+       1/70      14.4G      2.373      4.194   0.009198        104        640: 100% ━━━━━━━━━━━━ 286/286 3.6it/s 1:19
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 29/29 6.8it/s 4.3s
+                   all       1827       9818      0.523      0.485      0.485      0.245
+  [guard] c3=64 on cv3 and one2one_cv3 | c2=16 | levels=4 | reg_max=1
+
+  [FAIL] y26_remap_scb2: y26_remap_scb2: SBB not live/wrong on one2many (q=0.0)
+
+
+==============================================================================
+  RUN y26_remap_scb3   [COMBO]
+  remap arch + SCB ONLY at beta_small=3.0 — is SBB now redundant?
+==============================================================================
+  batch=32  imgsz=640  epochs=70  seed=0
+  cfg=yolo26s-p2.yaml  head_ch=0  -> c3=64, levels=4  +remap
+  differs from _ALL_OFF: {'tal_beta_small': 3.0}
+
+Transferred 360/902 items from pretrained weights
+  [remap] 120 tensors, 2.97M params copied from rows 17-22 to 23-28
+New https://pypi.org/project/ultralytics/8.4.124 available 😃 Update with 'pip install -U ultralytics'
+Ultralytics 8.4.117 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
+engine/trainer: agnostic_nms=False, alpha_end=0.0, alpha_max=0.0, alpha_min=0.0, alpha_start=0.0, amp=True, angle=1.0, area_weight_mode=inv, area_weight_norm=max, augment=False, auto_augment=randaugment, batch=32, bgr=0.0, box=7.5, cache=False, cfg=None, channels_last=False, classes=None, close_mosaic=10, cls=0.5, cls_pw=0.0, cls_remap=True, compile=False, conf=None, copy_paste=0.0, copy_paste_mode=flip, cos_lr=False, cutmix=0.0, data=/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml, degrees=0.0, deterministic=True, device=0, dfl=1.5, dgrad=0.5, dis=6.0, distill_model=None, dlam=1.0, dlog=1.0, dnn=False, dropout=0.0, dynamic=False, embed=None, end2end=None, epochs=70, erasing=0.4, exist_ok=False, fliplr=0.5, flipud=0.0, format=torchscript, fraction=1.0, freeze=None, hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, imgsz=640, iou=0.7, iou_type=ciou, keras=False, kobj=1.0, l1_scale_p=0.0, lbtal_level_topk=None, lbtal_min_level_k=1, lbtal_mode=uniform, lbtal_quality_gate=0.0, line_width=None, lr0=0.01, lrf=0.01, mask_ratio=4, max_det=300, mixup=0.0, mode=train, model=yolo26s-p2.yaml, momentum=0.937, mosaic=1.0, multi_scale=0.0, name=y26_remap_scb3-2, nbs=64, nms=False, nwd=0.0, nwd_c=24.0, opset=None, optimize=False, optimizer=auto, overlap_mask=True, patience=100, perspective=0.0, plots=True, pose=12.0, pretrained=yolo26s.pt, profile=False, project=runs_yolo26_overnight_r1213_v6i, quantize=None, rect=False, resume=False, retina_masks=False, rle=1.0, save=True, save_conf=False, save_crop=False, save_dir=/home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight_r1213_v6i/y26_remap_scb3-2, save_frames=False, save_json=False, save_period=-1, save_txt=False, sbb_invert=False, sbb_q=0.0, sbb_ref_px=64.0, scale=0.5, scale_balance=0.0, seed=0, sharp_rho=1.0, shear=0.0, show=False, show_boxes=True, show_conf=True, show_labels=True, simplify=True, single_cls=False, small_obj_boost=1.0, small_obj_px=0, snt_gamma=2.0, snt_min_iou=0.5, snt_tau=0.0, source=None, split=val, stream_buffer=False, tal_alpha=0.5, tal_beta=6.0, tal_beta_ref_px=64.0, tal_beta_small=3.0, task=detect, time=None, tracker=tracktrack.yaml, translate=0.1, use_lbtal=False, val=True, verbose=True, vid_stride=1, visualize=False, warmup_bias_lr=0.1, warmup_epochs=3.0, warmup_momentum=0.8, weight_decay=0.0005, workers=8, workspace=None
+Overriding model.yaml nc=80 with nc=3
+
+                   from  n    params  module                                       arguments
+  0                  -1  1       928  ultralytics.nn.modules.conv.Conv             [3, 32, 3, 2]
+  1                  -1  1     18560  ultralytics.nn.modules.conv.Conv             [32, 64, 3, 2]
+  2                  -1  1     26080  ultralytics.nn.modules.block.C3k2            [64, 128, 1, False, 0.25]
+  3                  -1  1    147712  ultralytics.nn.modules.conv.Conv             [128, 128, 3, 2]
+  4                  -1  1    103360  ultralytics.nn.modules.block.C3k2            [128, 256, 1, False, 0.25]
+  5                  -1  1    590336  ultralytics.nn.modules.conv.Conv             [256, 256, 3, 2]
+  6                  -1  1    346112  ultralytics.nn.modules.block.C3k2            [256, 256, 1, True]
+  7                  -1  1   1180672  ultralytics.nn.modules.conv.Conv             [256, 512, 3, 2]
+  8                  -1  1   1380352  ultralytics.nn.modules.block.C3k2            [512, 512, 1, True]
+  9                  -1  1    656896  ultralytics.nn.modules.block.SPPF            [512, 512, 5, 3, True]
+ 10                  -1  1    990976  ultralytics.nn.modules.block.C2PSA           [512, 512, 1]
+ 11                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 12             [-1, 6]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 13                  -1  1    477184  ultralytics.nn.modules.block.C3k2            [768, 256, 1, True]
+ 14                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 15             [-1, 4]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 16                  -1  1    136192  ultralytics.nn.modules.block.C3k2            [512, 128, 1, True]
+ 17                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 18             [-1, 2]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 19                  -1  1     34304  ultralytics.nn.modules.block.C3k2            [256, 64, 1, True]
+ 20                  -1  1     36992  ultralytics.nn.modules.conv.Conv             [64, 64, 3, 2]
+ 21            [-1, 16]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 22                  -1  1     95232  ultralytics.nn.modules.block.C3k2            [192, 128, 1, True]
+ 23                  -1  1    147712  ultralytics.nn.modules.conv.Conv             [128, 128, 3, 2]
+ 24            [-1, 13]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 25                  -1  1    378880  ultralytics.nn.modules.block.C3k2            [384, 256, 1, True]
+ 26                  -1  1    590336  ultralytics.nn.modules.conv.Conv             [256, 256, 3, 2]
+ 27            [-1, 10]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 28                  -1  1   1843712  ultralytics.nn.modules.block.C3k2            [768, 512, 1, True, 0.5, True]
+ 29    [19, 22, 25, 28]  1    481976  ultralytics.nn.modules.head.Detect           [3, 1, True, [64, 128, 256, 512]]
+YOLO26s-p2 summary: 329 layers, 9,664,504 parameters, 9,664,504 gradients
+
+Transferred 766/902 items from pretrained weights
+AMP: running Automatic Mixed Precision (AMP) checks...
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
+AMP: checks passed ✅
+train: Fast image access ✅ (ping: 0.0±0.0 ms, read: 3851.4±1771.6 MB/s, size: 46.6 KB)
+train: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/labels.cache... 9138 images, 0 backgrounds, 2 corrupt: 100% ━━━━━━━━━━━━ 9138/9138 5.5Git/s 0.0s
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/LuggageDatasett1698_png.rf.c73555c0487aff417c73fce0f7ff3172.jpg: 1 duplicate labels removed
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/Screenshot-from-2025-10-27-15-23-44_png.rf.55c77ccf09439052adb6921681e5bea0.jpg: ignoring corrupt image/label: labels mix segment and detection rows
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/Screenshot-from-2025-10-27-15-24-40_png.rf.70c6247da3192946a026b86d1fcacb94.jpg: ignoring corrupt image/label: labels mix segment and detection rows
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/train_Handbag_d7994600d2ee72d9_jpg.rf.03a5be757a0cfe719cdaed5f78c75368.jpg: 1 duplicate labels removed
+val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 1006.7±530.5 MB/s, size: 52.2 KB)
+val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/labels.cache... 1827 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1827/1827 182.5Mit/s 0.0s
+val: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/images/LuggageDatasett2538_png.rf.6465967949862aac4e22edcd41ef5718.jpg: 1 duplicate labels removed
+optimizer: 'optimizer=auto' found, ignoring 'lr0=0.01' and 'momentum=0.937' and determining best 'optimizer', 'lr0' and 'momentum' automatically...
+optimizer: MuSGD(lr=0.01, momentum=0.9) with parameter groups 145 weight(decay=0.0), 161 weight(decay=0.0005), 161 bias(decay=0.0)
+Plotting labels to /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight_r1213_v6i/y26_remap_scb3-2/labels.jpg...
+Image sizes 640 train, 640 val
+Using 8 dataloader workers
+Logging results to /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight_r1213_v6i/y26_remap_scb3-2
+Starting training for 70 epochs...
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
+
+      Epoch    GPU_mem   box_loss   cls_loss    l1_loss  Instances       Size
+       1/70      14.4G      2.334      4.245   0.009027        104        640: 100% ━━━━━━━━━━━━ 286/286 3.8it/s 1:15
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 29/29 6.8it/s 4.3s
+                   all       1827       9818      0.525      0.497      0.491      0.242
+  [guard] c3=64 on cv3 and one2one_cv3 | c2=16 | levels=4 | reg_max=1
+
+  [FAIL] y26_remap_scb3: y26_remap_scb3: SBB not live/wrong on one2many (q=0.0)
+
+
+==============================================================================
+  RUN y26_remap_base   [COMBO]
+  remap arch + SCB + SBB — the reference cell for the decomposition
+==============================================================================
+  batch=32  imgsz=640  epochs=70  seed=0
+  cfg=yolo26s-p2.yaml  head_ch=0  -> c3=64, levels=4  +remap
+  differs from _ALL_OFF: {'tal_beta_small': 3.0, 'sbb_q': 0.5, 'sbb_invert': True}
+
+Transferred 360/902 items from pretrained weights
+  [remap] 120 tensors, 2.97M params copied from rows 17-22 to 23-28
+New https://pypi.org/project/ultralytics/8.4.124 available 😃 Update with 'pip install -U ultralytics'
+Ultralytics 8.4.117 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
+engine/trainer: agnostic_nms=False, alpha_end=0.0, alpha_max=0.0, alpha_min=0.0, alpha_start=0.0, amp=True, angle=1.0, area_weight_mode=inv, area_weight_norm=max, augment=False, auto_augment=randaugment, batch=32, bgr=0.0, box=7.5, cache=False, cfg=None, channels_last=False, classes=None, close_mosaic=10, cls=0.5, cls_pw=0.0, cls_remap=True, compile=False, conf=None, copy_paste=0.0, copy_paste_mode=flip, cos_lr=False, cutmix=0.0, data=/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml, degrees=0.0, deterministic=True, device=0, dfl=1.5, dgrad=0.5, dis=6.0, distill_model=None, dlam=1.0, dlog=1.0, dnn=False, dropout=0.0, dynamic=False, embed=None, end2end=None, epochs=70, erasing=0.4, exist_ok=False, fliplr=0.5, flipud=0.0, format=torchscript, fraction=1.0, freeze=None, hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, imgsz=640, iou=0.7, iou_type=ciou, keras=False, kobj=1.0, l1_scale_p=0.0, lbtal_level_topk=None, lbtal_min_level_k=1, lbtal_mode=uniform, lbtal_quality_gate=0.0, line_width=None, lr0=0.01, lrf=0.01, mask_ratio=4, max_det=300, mixup=0.0, mode=train, model=yolo26s-p2.yaml, momentum=0.937, mosaic=1.0, multi_scale=0.0, name=y26_remap_base-2, nbs=64, nms=False, nwd=0.0, nwd_c=24.0, opset=None, optimize=False, optimizer=auto, overlap_mask=True, patience=100, perspective=0.0, plots=True, pose=12.0, pretrained=yolo26s.pt, profile=False, project=runs_yolo26_overnight_r1213_v6i, quantize=None, rect=False, resume=False, retina_masks=False, rle=1.0, save=True, save_conf=False, save_crop=False, save_dir=/home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight_r1213_v6i/y26_remap_base-2, save_frames=False, save_json=False, save_period=-1, save_txt=False, sbb_invert=True, sbb_q=0.5, sbb_ref_px=64.0, scale=0.5, scale_balance=0.0, seed=0, sharp_rho=1.0, shear=0.0, show=False, show_boxes=True, show_conf=True, show_labels=True, simplify=True, single_cls=False, small_obj_boost=1.0, small_obj_px=0, snt_gamma=2.0, snt_min_iou=0.5, snt_tau=0.0, source=None, split=val, stream_buffer=False, tal_alpha=0.5, tal_beta=6.0, tal_beta_ref_px=64.0, tal_beta_small=3.0, task=detect, time=None, tracker=tracktrack.yaml, translate=0.1, use_lbtal=False, val=True, verbose=True, vid_stride=1, visualize=False, warmup_bias_lr=0.1, warmup_epochs=3.0, warmup_momentum=0.8, weight_decay=0.0005, workers=8, workspace=None
+Overriding model.yaml nc=80 with nc=3
+
+                   from  n    params  module                                       arguments
+  0                  -1  1       928  ultralytics.nn.modules.conv.Conv             [3, 32, 3, 2]
+  1                  -1  1     18560  ultralytics.nn.modules.conv.Conv             [32, 64, 3, 2]
+  2                  -1  1     26080  ultralytics.nn.modules.block.C3k2            [64, 128, 1, False, 0.25]
+  3                  -1  1    147712  ultralytics.nn.modules.conv.Conv             [128, 128, 3, 2]
+  4                  -1  1    103360  ultralytics.nn.modules.block.C3k2            [128, 256, 1, False, 0.25]
+  5                  -1  1    590336  ultralytics.nn.modules.conv.Conv             [256, 256, 3, 2]
+  6                  -1  1    346112  ultralytics.nn.modules.block.C3k2            [256, 256, 1, True]
+  7                  -1  1   1180672  ultralytics.nn.modules.conv.Conv             [256, 512, 3, 2]
+  8                  -1  1   1380352  ultralytics.nn.modules.block.C3k2            [512, 512, 1, True]
+  9                  -1  1    656896  ultralytics.nn.modules.block.SPPF            [512, 512, 5, 3, True]
+ 10                  -1  1    990976  ultralytics.nn.modules.block.C2PSA           [512, 512, 1]
+ 11                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 12             [-1, 6]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 13                  -1  1    477184  ultralytics.nn.modules.block.C3k2            [768, 256, 1, True]
+ 14                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 15             [-1, 4]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 16                  -1  1    136192  ultralytics.nn.modules.block.C3k2            [512, 128, 1, True]
+ 17                  -1  1         0  torch.nn.modules.upsampling.Upsample         [None, 2, 'nearest']
+ 18             [-1, 2]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 19                  -1  1     34304  ultralytics.nn.modules.block.C3k2            [256, 64, 1, True]
+ 20                  -1  1     36992  ultralytics.nn.modules.conv.Conv             [64, 64, 3, 2]
+ 21            [-1, 16]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 22                  -1  1     95232  ultralytics.nn.modules.block.C3k2            [192, 128, 1, True]
+ 23                  -1  1    147712  ultralytics.nn.modules.conv.Conv             [128, 128, 3, 2]
+ 24            [-1, 13]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 25                  -1  1    378880  ultralytics.nn.modules.block.C3k2            [384, 256, 1, True]
+ 26                  -1  1    590336  ultralytics.nn.modules.conv.Conv             [256, 256, 3, 2]
+ 27            [-1, 10]  1         0  ultralytics.nn.modules.conv.Concat           [1]
+ 28                  -1  1   1843712  ultralytics.nn.modules.block.C3k2            [768, 512, 1, True, 0.5, True]
+ 29    [19, 22, 25, 28]  1    481976  ultralytics.nn.modules.head.Detect           [3, 1, True, [64, 128, 256, 512]]
+YOLO26s-p2 summary: 329 layers, 9,664,504 parameters, 9,664,504 gradients
+
+Transferred 766/902 items from pretrained weights
+AMP: running Automatic Mixed Precision (AMP) checks...
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
+AMP: checks passed ✅
+train: Fast image access ✅ (ping: 0.0±0.0 ms, read: 3594.4±1222.7 MB/s, size: 46.6 KB)
+train: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/labels.cache... 9138 images, 0 backgrounds, 2 corrupt: 100% ━━━━━━━━━━━━ 9138/9138 4.8Git/s 0.0s
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/LuggageDatasett1698_png.rf.c73555c0487aff417c73fce0f7ff3172.jpg: 1 duplicate labels removed
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/Screenshot-from-2025-10-27-15-23-44_png.rf.55c77ccf09439052adb6921681e5bea0.jpg: ignoring corrupt image/label: labels mix segment and detection rows
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/Screenshot-from-2025-10-27-15-24-40_png.rf.70c6247da3192946a026b86d1fcacb94.jpg: ignoring corrupt image/label: labels mix segment and detection rows
+train: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/train/images/train_Handbag_d7994600d2ee72d9_jpg.rf.03a5be757a0cfe719cdaed5f78c75368.jpg: 1 duplicate labels removed
+val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 1949.9±1526.8 MB/s, size: 52.2 KB)
+val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/labels.cache... 1827 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1827/1827 80.7Mit/s 0.0s
+val: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/images/LuggageDatasett2538_png.rf.6465967949862aac4e22edcd41ef5718.jpg: 1 duplicate labels removed
+optimizer: 'optimizer=auto' found, ignoring 'lr0=0.01' and 'momentum=0.937' and determining best 'optimizer', 'lr0' and 'momentum' automatically...
+optimizer: MuSGD(lr=0.01, momentum=0.9) with parameter groups 145 weight(decay=0.0), 161 weight(decay=0.0005), 161 bias(decay=0.0)
+Plotting labels to /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight_r1213_v6i/y26_remap_base-2/labels.jpg...
+Image sizes 640 train, 640 val
+Using 8 dataloader workers
+Logging results to /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_overnight_r1213_v6i/y26_remap_base-2
+Starting training for 70 epochs...
+SBB active | q=0.5 ref=64.0px | one2many sign=+1 (small) one2one sign=-1 (large)  [INVERTED control]
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
+
+      Epoch    GPU_mem   box_loss   cls_loss    l1_loss  Instances       Size
+       1/70      14.4G      2.405      4.318   0.006913        104        640: 100% ━━━━━━━━━━━━ 286/286 3.8it/s 1:15
+SBB active | q=0.5 ref=64.0px | one2many sign=+1 (small) one2one sign=-1 (large)  [INVERTED control]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 29/29 6.8it/s 4.2s
+                   all       1827       9818       0.51      0.488      0.478      0.219
+  [guard] c3=64 on cv3 and one2one_cv3 | c2=16 | levels=4 | reg_max=1
+  [guard] SCB 3.0->6.0@64.0px BOTH branches
+  [guard] SBB q=0.5 o2m=+1(large) o2o=-1(small)
+  [guard] nothing else live | gains box=7.5 cls=0.5 dfl=1.5
+
+      Epoch    GPU_mem   box_loss   cls_loss    l1_loss  Instances       Size
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
+       2/70      14.1G       1.85      2.062   0.004773        133        640: 100% ━━━━━━━━━━━━ 286/286 3.9it/s 1:14
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 29/29 6.7it/s 4.3s
+                   all       1827       9818      0.622      0.573      0.612      0.344
+
+      Epoch    GPU_mem   box_loss   cls_loss    l1_loss  Instances       Size
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
+       3/70      14.3G      1.802      1.624   0.004665        134        640: 100% ━━━━━━━━━━━━ 286/286 4.0it/s 1:12
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 29/29 6.6it/s 4.4s
+                   all       1827       9818      0.587      0.541      0.573      0.313
+
+      Epoch    GPU_mem   box_loss   cls_loss    l1_loss  Instances       Size
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
+       4/70      14.3G      1.763       1.52   0.004532        141        640: 100% ━━━━━━━━━━━━ 286/286 4.0it/s 1:12
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 29/29 6.5it/s 4.5s
+                   all       1827       9818      0.655      0.567      0.624      0.338
+
+      Epoch    GPU_mem   box_loss   cls_loss    l1_loss  Instances       Size
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
+       5/70      14.2G      1.714      1.418   0.004336        109        640: 100% ━━━━━━━━━━━━ 286/286 4.0it/s 1:12
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100% ━━━━━━━━━━━━ 29/29 6.7it/s 4.3s
+                   all       1827       9818       0.65      0.563      0.617      0.363
+
+      Epoch    GPU_mem   box_loss   cls_loss    l1_loss  Instances       Size
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:804: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sx = feats[0].new_full((w,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift x
+/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/utils/tal.py:805: UserWarning: cumsum_cuda_kernel does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at ../aten/src/ATen/Context.cpp:91.)
+  sy = feats[0].new_full((h,), 1, dtype=dtype).cumsum(0) - (1 - grid_cell_offset)  # shift y
