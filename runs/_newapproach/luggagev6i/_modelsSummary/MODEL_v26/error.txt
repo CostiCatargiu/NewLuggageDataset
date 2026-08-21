@@ -1,0 +1,244 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/CocoEvalAllFolders_luggage.py
+================================================================================
+BATCH COCO EVALUATION — v6i
+================================================================================
+Root folder      : /home/constantin/Doctorat/YoloLib/runs/detect
+Phase pattern    : runs_yolo26_round5_v6i
+Split 'test_full_dataset':  ann=/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/annotations_coco_test.json
+                     yaml=/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml  ultra_split=test
+Image size       : 640
+Skip done        : True
+Size buckets     : COCO AREA — small < 48^2 = 2304, large > 128^2 = 16384 px^2
+                   (NOT the max-side 48/96 of the dataset report)
+Params files     : scale_params.json, v3_params.json, ablation_params.json, combo_params.json
+Combined output  : /home/constantin/Doctorat/YoloLib/runs/detect//all_results.json
+================================================================================
+
+[INFO] Found 1 phase folder(s):
+  - runs_yolo26_round5_v6i         (3 runs)
+
+
+================================================================================
+=== SPLIT: TEST_FULL_DATASET (yaml: /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/data.yaml, split='test') ===
+================================================================================
+  [YAML] val: '/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/valid/images' -> '/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/test/images'
+
+################################################################################
+# PHASE FOLDER : runs_yolo26_round5_v6i
+# SPLIT        : test_full_dataset  (ultralytics split='test')
+# COCO ANN     : /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/annotations_coco_test.json
+# OUTPUT       : /home/constantin/Doctorat/YoloLib/runs/detect/runs_yolo26_round5_v6i/runs_yolo26_round5_v6i__test_full_dataset.json
+################################################################################
+[INFO] 3 run(s) with best.pt in runs_yolo26_round5_v6i
+
+[INFO] Runs to process:
+  [TODO] y26_p2k1_lo
+  [TODO] y26_p2k2_hi
+  [TODO] y26_p2k4_hi
+
+
+======================================================================
+  RUN    : y26_p2k1_lo
+  SPLIT  : test_full_dataset  (ultralytics split='test')
+======================================================================
+  [WARN] none of ('scale_params.json', 'v3_params.json', 'ablation_params.json', 'combo_params.json') found in y26_p2k1_lo — params AND meta will be empty for this run. Its configuration cannot be reconstructed from the eval JSON.
+Ultralytics 8.4.117 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
+y26_p2_dysample summary (fused): 152 layers, 9,410,444 parameters, 0 gradients
+val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 4415.3±1423.0 MB/s, size: 52.3 KB)
+val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/test/labels.cache... 1219 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1219/1219 464.8Mit/s 0.0s
+
+  [FAILED] y26_p2k1_lo
+  'DySample' object has no attribute 'scope'
+Traceback (most recent call last):
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/CocoEvalAllFolders_luggage.py", line 611, in process_phase_folder_on_split
+    entry = eval_run(run_dir, data_yaml, coco_ann, img_size,
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/CocoEvalAllFolders_luggage.py", line 492, in eval_run
+    val_results = model.val(
+                  ^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/engine/model.py", line 597, in val
+    validator(model=self.model)
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/engine/validator.py", line 240, in __call__
+    model.warmup(imgsz=(1 if pt else self.args.batch, self.data["channels"], imgsz, imgsz))  # warmup
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/autobackend.py", line 327, in warmup
+    self.forward(im)  # warmup model
+    ^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/autobackend.py", line 285, in forward
+    y = self.backend.forward(im, **forward_kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/backends/pytorch.py", line 93, in forward
+    return self.model(im, augment=augment, embed=embed, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/tasks.py", line 160, in forward
+    return self.predict(x, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/tasks.py", line 176, in predict
+    return self._predict_once(x, profile, embed)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/tasks.py", line 197, in _predict_once
+    x = m(x)  # run
+        ^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/modules/block.py", line 2164, in forward
+    if self.scope is None:
+       ^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1931, in __getattr__
+    raise AttributeError(
+AttributeError: 'DySample' object has no attribute 'scope'. Did you mean: 'scale'?
+
+======================================================================
+  RUN    : y26_p2k2_hi
+  SPLIT  : test_full_dataset  (ultralytics split='test')
+======================================================================
+  [WARN] none of ('scale_params.json', 'v3_params.json', 'ablation_params.json', 'combo_params.json') found in y26_p2k2_hi — params AND meta will be empty for this run. Its configuration cannot be reconstructed from the eval JSON.
+Ultralytics 8.4.117 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
+y26_p2_dysample summary (fused): 152 layers, 9,410,444 parameters, 0 gradients
+val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 4756.8±1413.7 MB/s, size: 50.2 KB)
+val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/test/labels.cache... 1219 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1219/1219 340.9Mit/s 0.0s
+
+  [FAILED] y26_p2k2_hi
+  'DySample' object has no attribute 'scope'
+Traceback (most recent call last):
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/CocoEvalAllFolders_luggage.py", line 611, in process_phase_folder_on_split
+    entry = eval_run(run_dir, data_yaml, coco_ann, img_size,
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/CocoEvalAllFolders_luggage.py", line 492, in eval_run
+    val_results = model.val(
+                  ^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/engine/model.py", line 597, in val
+    validator(model=self.model)
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/engine/validator.py", line 240, in __call__
+    model.warmup(imgsz=(1 if pt else self.args.batch, self.data["channels"], imgsz, imgsz))  # warmup
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/autobackend.py", line 327, in warmup
+    self.forward(im)  # warmup model
+    ^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/autobackend.py", line 285, in forward
+    y = self.backend.forward(im, **forward_kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/backends/pytorch.py", line 93, in forward
+    return self.model(im, augment=augment, embed=embed, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/tasks.py", line 160, in forward
+    return self.predict(x, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/tasks.py", line 176, in predict
+    return self._predict_once(x, profile, embed)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/tasks.py", line 197, in _predict_once
+    x = m(x)  # run
+        ^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/modules/block.py", line 2164, in forward
+    if self.scope is None:
+       ^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1931, in __getattr__
+    raise AttributeError(
+AttributeError: 'DySample' object has no attribute 'scope'. Did you mean: 'scale'?
+
+======================================================================
+  RUN    : y26_p2k4_hi
+  SPLIT  : test_full_dataset  (ultralytics split='test')
+======================================================================
+  [WARN] none of ('scale_params.json', 'v3_params.json', 'ablation_params.json', 'combo_params.json') found in y26_p2k4_hi — params AND meta will be empty for this run. Its configuration cannot be reconstructed from the eval JSON.
+Ultralytics 8.4.117 🚀 Python-3.12.3 torch-2.5.1+cu121 CUDA:0 (NVIDIA GeForce RTX 4090, 24072MiB)
+y26_p2_dysample summary (fused): 152 layers, 9,410,444 parameters, 0 gradients
+val: Fast image access ✅ (ping: 0.0±0.0 ms, read: 4587.6±1098.5 MB/s, size: 52.4 KB)
+val: Scanning /home/constantin/Doctorat/LuggageDataset.v6i.yolov12/test/labels.cache... 1219 images, 0 backgrounds, 0 corrupt: 100% ━━━━━━━━━━━━ 1219/1219 393.3Mit/s 0.0s
+
+  [FAILED] y26_p2k4_hi
+  'DySample' object has no attribute 'scope'
+
+[INFO] runs_yolo26_round5_v6i/test_full_dataset: 0 new, 3 failed, total 0
+  [YAML] restored original val: field
+
+[INFO] Combined results saved to /home/constantin/Doctorat/YoloLib/runs/detect//all_results.json
+
+================================================================================
+ALL DONE
+================================================================================
+Total new runs evaluated: 0
+Total failed: 3
+================================================================================
+Traceback (most recent call last):
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/CocoEvalAllFolders_luggage.py", line 611, in process_phase_folder_on_split
+    entry = eval_run(run_dir, data_yaml, coco_ann, img_size,
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/CocoEvalAllFolders_luggage.py", line 492, in eval_run
+    val_results = model.val(
+                  ^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/engine/model.py", line 597, in val
+    validator(model=self.model)
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/engine/validator.py", line 240, in __call__
+    model.warmup(imgsz=(1 if pt else self.args.batch, self.data["channels"], imgsz, imgsz))  # warmup
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/autobackend.py", line 327, in warmup
+    self.forward(im)  # warmup model
+    ^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/autobackend.py", line 285, in forward
+    y = self.backend.forward(im, **forward_kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/backends/pytorch.py", line 93, in forward
+    return self.model(im, augment=augment, embed=embed, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/tasks.py", line 160, in forward
+    return self.predict(x, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/tasks.py", line 176, in predict
+    return self._predict_once(x, profile, embed)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/tasks.py", line 197, in _predict_once
+    x = m(x)  # run
+        ^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/ultralytics/nn/modules/block.py", line 2164, in forward
+    if self.scope is None:
+       ^^^^^^^^^^
+  File "/home/constantin/Doctorat/YoloLib/venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1931, in __getattr__
+    raise AttributeError(
+AttributeError: 'DySample' object has no attribute 'scope'. Did you mean: 'scale'?
+
+Process finished with exit code 0
