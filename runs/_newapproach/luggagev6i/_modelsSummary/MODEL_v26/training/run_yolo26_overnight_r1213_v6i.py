@@ -136,7 +136,10 @@ P2_128 = 54.61  # y26_p2_headref128 4 lvl, c3=128, fresh head + fresh PAN
 L3_64 = 55.25  # y26_3lvl_head64   3 lvl, c3= 64, PRETRAINED head
 CLS075_SEED0 = 55.89  # y26_scb3_sbb50_cls075 — one draw on a jagged curve, not a config
 CTRL_P2 = 55.76  # y26_p2_headref0  in-tree 4-level control (small 52.17, large 54.87)
-REMAP_B32 = 55.84  # y26_p2_remap     in-tree, transfer fixed (small 51.54, large 58.53)
+REMAP_B32 = 55.84  # y26_p2_remap     transfer fixed, STOCK loss (small 51.54, large 58.53)
+REMAP_DYS = 55.77  # y26_remap_dys    + DySample + SCB/SBB      (small 51.57, large 59.78)
+REMAP_BASE = 55.44  # y26_remap_base   + SCB/SBB                 (small 51.52, large 59.91)
+P2ADDW = 55.06  # y26_p2addw_base  wider P2 + SCB/SBB        (small 50.94, large 59.79)
 
 _ALL_OFF = dict(
     alpha_start=0.0, alpha_end=0.0, alpha_min=0.0, alpha_max=0.0,
@@ -209,30 +212,39 @@ RUNS = [
     # Closed axes: cls gain, tal_beta gap (b8 lost 1.17), tal_alpha, overlap metric.
 
     # ============================================ ROUND 14 -- SPEND THE LARGE HEADROOM
-    # Fixing the weight transfer bought +3.7 on LARGE and cost 0.6 on small, replicated
-    # across three runs. Every loss mechanism here trades small against large, and SBB
-    # exists ONLY to buy large back. So the architecture has already paid for what SBB
-    # provides, and settings that were previously too expensive on the large side are now
-    # affordable. All b32; the reference is y26_p2_remap = 55.84 (small 51.54, large 58.53).
+    # DONE. Reference y26_p2_remap = 55.84 (transfer fixed, STOCK loss), all b32:
+    #   y26_remap_dys     55.77  small 51.57  large 59.78  mAP50 81.65   + DySample + loss
+    #   y26_remap_base    55.44  small 51.52  large 59.91                + loss
+    #   y26_p2addw_base   55.06  small 50.94  large 59.79   wider P2 -- REFUTED, -0.78
     #
-    # Deliberately a 2-step decomposition rather than one combined jump:
-    #   remap alone            55.84   (measured)
-    #   remap + SCB3 + SBB50   run 3   <- does the loss config add anything on this arch?
-    #   remap + SCB3           run 2   <- what does dropping SBB do, beta_small held
-    #   remap + SCB2           run 1   <- what does the stronger small push do, SBB held off
-    {"name": "y26_remap_dys", "arm": "combo", "batch": 32, "cfg": CFG_P2DYS, "head_ch": 0,
-     "remap": True, "want_c3": 64, "want_nl": 4, "params": cfg(),
-     "expect": dict(_BASE_EXPECT),
-     "label": "remap arch + DySample + SCB + SBB — the largest measured effect, on the fix",
-     "why": "DySample is the biggest single effect in the whole project: 55.03 -> 55.94, "
-            "about +0.9, far larger than every loss mechanism combined. It has only ever "
-            "been measured on the broken-transfer graph, where the PAN was training from "
-            "scratch underneath it. Swapping nn.Upsample for DySample at row 17 shifts no "
-            "indices, so the rows 17-22 -> 23-28 remap still applies and this stacks the "
-            "largest arch effect on top of the fix, with the best loss config on top of "
-            "that. Caveat: F.grid_sample makes this graph non-deterministic, replicate sd "
-            "0.19. A +0.9 is ~4.7 sd so n=1 carries it; a +0.3 from this run does not."},
+    # The result that matters: the loss config COSTS 0.40 on the fixed architecture
+    # (55.44 vs 55.84) after being worth +0.41 on the stock one. The sign flipped. SBB
+    # exists to buy back large objects, the transfer fix already bought them (+3.7), so
+    # the loss now pays for something it no longer needs -- and pays in small objects.
+    # DySample is still worth +0.33 here (55.77 - 55.44) against ~+0.9 on the broken
+    # graph, so part of its old value was compensating for the same defect.
+    #
+    # {"name": "y26_remap_dys",    CFG_P2DYS,   remap, cfg()}  -> 55.77
+    # {"name": "y26_remap_base",   CFG_P2,      remap, cfg()}  -> 55.44
+    # {"name": "y26_p2addw_base",  CFG_P2ADDW,         cfg()}  -> 55.06
 
+    # ================================================ ROUND 15 -- DROP THE LOSS ENTIRELY
+    {"name": "y26_remap_dys_stock", "arm": "combo", "batch": 32, "cfg": CFG_P2DYS,
+     "head_ch": 0, "remap": True, "want_c3": 64, "want_nl": 4,
+     "params": dict(_ALL_OFF), "expect": {},
+     "label": "remap + DySample + STOCK loss — the only untested cell that can win",
+     "why": "Every DySample run in the project has carried a loss config, and on the fixed "
+            "architecture that config is measurably NEGATIVE: 55.44 with it, 55.84 without. "
+            "Both deltas point at the same missing cell -- loss -0.40, DySample +0.33 -- so "
+            "55.84 + 0.33 = ~56.2 is the estimate, with the caveat that additivity is "
+            "exactly what has failed in 3 of 4 combinations here. If it wins, the headline "
+            "model is architecture-only with a STOCK loss: one yaml plus a weight-loading "
+            "fix, no hyperparameters to justify, which is far easier to defend."},
+
+    # RERUN — both were killed at epoch 1 by a guard bug (the SCB/SBB checks were
+    # unconditional, so any SBB-off run failed "SBB not live"). The 24.87 / 24.81 in the
+    # results file are ONE-EPOCH models the eval script picked up; discard them. Delete
+    # the stale run dirs first or ultralytics keeps auto-incrementing to -3.
     {"name": "y26_remap_scb2", "arm": "combo", "batch": 32, "cfg": CFG_P2, "head_ch": 0,
      "remap": True, "want_c3": 64, "want_nl": 4,
      "params": cfg(tal_beta_small=2.0, sbb_q=0.0, sbb_invert=False),
@@ -257,31 +269,13 @@ RUNS = [
             "This holds beta_small at the known-good 3.0 and removes only SBB. Against "
             "run 3 it isolates SBB exactly; against run 1 it isolates beta_small exactly."},
 
-    {"name": "y26_remap_base", "arm": "combo", "batch": 32, "cfg": CFG_P2, "head_ch": 0,
-     "remap": True, "want_c3": 64, "want_nl": 4, "params": cfg(),
-     "expect": dict(_BASE_EXPECT),
-     "label": "remap arch + SCB + SBB — the reference cell for the decomposition",
-     "why": "The campaign's best loss config on the fixed architecture. Reads directly "
-            "against y26_p2_remap = 55.84 to answer whether the loss mechanisms still earn "
-            "anything once the architecture is repaired, and it is the cell runs 1 and 2 "
-            "are subtracted from. Also the first run in the project to move an architecture "
-            "and a loss at the same time."},
+    # {"name": "y26_remap_base",  CFG_P2,     remap, cfg(), _BASE_EXPECT}   -> 55.44
+    # {"name": "y26_p2addw_base", CFG_P2ADDW, head_ch 64,   cfg()}          -> 55.06  REFUTED
 
-    {"name": "y26_p2addw_base", "arm": "combo", "batch": 32, "cfg": CFG_P2ADDW, "head_ch": 64,
-     "remap": False, "want_c3": 64, "want_nl": 4, "params": cfg(),
-     "expect": dict(_BASE_EXPECT),
-     "label": "P2 branch WIDENED to C3k2[256] + SCB + SBB — capacity where the objects are",
-     "why": "All four transfer-fixed runs share the same weakness: small dropped to ~51.5. "
-            "The P2 block is C3k2[128] = 64 channels at scale s, the narrowest thing in the "
-            "network, and it serves the level where ~60% of the objects are detected. This "
-            "doubles it. head_ch is pinned at 64 because widening the branch raises Detect's "
-            "ch[0] from 64 to 128, which would move the head width too — the exact confound "
-            "that made y26_p2_headref128 uninterpretable."},
-
-    # Conditional follow-up, only if run 1 confirms the large headroom is real:
+    # Conditional follow-up, only if the SCB-only reruns show the large headroom is real:
     # {"name": "y26_remap_scb2_sbb75", ... cfg(tal_beta_small=2.0, sbb_q=0.75, sbb_invert=True)}
     #   aim SBB HARDER at small instead of removing it. q=0.75 lost before (55.20) for the
-    #   same too-expensive-on-large reason that run 1 tests.
+    #   same too-expensive-on-large reason the reruns test.
 ]
 
 
@@ -428,25 +422,31 @@ def attach_guard(model, rc):
         a1, a2, b1, b2 = o2m.assigner, o2o.assigner, o2m.bbox_loss, o2o.bbox_loss
         seen = []
 
-        want_b, want_r = e["scb"]
-        for tag, a in (("one2many", a1), ("one2one", a2)):
-            if not a.scb_enabled():
-                raise RuntimeError(f"{rc['name']}: SCB not live on {tag}")
-            if abs(float(a.beta_small) - want_b) > 1e-6 or abs(float(a.beta_ref_px) - want_r) > 1e-6:
-                raise RuntimeError(f"{rc['name']}: {tag} SCB=({a.beta_small},{a.beta_ref_px}), "
-                                   f"expected ({want_b},{want_r})")
-        seen.append(f"SCB {a2.beta_small}->{a2.beta}@{a2.beta_ref_px}px BOTH branches")
+        if "scb" in e:
+            want_b, want_r = e["scb"]
+            for tag, a in (("one2many", a1), ("one2one", a2)):
+                if not a.scb_enabled():
+                    raise RuntimeError(f"{rc['name']}: SCB not live on {tag}")
+                if abs(float(a.beta_small) - want_b) > 1e-6 or abs(float(a.beta_ref_px) - want_r) > 1e-6:
+                    raise RuntimeError(f"{rc['name']}: {tag} SCB=({a.beta_small},{a.beta_ref_px}), "
+                                       f"expected ({want_b},{want_r})")
+            seen.append(f"SCB {a2.beta_small}->{a2.beta}@{a2.beta_ref_px}px BOTH branches")
+        elif any(a.scb_enabled() for a in (a1, a2)):
+            raise RuntimeError(f"{rc['name']}: SCB is live but this run does not request it")
 
-        for tag, b in (("one2many", b1), ("one2one", b2)):
-            if not b.sbb_enabled() or abs(float(b.sbb_q) - e["sbb"]) > 1e-6:
-                raise RuntimeError(f"{rc['name']}: SBB not live/wrong on {tag} (q={b.sbb_q})")
-        if float(b1.sbb_sign) * float(b2.sbb_sign) >= 0:
-            raise RuntimeError(f"{rc['name']}: SBB signs must be OPPOSITE "
-                               f"(o2m={b1.sbb_sign:+.0f} o2o={b2.sbb_sign:+.0f})")
-        if float(b2.sbb_sign) >= 0:
-            raise RuntimeError(f"{rc['name']}: one2one sbb_sign={b2.sbb_sign:+.0f}; the arm that "
-                               f"won (+0.15) is invert=True -> one2one leans SMALL (sign<0)")
-        seen.append(f"SBB q={b2.sbb_q} o2m={b1.sbb_sign:+.0f}(large) o2o={b2.sbb_sign:+.0f}(small)")
+        if "sbb" in e:
+            for tag, b in (("one2many", b1), ("one2one", b2)):
+                if not b.sbb_enabled() or abs(float(b.sbb_q) - e["sbb"]) > 1e-6:
+                    raise RuntimeError(f"{rc['name']}: SBB not live/wrong on {tag} (q={b.sbb_q})")
+            if float(b1.sbb_sign) * float(b2.sbb_sign) >= 0:
+                raise RuntimeError(f"{rc['name']}: SBB signs must be OPPOSITE "
+                                   f"(o2m={b1.sbb_sign:+.0f} o2o={b2.sbb_sign:+.0f})")
+            if float(b2.sbb_sign) >= 0:
+                raise RuntimeError(f"{rc['name']}: one2one sbb_sign={b2.sbb_sign:+.0f}; the arm that "
+                                   f"won (+0.15) is invert=True -> one2one leans SMALL (sign<0)")
+            seen.append(f"SBB q={b2.sbb_q} o2m={b1.sbb_sign:+.0f}(large) o2o={b2.sbb_sign:+.0f}(small)")
+        elif any(b.sbb_enabled() for b in (b1, b2)):
+            raise RuntimeError(f"{rc['name']}: SBB is live but this run does not request it")
 
         h = o2o.hyp  # E2ELoss has no .hyp — only the inner v8DetectionLoss objects do
         if "cls" in e and abs(float(h.cls) - e["cls"]) > 1e-6:
@@ -742,59 +742,55 @@ def summarise(res):
 
 
 def round14(by):
-    """Did the architecture's large-object headroom pay for a harder small-object push?"""
-    base = by.get("y26_remap_base")
+    """Does dropping the loss config beat carrying it, on the transfer-fixed arch?"""
+    stock = by.get("y26_remap_dys_stock")
     scb3, scb2 = by.get("y26_remap_scb3"), by.get("y26_remap_scb2")
-    wide, dys = by.get("y26_p2addw_base"), by.get("y26_remap_dys")
-    if not any(v is not None for v in (base, scb3, scb2, wide, dys)):
+    if not any(v is not None for v in (stock, scb3, scb2)):
         return
 
     print("\n" + "=" * 78)
-    print(f"  ROUND 14 — all b32, reference y26_p2_remap {REMAP_B32} (small 51.54, large 58.53)")
+    print(f"  ROUND 15 — all b32, reference y26_p2_remap {REMAP_B32} (arch fix, STOCK loss)")
     print("=" * 78)
-    print(f"{'run':<24}{'mAP':>8}{'vs arch':>10}")
-    print("-" * 42)
-    for tag, v in (("remap + DySample + loss", dys), ("remap + SCB3 + SBB", base),
-                   ("remap + SCB3", scb3), ("remap + SCB2", scb2),
-                   ("p2addw + SCB3 + SBB", wide)):
+    print(f"{'run':<26}{'mAP':>8}{'vs arch':>10}")
+    print("-" * 44)
+    print(f"{'remap + DySample + loss':<26}{REMAP_DYS:>8.2f}{REMAP_DYS - REMAP_B32:>+10.2f}")
+    print(f"{'remap + loss':<26}{REMAP_BASE:>8.2f}{REMAP_BASE - REMAP_B32:>+10.2f}")
+    for tag, v in (("remap + DySample, STOCK", stock), ("remap + SCB3 only", scb3),
+                   ("remap + SCB2 only", scb2)):
         if v is not None:
-            print(f"{tag:<24}{v:>8.2f}{v - REMAP_B32:>+10.2f}")
+            print(f"{tag:<26}{v:>8.2f}{v - REMAP_B32:>+10.2f}")
 
-    if dys is not None and base is not None:
-        d = dys - base
-        print(f"\n  DySample     on the fixed arch: {d:+.2f} over the same config without it")
-        if d > 0.4:
-            print("    Survives the fix. The +0.9 was not an artifact of the PAN training from")
-            print("    scratch underneath it, and this is the configuration to publish.")
-        elif d > 0.19 * 2:
-            print("    Positive but smaller than the 0.9 measured on the broken graph. Part of")
-            print("    DySample's old value was compensating for the transfer defect.")
+    if stock is not None:
+        print(f"\n  DySample without the loss: {stock:.2f} vs {REMAP_DYS} with it "
+              f"({stock - REMAP_DYS:+.2f})")
+        if stock > REMAP_B32 + 0.2:
+            print("    Best in the project, and it is architecture-only with a STOCK loss.")
+            print("    One yaml plus a weight-loading fix, no hyperparameters to justify —")
+            print("    a much easier result to defend than a tuned six-parameter recipe.")
+        elif stock - REMAP_DYS > 0.2:
+            print("    Dropping the loss helps but does not clear the arch fix alone. The")
+            print("    loss mechanisms are a net cost on this architecture — report that.")
         else:
-            print("    Inside 2sd of the DySample replicate spread (0.19) — not readable at")
-            print("    n=1. Either it needs 3 replicates or the fix has absorbed its benefit.")
+            print("    No gain. DySample and the loss config are not separable here, and")
+            print(f"    {REMAP_B32} (arch fix, stock loss) stands as the configuration to use.")
 
-    if base is not None and scb3 is not None:
-        d = scb3 - base
-        print(f"\n  SBB          drop it: {d:+.2f}")
-        print("    Redundant — the architecture took over its job." if d > 0.1 else
-              "    Still earns its place even on the fixed arch." if d < -0.1 else
-              "    Neutral. Prefer the simpler config and say so.")
+    if scb3 is not None:
+        print(f"\n  SCB3 only vs SCB3+SBB ({REMAP_BASE}): {scb3 - REMAP_BASE:+.2f}")
+        print("    Dropping SBB helps — the architecture took over its job."
+              if scb3 - REMAP_BASE > 0.1 else
+              "    SBB still earns its place, so it was not merely compensating.")
     if scb3 is not None and scb2 is not None:
-        d = scb2 - scb3
-        print(f"  beta_small   3.0 -> 2.0: {d:+.2f}")
-        print("    The stronger small push now WINS. It lost standalone (55.05) only\n"
-              "    because it could not afford the large-object cost — the architecture\n"
-              "    now pays that bill. Prediction confirmed." if d > 0.1 else
-              "    Still loses. The small-vs-large trade is not the whole story behind\n"
-              "    beta_small=2.0's failure, so that explanation needs revising.")
-    if wide is not None:
-        print(f"  wider P2     {wide - REMAP_B32:+.2f} vs arch alone")
+        print(f"  beta_small 3.0 -> 2.0, SBB off: {scb2 - scb3:+.2f}")
+        print("    The stronger small push now wins. It lost standalone only because it\n"
+              "    could not afford the large-object cost, and the arch now pays that."
+              if scb2 - scb3 > 0.1 else
+              "    Still loses. The small-vs-large trade does not explain beta_small=2.0's\n"
+              "    original failure, so that explanation needs revising.")
 
-    got = [v for v in (base, scb3, scb2, wide, dys) if v is not None]
+    got = [v for v in (stock, scb3, scb2) if v is not None]
     if got and max(got) > max(CLS075_SEED0, REMAP_B32):
-        print(f"\n    {max(got):.2f} is the campaign maximum and the first number built from")
-        print("    an architecture change and a loss change together. Seed-repeat it before")
-        print("    it goes in the paper — it is still n=1.")
+        print(f"\n    {max(got):.2f} is the campaign maximum. Seed-repeat before publishing —")
+        print("    still n=1, and the DySample graph is not bit-deterministic (sd 0.19).")
 
 
 def main():
