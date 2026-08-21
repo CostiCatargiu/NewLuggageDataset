@@ -181,6 +181,16 @@ l1_scale_p: 0.0 # (float) 0 = stock | 0.25-0.5 partial | 1.0 fully scale-invaria
 # 0 -> tal_beta_ref_px. Null disables (bit-identical to stock).
 tal_beta_small: # (float, optional) localization exponent for the smallest objects
 tal_beta_ref_px: 64.0 # (float) sqrt(area) in px at which beta reaches tal_beta
+scb_branch: both # (str) both|one2one|one2many - which branch SCB applies to
+
+# --- BLEND: the one2many / one2one gain schedule inside E2ELoss ---------------
+# o2m decays linearly from o2m_start to o2m_final over epochs-1, so one2many
+# supplies ~80% of the gradient at epoch 0 and ~10% at the end. sbb_q is
+# integrated against this moving weight, which confounds the two: set
+# o2m_decay=False to pin the blend and measure q on its own.
+o2m_start: 0.8 # (float) one2many gain at epoch 0
+o2m_final: 0.1 # (float) one2many gain at the last epoch
+o2m_decay: True # (bool) False pins o2m at o2m_start for the whole run
 
 # --- SBB: Size-conditioned Branch Blending (YOLO26 E2E head only) -------------
 # E2ELoss blends one2many (10 positives/GT) and one2one (1 positive/GT, and the

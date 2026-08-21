@@ -1629,16 +1629,41 @@ class E2ELoss:
 
     def __init__(self, model: torch.nn.Module, loss_fn=v8DetectionLoss):
         """Initialize E2ELoss with one-to-many and one-to-one detection losses using the provided model."""
+        h = getattr(model, "args", None)
+
+        def _f(key, default):
+            v = getattr(h, key, None)
+            return default if v is None else float(v)
+
         self.one2many = loss_fn(model, tal_topk=10)
         self.one2one = loss_fn(model, tal_topk=7, tal_topk2=1)
         self.updates = 0
         self.total = 1.0
-        # init gain
-        self.o2m = 0.8
+        # ---------------------------------------------------------------- BLEND
+        # Hardcoded 0.8 -> 0.1 for the whole campaign, so sbb_q was always integrated
+        # against a MOVING branch weight and the two are confounded. o2m_decay=False
+        # pins the blend, which is what makes q interpretable on its own.
+        self.o2m = _f("o2m_start", 0.8)
         self.o2o = self.total - self.o2m
         self.o2m_copy = self.o2m
-        # final gain
-        self.final_o2m = 0.1
+        self.final_o2m = _f("o2m_final", 0.1)
+        self.o2m_decay = bool(getattr(h, "o2m_decay", True))
+        if self.o2m != 0.8 or self.final_o2m != 0.1 or not self.o2m_decay:
+            LOGGER.info(
+                f"BLEND active | o2m {self.o2m} -> {self.final_o2m} decay={self.o2m_decay}"
+            )
+
+        # ---------------------------------------------------------------- SCB scope
+        # tal_beta_small is set in v8DetectionLoss.__init__, so it lands on BOTH
+        # branches even though its justification (topk2=1 picks a single anchor) is a
+        # one2one argument. Clearing it on one branch attributes the effect.
+        scb_branch = str(getattr(h, "scb_branch", "both") or "both")
+        if scb_branch not in ("both", "one2one", "one2many"):
+            raise ValueError(f"scb_branch must be both|one2one|one2many, got {scb_branch!r}")
+        if scb_branch != "both":
+            drop = self.one2many if scb_branch == "one2one" else self.one2one
+            drop.assigner.beta_small = None
+            LOGGER.info(f"SCB scoped to {scb_branch} ONLY | beta_small cleared on the other branch")
 
         # ------------------------------------------------------------------ SBB
         # Size-conditioned Branch Blending. The o2m/o2o gains above depend only on
@@ -1651,7 +1676,6 @@ class E2ELoss:
         #                            reliable there, and it is the output branch)
         #
         # sbb_q = 0 leaves both branches bit-identical to stock.
-        h = getattr(model, "args", None)
         q = float(getattr(h, "sbb_q", 0.0) or 0.0)
         ref = float(getattr(h, "sbb_ref_px", 64.0) or 64.0)
         invert = bool(getattr(h, "sbb_invert", False))  # flip both signs (control arm)
@@ -1721,6 +1745,8 @@ class E2ELoss:
 
     def decay(self, x) -> float:
         """Calculate the decayed weight for one-to-many loss based on the current update step."""
+        if not self.o2m_decay:
+            return self.o2m_copy
         return max(1 - x / max(self.one2one.hyp.epochs - 1, 1), 0) * (self.o2m_copy - self.final_o2m) + self.final_o2m
 
 
