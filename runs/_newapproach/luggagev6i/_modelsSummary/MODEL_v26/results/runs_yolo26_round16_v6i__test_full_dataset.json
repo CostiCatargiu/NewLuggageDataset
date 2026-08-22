@@ -529,7 +529,7 @@
           "R50_medium": 0.86,
           "R50_large": 0.68,
           "P50_95_small": 0.6618171864837556,
-          "P50_95_medium": 0.7916121188512267,
+          "P50_95_medium": 0.7916121188512267,s
           "P50_95_large": 0.5313180586351318,
           "R50_95_small": 0.554,
           "R50_95_medium": 0.736,
@@ -538,7 +538,7 @@
       }
     },
     {
-      "name": "y26_cls075_s1",
+      "name": "y26_identity_s1",
       "split": "test_full_dataset",
       "params": {},
       "run_meta": {},
@@ -806,7 +806,7 @@
       }
     },
     {
-      "name": "y26_identity_s1",
+      "name": "y26_scb3_sbb50_s1",
       "split": "test_full_dataset",
       "params": {},
       "run_meta": {},
@@ -1476,7 +1476,7 @@
       }
     },
     {
-      "name": "y26_scb3_sbb50_s1",
+      "name": "y26_cls075_s1",
       "split": "test_full_dataset",
       "params": {},
       "run_meta": {},
