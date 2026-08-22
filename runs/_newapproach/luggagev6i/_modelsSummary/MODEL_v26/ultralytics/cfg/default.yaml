@@ -183,6 +183,16 @@ tal_beta_small: # (float, optional) localization exponent for the smallest objec
 tal_beta_ref_px: 64.0 # (float) sqrt(area) in px at which beta reaches tal_beta
 scb_branch: both # (str) both|one2one|one2many - which branch SCB applies to
 
+# Per-branch tal_alpha / tal_beta. They land on both assigners; these override one
+# of them so the auxiliary branch and the branch that emits the final box can
+# differ. Selection depends only on alpha/beta, so scaling BOTH on one branch
+# changes its target sharpness without changing which anchors it picks.
+# Null leaves that branch on the global value (bit-identical to stock).
+tal_beta_o2m: # (float, optional) one2many-only localization exponent
+tal_beta_o2o: # (float, optional) one2one-only localization exponent
+tal_alpha_o2m: # (float, optional) one2many-only classification exponent
+tal_alpha_o2o: # (float, optional) one2one-only classification exponent
+
 # --- BLEND: the one2many / one2one gain schedule inside E2ELoss ---------------
 # o2m decays linearly from o2m_start to o2m_final over epochs-1, so one2many
 # supplies ~80% of the gradient at epoch 0 and ~10% at the end. sbb_q is

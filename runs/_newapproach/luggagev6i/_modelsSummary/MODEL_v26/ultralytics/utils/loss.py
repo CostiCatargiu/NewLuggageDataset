@@ -1665,6 +1665,21 @@ class E2ELoss:
             drop.assigner.beta_small = None
             LOGGER.info(f"SCB scoped to {scb_branch} ONLY | beta_small cleared on the other branch")
 
+        # -------------------------------------------------------- BRANCH-SCOPED BETA
+        # tal_alpha/tal_beta are set in v8DetectionLoss.__init__ and so land on both
+        # assigners. The two branches have opposite jobs -- one2many is auxiliary
+        # supervision, one2one emits every prediction -- so they need not share them.
+        # Selection depends only on alpha/beta; the common scale sets target sharpness.
+        for br, tag, keys in (
+            (self.one2many, "one2many", (("alpha", "tal_alpha_o2m"), ("beta", "tal_beta_o2m"))),
+            (self.one2one, "one2one", (("alpha", "tal_alpha_o2o"), ("beta", "tal_beta_o2o"))),
+        ):
+            for attr, key in keys:
+                v = getattr(h, key, None)
+                if v is not None:
+                    setattr(br.assigner, attr, float(v))
+                    LOGGER.info(f"BRANCH EXPONENT | {tag} {attr}={float(v)}")
+
         # ------------------------------------------------------------------ SBB
         # Size-conditioned Branch Blending. The o2m/o2o gains above depend only on
         # the epoch; SBB makes the EFFECTIVE blend depend on object size by giving
