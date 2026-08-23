@@ -8,20 +8,30 @@ analyze_runs_v6i.py without a caveat.
 
 PRIMARY METRIC IS mAP50_small. Three mechanisms in this campaign were retired
 on mAP50-95 — the metric they trade away — and one of them (tal_beta) turned
-out to be the largest effect in the project once re-scored. y26_b3 reads +4.4
+out to be the largest effect in the project once re-scored. y26_b3 reads +3.8
 sd on mAP50_small and +0.0 sd on mAP50-95. Rank on the primary metric.
 
     REFERENCE, 3 seeds of y26_identity   small 77.62   mAP50 80.40   m5095 55.30
     pooled sd (df=7)                     small  0.346  m5095 0.374
-    -> 2 sd = 0.69 suggestive, 3 sd = 1.04 report as an effect
 
-    y26_b3   beta 3.0    small 79.14  (+1.52, 4.4 sd)  mAP50 81.31  large 80.42
-    y26_b2   beta 2.0    small 78.92  (+1.30, 3.7 sd)  mAP50 81.56  large 83.24
-    y26_b25  beta 2.5    small 78.88  (+1.26, 3.6 sd)  mAP50 81.43  large 81.78
+    A single run against the 3-seed mean has SE = 0.346 * sqrt(1 + 1/3) = 0.40,
+    NOT 0.346. Divide by 0.40, not by the sd:
+    -> 0.80 suggestive, 1.20 report as an effect
+
+    y26_b3   beta 3.0    small 79.14  (+1.52, 3.8 sd)  mAP50 81.31  large 80.42
+    y26_b2   beta 2.0    small 78.92  (+1.30, 3.3 sd)  mAP50 81.56  large 83.24
+    y26_b25  beta 2.5    small 78.88  (+1.26, 3.2 sd)  mAP50 81.43  large 81.78
 
 DO NOT use the seed-0 identity (small 77.30) as the reference. It is the LOW
 draw of three by 0.32, and every constant hardcoded in the round 18/19/20
 headers inherits that bias — b3's "+1.84" is really +1.52.
+
+AND THE SAME CAUTION APPLIES ONE LEVEL UP. Every ctrl in this file is B3_S50 =
+79.14, which is a SINGLE draw sitting above its own neighbours: beta 2 -> 78.92,
+2.5 -> 78.88, 4 -> 78.17 interpolate to ~78.8 at beta 3. b3 is ~+0.34 over its
+own curve — almost exactly the 0.32 just corrected on the reference. A run
+landing at 78.9 will print as -0.24 here and may in fact be level. Read every
+delta in this round against the CURVE, not against the point.
 
 
 =============================================================================
@@ -34,10 +44,17 @@ As beta falls 6 -> 2, nothing has peaked except small:
     mAP50  80.40  80.95  81.31  81.43  81.56     still climbing
     large  80.65  83.67  80.42  81.78  83.24     still climbing
 
-Two of three curves are still rising at the edge of the sweep and nobody has
-looked below 2. At beta=1 the alignment metric is linear in IoU; at beta=0 it
-would ignore IoU entirely, so 1.0 is the last meaningful point before the
-metric stops being alignment at all.
+Two of three curves are still rising at the edge of the sweep, so the UNIFORM
+curve is genuinely open below 2. SMALL IS NOT, and the evidence is already in
+the tree: b3s15 handed small objects an effective beta of 1.5 and scored 78.42,
+b4s1 handed them 1.0 and scored 78.33 — both far under b3's 79.14. Those are
+SCB runs so medium and large differ, but the small-object response below beta=2
+has been probed twice and read negative twice. Arm A is therefore a mAP50 and
+large question, not a small one, and its priors are set accordingly.
+
+At beta=1 the alignment metric is linear in IoU; at beta=0 it would ignore IoU
+entirely, so 1.0 is the last meaningful point before the metric stops being
+alignment at all.
 
 
 =============================================================================
@@ -53,9 +70,15 @@ IDENTICAL selection -> their gap is a pure target effect:
     b3 - identity                    = +1.52    additive, and already measured
 
 So the decomposition needs no new run. What the split BUYS is that beta=3 is
-currently a compromise between two optima locked to one number. Runs 6-7 push
-the term carrying two thirds of the effect past where the coupled knob reaches.
-Run 8 is the additivity check: predicted ~78.60 under the model above.
+currently a compromise between two optima locked to one number. bsel3_btgt15
+and bsel3_btgt1 push the term carrying two thirds of the effect past where the
+coupled knob reaches. bsel6_btgt3 is the additivity check: predicted ~78.60
+under the model above.
+
+That prediction is a MODEL, not an identity. b3 minus a1_b6 is a SQUARING of
+the target shape at fixed selection; identity minus bsel6_btgt3 is beta 6 -> 3
+in the target at fixed selection. Same direction, no reason for the same
+magnitude. A miss falsifies additivity, not the split.
 
 Both selection sites take beta_sel. Stated here so that if a later round wants
 to split line 553 (the topk2=1 winner, which IS the duplicate suppression in an
@@ -107,14 +130,24 @@ Runs execute in descending order of PRIOR, not by arm, so a queue that dies at
 on mAP50_small vs its own control) and is declared per run, not per arm —
 arm B is not uniform, and its third run is predicted to land BELOW b3.
 
-    1  y26_b15            0.45   extends the only 3-sd effect; 2 of 3 curves rising
-    2  y26_b1             0.30   further out; past the small peak but mAP50 may climb
-    3  y26_b3_tcn_p50     0.30   new mechanism, aimed at a MEASURED failure mode
-    4  y26_b2_tcn_p50     0.28   same mechanism on the base already off the trade curve
-    5  y26_blevel_p3only  0.25   targets b3's only cost (large) where small lives
-    6  y26_bsel3_btgt15   0.22   pushes the dominant term past the coupled limit
-    7  y26_bsel3_btgt1    0.18   same axis, further out
+    1  y26_b3_tcn_p50     0.30   new mechanism, aimed at a MEASURED failure mode
+    2  y26_b2_tcn_p50     0.28   same mechanism on the base already off the trade curve
+    3  y26_b15            0.25   mAP50 and large still climbing; small already probed below 2
+    4  y26_blevel_p3only  0.22   SELECTION-side only — targets stay at beta 6
+    5  y26_bsel3_btgt15   0.20   pushes the dominant term past the coupled limit
+    6  y26_bsel3_btgt1    0.18   same axis, further out
+    7  y26_b1             0.10   two SCB points below beta 2 already read negative on small
     8  y26_bsel6_btgt3    0.02   PREDICTED 78.60 — attribution, not a bet
+
+Arm C leads because it is the only arm that can produce a NEW result rather
+than a better-explained old one, and the only one attacking a gap that was
+measured (AR50_small 0.95 vs R50_small 0.70) instead of inferred. Arm A slipped
+because the tree already contains two negative small-object points below
+beta=2; arm B explains the effect rather than improving it, which the arm B
+section says itself.
+
+The order is ENFORCED by sorting on `prior` in main(), not transcribed here, so
+this table and the queue cannot drift apart. Change a prior, the order follows.
 
 These are an ORDERING, not forecasts. Directional predictions in this campaign
 are 0-for-10 and every miss was optimistic; read them as "which run would I
@@ -122,8 +155,9 @@ regret losing", nothing more.
 
 ONE TENSION, stated rather than hidden. Run 8 sits last on a 0.02 prior because
 it is predicted BELOW b3 by construction — but it is also the additivity check
-that makes runs 6-7 interpretable. If 6 and 7 land near each other you do not
-need it. If they disagree, run 8 before concluding anything from either.
+that makes bsel3_btgt15 and bsel3_btgt1 interpretable. If those two land near
+each other you do not need it. If they disagree, run it before concluding
+anything from either.
 
     Usage:
         python run_yolo26_round21_v6i.py                # all eight, prior order
@@ -192,24 +226,27 @@ def cfg(**over):
 
 RUNS = [
     # ---------------------------------------------------------------- ARM A
-    {"name": "y26_b15", "prior": 0.45, "arm": "a", "needs": None, "ctrl": B3_S50,
+    {"name": "y26_b15", "prior": 0.25, "arm": "a", "needs": None, "ctrl": B3_S50,
      "params": cfg(tal_beta=1.5),
      "expect": {"beta": 1.5},
      "label": "tal_beta 1.5 — one step below the sweep's edge",
      "why": "mAP50 and large are both still climbing at beta=2 (80.40 -> 81.56 "
-            "and 80.65 -> 83.24) with no turnover anywhere. Small peaked at 3, "
-            "but two of three curves have not, and nobody has looked below 2. "
-            "This is the highest-value run in the file: it extends the only "
-            "effect in the campaign that clears 3 sd."},
+            "and 80.65 -> 83.24) with no turnover, so the UNIFORM curve is open "
+            "below 2. Small is not: b3s15 gave small objects an effective beta "
+            "of 1.5 and scored 78.42, b4s1 gave them 1.0 and scored 78.33, both "
+            "far under b3. Prior cut 0.45 -> 0.25 for that reason. This run is "
+            "about mAP50 and large; a small-object gain would be the surprise."},
 
-    {"name": "y26_b1", "prior": 0.3, "arm": "a", "needs": None, "ctrl": B3_S50,
+    {"name": "y26_b1", "prior": 0.1, "arm": "a", "needs": None, "ctrl": B3_S50,
      "params": cfg(tal_beta=1.0),
      "expect": {"beta": 1.0},
      "label": "tal_beta 1.0 — alignment becomes linear in IoU",
      "why": "The last meaningful point: at beta=0 the metric ignores IoU and "
-            "stops being alignment at all. Brackets the optimum from below. If "
-            "small collapses here the curve is closed; if it does not, the "
-            "sweep was never near its bottom."},
+            "stops being alignment at all. Brackets the optimum from below. "
+            "Prior 0.10, not 0.30: b4s1 already put small objects at an "
+            "effective beta of 1.0 and got 78.33, so a small-object gain here "
+            "would have to come entirely from what the medium and large "
+            "exponents do to the shared backbone."},
 
     # ---------------------------------------------------------------- ARM C
     # Ordered ahead of arm B: arm C can improve the number, arm B mostly explains it.
@@ -232,7 +269,7 @@ RUNS = [
             "along that curve after all, which one run alone cannot tell you."},
 
     # ---------------------------------------------------------------- ARM B
-    {"name": "y26_bsel3_btgt15", "prior": 0.22, "arm": "b", "needs": "tal_beta_sel", "ctrl": B3_S50,
+    {"name": "y26_bsel3_btgt15", "prior": 0.20, "arm": "b", "needs": "tal_beta_sel", "ctrl": B3_S50,
      "params": cfg(tal_beta=3.0, tal_beta_sel=3.0, tal_beta_tgt=1.5),
      "expect": {"beta_sel": 3.0, "beta_tgt": 1.5},
      "label": "selection at beta 3, targets at beta 1.5",
@@ -246,8 +283,8 @@ RUNS = [
      "expect": {"beta_sel": 3.0, "beta_tgt": 1.0},
      "label": "selection at beta 3, targets at beta 1.0",
      "why": "Finds the target-side bottom while selection stays at its measured "
-            "optimum. Together with run 5 this is a 3-point sweep on the term "
-            "that was never separable before."},
+            "optimum. With bsel3_btgt15 and b3 itself this is a 3-point sweep "
+            "on the term that was never separable before."},
 
     {"name": "y26_bsel6_btgt3", "prior": 0.02, "arm": "b", "needs": "tal_beta_sel", "ctrl": B3_S50,
      "params": cfg(tal_beta=6.0, tal_beta_sel=6.0, tal_beta_tgt=3.0),
@@ -259,26 +296,31 @@ RUNS = [
             "re-planning. Stated in advance so it cannot be reinterpreted."},
 
     # ---------------------------------------------------------------- ARM D
-    {"name": "y26_blevel_p3only", "prior": 0.25, "arm": "d", "needs": "tal_beta_level", "ctrl": B3_S50,
+    {"name": "y26_blevel_p3only", "prior": 0.22, "arm": "d", "needs": "tal_beta_level", "ctrl": B3_S50,
      "params": cfg(tal_beta=6.0, tal_beta_level={8: 2.0, 16: 6.0, 32: 6.0}),
      "expect": {"beta_level": {8: 2.0, 16: 6.0, 32: 6.0}},
-     "label": "beta 2 at stride 8 only, stock everywhere else",
+     "label": "beta 2 at stride 8 only (SELECTION side), stock everywhere else",
      "why": "b3's only cost is large (-0.23 mAP50, -1.00 L95). Small objects "
             "draw 6.64 of their 9.82 positives from s8; large draw 0.16 of 9.79. "
             "Changing beta only at s8 applies the correction where small objects "
-            "live and leaves the levels large objects are assigned on untouched."},
+            "live and leaves the levels large objects are assigned on untouched. "
+            "NOTE the patch applies _anchor_beta to b_sel ONLY, so targets stay "
+            "at beta=6 uniformly — and arm B measures the target term as two "
+            "thirds of b3's effect. This run therefore tests the WEAKER half. A "
+            "null does not close per-level beta; it closes per-level SELECTION."},
 ]
 
-# Ordered by PRIOR probability of clearing +0.35 on mAP50_small, highest first,
-# so a queue that dies at 3am keeps the runs most likely to have mattered.
+# Execution order is by PRIOR probability of clearing +0.35 on mAP50_small,
+# highest first, so a queue that dies at 3am keeps the runs most likely to have
+# mattered. main() sorts on this field -- the list below stays grouped by arm.
 # Priors are an ordering, not a forecast: directional predictions in this
 # campaign are 0-for-10, every miss optimistic.
 #
 # ONE TENSION, stated rather than hidden. y26_bsel6_btgt3 sits last on a 2%
 # prior because it is predicted to land BELOW b3 by construction. It is also
-# the additivity check that makes runs 6-7 interpretable. If runs 6-7 both come
-# back near 79.5 you do not need it; if they disagree with each other, run it
-# before drawing any conclusion from them.
+# the additivity check that makes bsel3_btgt15 and bsel3_btgt1 interpretable.
+# If those two come back near each other you do not need it; if they disagree,
+# run it before drawing any conclusion from them.
 
 
 # ---------------------------------------------------------------- preflight --
@@ -486,6 +528,7 @@ def main():
         todo = [r for r in todo if r["arm"] == a.arm]
     if a.names:
         todo = [r for r in todo if r["name"] in a.names]
+    todo = sorted(todo, key=lambda r: -r["prior"])  # the header's order, enforced not transcribed
     if not todo:
         print("nothing selected.")
         return
