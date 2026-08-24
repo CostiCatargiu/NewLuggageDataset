@@ -120,6 +120,32 @@ SPLITS = ("train", "valid", "test")     # train is the one that matters
 IMGSZ = 640
 STRIDES = (8, 16, 32)
 
+# THE GRAPHS TO COMPARE. This is the whole point of v3.
+#
+# On the stock 3-level graph a small GT holds ~12.90 anchor centres against
+# topk=10 -- SLACK, so every candidate is already positive and the ranking
+# cannot change the assignment. That is why y26_b0 (beta=0, IoU removed from
+# selection) costs nothing there, and why the beta plateau exists.
+#
+# A stride-4 level changes the arithmetic completely. For a 12x18px GT:
+#     s4  13.50 centres     s8  3.38     s16  0.84     s32  0.21
+# so the pool goes ~12.90 -> ~52 and topk=10 becomes BINDING at ~19%.
+#
+# PREDICTION THIS TESTS: on a P2 graph, task-aligned SELECTION is operative,
+# so tal_beta should act through selection AND targets rather than targets
+# alone -- and the same loss mechanism should therefore be worth MORE. That is
+# already visible in the training results, at n=1 per cell:
+#     SCB+SBB on stock 3-level (n=3)  +0.11   <- a null
+#     SCB+SBB on p2   (remap)         +1.25
+#     SCB+SBB on p2dys(remap)         +0.84
+# If the stride-4 rows below come back BINDING while the 3-level rows come back
+# NOT binding, that pattern has a mechanism instead of a coincidence.
+STRIDE_SETS = {
+    "stock 3-level  P3/P4/P5": (8, 16, 32),
+    "p2dys 4-level  P2..P5":   (4, 8, 16, 32),
+    "p234  3-level  P2/P3/P4": (4, 8, 16),
+}
+
 TOPK_O2M = 10        # E2ELoss: v8DetectionLoss(model, tal_topk=10)
 TOPK_O2O = 7         # E2ELoss: v8DetectionLoss(model, tal_topk=7, tal_topk2=1)
 
@@ -259,6 +285,43 @@ def main():
         print("-" * 78)
         for label, sc in SCENARIOS:
             report(gts, tax_name, mode, t1, t2, TOPK_O2M, sc, label)
+
+    # ---------------------------------------------------------------- v3 ----
+    # DOES ADDING A STRIDE-4 LEVEL MAKE topk BIND FOR SMALL OBJECTS?
+    print("=" * 78)
+    print("  GRAPH COMPARISON — the same GTs, different anchor grids")
+    print("=" * 78)
+    mode, t1, t2 = TAX["C  COCO area 32/96"]
+    for label, sc in SCENARIOS:
+        print(f"  --- {label}   (linear x{sc:.2f}) " + "-" * 26)
+        for gname, strides in STRIDE_SETS.items():
+            pools = {"small": [], "medium": [], "large": []}
+            for cx, cy, w, h in gts:
+                sw, sh, scx, scy = w * sc, h * sc, cx * sc, cy * sc
+                n, _ = anchors_inside_exact(scx, scy, sw, sh, IMGSZ, strides)
+                pools[bucket(sw, sh, mode, t1, t2)].append(n)
+            v = sorted(pools["small"])
+            if not v:
+                continue
+            n = len(v)
+            under = 100.0 * sum(1 for x in v if x < TOPK_O2M) / n
+            cap = sum(min(x, TOPK_O2M) for x in v) / n
+            verdict = ("NOT binding" if under > 50 else
+                       "BINDING" if under < 10 else "mixed")
+            print(f"    {gname:<26} small pool mean {sum(v)/n:>7.1f}  med {v[n//2]:>4}"
+                  f"  pool<10 {under:>5.0f}%   take~{cap:>5.2f}   {verdict}")
+        print()
+    print("  READ IT")
+    print("    If the stride-4 rows are BINDING where the 3-level row is NOT, then")
+    print("    tal_beta's SELECTION term is inert on the stock graph and LIVE on a")
+    print("    P2 graph. That predicts the same loss mechanism is worth more on P2 —")
+    print("    which is what the training results already show at n=1 per cell:")
+    print("      SCB+SBB on stock 3-level (n=3)  +0.11   <- a null")
+    print("      SCB+SBB on p2    (remap)        +1.25")
+    print("      SCB+SBB on p2dys (remap)        +0.84")
+    print("    and it predicts y26_p2dys_b0 should LOSE, where y26_b0 on the stock")
+    print("    graph cost nothing. That contrast is the sharpest test available.")
+    print()
 
     # one2one, at eval geometry only — its budget is 7, and topk2=1 means the
     # prefilter is what feeds the argmax that produces every NMS-free prediction
