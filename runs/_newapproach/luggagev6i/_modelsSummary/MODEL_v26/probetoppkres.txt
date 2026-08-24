@@ -1,0 +1,91 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/probe_topk_binding_v2.py
+
+==============================================================================
+  IS tal_topk BINDING?  exact anchor-centre counts from labels
+==============================================================================
+  dataset /home/constantin/Doctorat/LuggageDataset.v6i.yolov12
+  imgsz 640   strides (8, 16, 32)   o2m topk 10   o2o topk 7
+
+  train    41821 GTs   (2 rows skipped)
+  valid     9819 GTs
+  test      6172 GTs
+
+------------------------------------------------------------------------------
+  SPLIT TRAIN   TAXONOMY A  max side 48/96
+------------------------------------------------------------------------------
+    eval / post-close_mosaic   taxonomy A  max side 48/96   topk=10   linear x1.00
+      bucket        n    mean   med   p90   pool<k  pool=0   verdict
+      small     11670    11.7    11    21      42%      0%   mixed          take~8.29
+      medium    16805    40.6    35    69       0%      0%   binding        take~9.99
+      large     13346   387.7   147   696       0%      0%   binding        take~10.00
+
+    mosaic, mean scale         taxonomy A  max side 48/96   topk=10   linear x0.50
+      bucket        n    mean   med   p90   pool<k  pool=0   verdict
+      small     28475     7.2     6    15      72%      3%   NOT binding    take~5.86
+      medium    10411    36.8    30    65       2%      0%   binding        take~9.97
+      large      2935   310.9   158   864       0%      0%   binding        take~10.00
+
+    mosaic, small end          taxonomy A  max side 48/96   topk=10   linear x0.25
+      bucket        n    mean   med   p90   pool<k  pool=0   verdict
+      small     38886     3.8     2    10      90%     17%   NOT binding    take~3.24
+      medium     2368    40.0    32    76       3%      0%   binding        take~9.94
+      large       567   237.0   225   403       0%      0%   binding        take~10.00
+
+------------------------------------------------------------------------------
+  SPLIT TRAIN   TAXONOMY C  COCO area 32/96
+------------------------------------------------------------------------------
+    eval / post-close_mosaic   taxonomy C  COCO area 32/96   topk=10   linear x1.00
+      bucket        n    mean   med   p90   pool<k  pool=0   verdict
+      small     13222    11.7    12    19      38%      0%   mixed          take~8.48
+      medium    23422    65.5    52   131       0%      0%   binding        take~10.00
+      large      5177   831.5   370  1924       0%      0%   binding        take~10.00
+
+    mosaic, mean scale         taxonomy C  COCO area 32/96   topk=10   linear x0.50
+      bucket        n    mean   med   p90   pool<k  pool=0   verdict
+      small     30508     7.6     6    16      68%      3%   NOT binding    take~6.13
+      medium    10076    52.9    40   108       0%      0%   binding        take~10.00
+      large      1237   595.1   390  1334       0%      0%   binding        take~10.00
+
+    mosaic, small end          taxonomy C  COCO area 32/96   topk=10   linear x0.25
+      bucket        n    mean   med   p90   pool<k  pool=0   verdict
+      small     39006     3.6     2    10      90%     17%   NOT binding    take~3.26
+      medium     2472    51.8    38   104       0%      0%   binding        take~10.00
+      large       343   309.3   295   429       0%      0%   binding        take~10.00
+
+------------------------------------------------------------------------------
+  ONE2ONE BRANCH (topk=7, then topk2=1 argmax)
+------------------------------------------------------------------------------
+    eval geometry              taxonomy C   topk=7   linear x1.00
+      bucket        n    mean   med   p90   pool<k  pool=0   verdict
+      small     13222    11.7    12    19      21%      0%   mixed          take~6.46
+      medium    23422    65.5    52   131       0%      0%   binding        take~7.00
+      large      5177   831.5   370  1924       0%      0%   binding        take~7.00
+
+==============================================================================
+  HOW TO READ IT
+==============================================================================
+  'pool<k' is the fraction of GTs holding fewer anchor centres than the
+  budget. For those GTs every candidate is already a positive, so the
+  RANKING cannot change the assignment and tal_beta's selection term is
+  inert. Only its target-magnitude term acts on them.
+
+  IF small is NOT binding (>50%):
+    - raising tal_topk cannot help small objects. Confirmed independently
+      by the footprint diagnostic: they take 7.73 against a budget of 10.
+    - the beta plateau has a mechanical explanation, which is a stronger
+      paper claim than the plateau on its own.
+    - LOWERING topk is the only version of this experiment that can bite,
+      and it must be judged on mAP50_small, not mAP50-95.
+
+  IF small IS binding (<10%):
+    - the saturation story is wrong; 7.73 < 10 is then the metric>eps
+      prune, not geometry, and the beta plateau needs another explanation.
+
+  CROSS-CHECK: 'take~' is the mean positives per GT ignoring the eps prune.
+  Against the footprint diagnostic's stock column (small 7.73 / med 9.87 /
+  large 9.79, taxonomy A, YOLOv12) 'take~' should be an UPPER BOUND. If it
+  comes out BELOW 7.73 the geometry here disagrees with that run and one
+  of the two is wrong — do not proceed to GPU until that is resolved.
+
+
+Process finished with exit code 0
