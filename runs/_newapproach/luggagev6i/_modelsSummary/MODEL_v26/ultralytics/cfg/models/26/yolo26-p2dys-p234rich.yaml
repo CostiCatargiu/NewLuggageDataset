@@ -1,0 +1,84 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# yolo26-p2dys-p234, plus the capacity freed by dropping P5 SPENT ON P2/P3.
+#
+# Read yolo26-p2dys-p234.yaml first — the justification for removing P5 lives
+# there. This file is the second half of the argument: if P5 is vestigial, its
+# parameters are not merely wasted, they are RECLAIMABLE.
+#
+# WHAT CHANGES vs -p234.yaml, and only this:
+#     row 19  C3k2 [128] repeats 2 -> 4     the P2/4 branch, where 60% of the
+#                                           instances are and where the anchor
+#                                           pool is thinnest (mean 12.90 vs
+#                                           657.67 for large)
+#     row 22  C3k2 [256] repeats 2 -> 4     the P3/8 branch, which supplies 6.64
+#                                           of a small GT's 9.82 positives
+#
+# WHY DEPTH AND NOT WIDTH. y26_p2_wide (55.53), y26_wide_starve (55.46) and
+# y26_p2addw_base (55.06) all widened and all landed at or below the matched
+# control. Width has been tried three times on this dataset and answered.
+# Repeat count at the FINE levels has not been touched at all.
+#
+# WHY BOTH ROWS AND NOT ONE. This is deliberately NOT a one-variable run against
+# -p234; it is a "spend the budget" run against the SAME parameter count as
+# stock p2dys. The clean single-variable comparison is -p234 vs p2dys, which is
+# run 1 of the round. This is run 3, and it is only interpretable if run 1 has
+# already shown that removing P5 is free. If run 1 loses, do not score this one
+# as an architecture result — it confounds two changes.
+#
+# EXPECTED PARAMETER COUNT: at or slightly below stock yolo26-p2dys, because the
+# removed P5 branch (Conv[512->1024] + C3k2[1024] + the C2PSA-fed concat) is far
+# heavier than four extra repeats at 128 and 256 channels. Verify before running:
+# if this comes out ABOVE p2dys, the comparison is no longer capacity-neutral and
+# the label on it is wrong.
+
+# Parameters
+nc: 80 # number of classes
+end2end: True # whether to use end-to-end mode
+reg_max: 1 # DFL bins
+scales:
+  # [depth, width, max_channels]
+  n: [0.50, 0.50, 1024]
+  s: [0.50, 0.50, 1024]
+  m: [0.50, 1.00, 512]
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.50, 512]
+
+# YOLO26n backbone — UNCHANGED from yolo26-p2dys.yaml
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]] # 2
+  - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]] # 4
+  - [-1, 1, Conv, [512, 3, 2]] # 5-P4/16
+  - [-1, 2, C3k2, [512, True]] # 6
+  - [-1, 1, Conv, [1024, 3, 2]] # 7-P5/32
+  - [-1, 2, C3k2, [1024, True]] # 8
+  - [-1, 1, SPPF, [1024, 5, 3, True]] # 9
+  - [-1, 2, C2PSA, [1024]] # 10   <- still feeds the top-down path at row 11
+
+# YOLO26n head
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 11
+  - [[-1, 6], 1, Concat, [1]] # 12 cat backbone P4
+  - [-1, 2, C3k2, [512, True]] # 13
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 14
+  - [[-1, 4], 1, Concat, [1]] # 15 cat backbone P3
+  - [-1, 2, C3k2, [256, True]] # 16 (P3/8-small)
+
+  - [-1, 1, DySample, [2]] # 17 content-aware P3 -> P2, groups=4 (campaign setting)
+  - [[-1, 2], 1, Concat, [1]] # 18 cat backbone P2
+  - [-1, 4, C3k2, [128, True]] # 19 (P2/4-xsmall)  <- REPEATS 2 -> 4
+
+  - [-1, 1, Conv, [128, 3, 2]] # 20
+  - [[-1, 16], 1, Concat, [1]] # 21 cat head P3
+  - [-1, 4, C3k2, [256, True]] # 22 (P3/8-small)   <- REPEATS 2 -> 4
+
+  - [-1, 1, Conv, [256, 3, 2]] # 23
+  - [[-1, 13], 1, Concat, [1]] # 24 cat head P4
+  - [-1, 2, C3k2, [512, True]] # 25 (P4/16-medium)
+
+  - [[19, 22, 25], 1, Detect, [nc]] # Detect(P2, P3, P4) — strides 4, 8, 16
