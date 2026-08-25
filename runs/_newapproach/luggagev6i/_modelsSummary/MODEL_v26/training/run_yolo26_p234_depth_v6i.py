@@ -153,6 +153,7 @@ CFG_P234 = f"{CFG_DIR}/yolo26-p2dys-p234.yaml"
 CFG_RICH = f"{CFG_DIR}/yolo26-p2dys-p234rich.yaml"
 CFG_RICH6 = f"{CFG_DIR}/yolo26-p2dys-p234rich6.yaml"
 CFG_P2ONLY = f"{CFG_DIR}/yolo26-p2dys-p234rich-p2only.yaml"
+CFG_P2DEEP6 = f"{CFG_DIR}/yolo26-p2dys-p234-p2deep6.yaml"
 
 # All p234* graphs are 3-level: stock head rows 17-19 -> 23-25. Rows 26-28 do not
 # exist, so the 6-row range used for p2dys would silently copy three and skip
@@ -225,10 +226,39 @@ RUNS = [
             "axis; turning over makes 4 a MEASURED optimum, which is the better "
             "statement."},
 
-    {"name": "y26_p2dys_p234_b1_s1", "order": 4, "prior": 0.00, "seed": 1,
-     "cfg": CFG_P234, "depth": (2, 2), "beta": 1.0, "params": cfg(tal_beta=1.0),
-     "ctrl": P234B1_S50, "ctrl_g": P234B1_5095,
-     "label": "SEED the campaign maximum (82.06 mAP50 / 79.57 small, n=1)",
+    # RETARGETED after run 1. This originally seeded y26_p2dys_p234_b1 (79.57),
+    # but run 1 produced y26_p234rich_b1 at 79.67 / 82.57 -- the new maximum on
+    # BOTH metrics. Seeding the runner-up is the wrong GPU hour. The two differ by
+    # 0.10 on small (0.2 SE, statistically identical), so this seeds the one with
+    # the better profile: +0.51 mAP50 and +0.66 on AR50_95_small.
+    # ---- ADDED after runs 1-2 landed. The depth decomposition split by LEVEL:
+    #        P2 depth 2->4 : small +0.29  m5095 +0.57  AR +0.14
+    #        P3 depth 2->4 : small +0.34  m5095 +0.10  AR -0.47
+    #      P2 depth raises recall; P3 depth costs it. p234rich bundles both.
+    {"name": "y26_p234_p2deep6", "order": 5, "prior": 0.30, "seed": 0,
+     "cfg": CFG_P2DEEP6, "depth": (6, 2), "beta": 6.0, "params": cfg(),
+     "ctrl": 78.38, "ctrl_g": 56.00,
+     "label": "depth (6,2) — isolate the good half of the reallocation and push it",
+     "why": "(4,2) is the ONLY cell in 164 runs above baseline on BOTH mAP50-95 "
+            "(+0.70) and AR50_95_small (+0.25). If the P2-depth effect is real "
+            "and roughly linear, (6,2) extends it without paying the P3 recall "
+            "cost. For an abandonment alarm a missed bag is a missed alarm, so "
+            "the recall ceiling is arguably what decides the system."},
+
+    {"name": "y26_p234rich_b0", "order": 6, "prior": 0.25, "seed": 0,
+     "cfg": CFG_RICH, "depth": (4, 4), "beta": 0.0, "params": cfg(tal_beta=0.0),
+     "ctrl": 79.67, "ctrl_g": 54.94,
+     "label": "p234rich + beta 0 — the loss that won on p2dys, on the better graph",
+     "why": "On p2dys, b0 BEAT b1 on both metrics that matter: small +0.41 and "
+            "AR50_95_small +0.38. Every p234 cell so far uses b1, so the better "
+            "loss on the other P2 graph has never met the better graph. It is "
+            "also the simpler claim: beta=0 means the alignment metric ignores "
+            "IoU entirely, which reads better than 'we tuned beta to 1'."},
+
+    {"name": "y26_p234rich_b1_s1", "order": 4, "prior": 0.00, "seed": 1,
+     "cfg": CFG_RICH, "depth": (4, 4), "beta": 1.0, "params": cfg(tal_beta=1.0),
+     "ctrl": 79.67, "ctrl_g": 54.94,
+     "label": "SEED the campaign maximum (82.57 mAP50 / 79.67 small, n=1)",
      "why": "Six selected maxima in this campaign have regressed on repeat: -0.55 "
             "mean in round 23, -1.12 for b4s2_sbb50. 1.2 GPU-h protecting the "
             "number the paper would headline."},
