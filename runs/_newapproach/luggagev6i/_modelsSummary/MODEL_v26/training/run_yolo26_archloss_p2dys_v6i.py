@@ -271,6 +271,36 @@ def preflight(todo):
     return ok, {r["name"] for r in todo}
 
 
+# ------------------------------------------------------------------- load --
+def load_pretrained(model):
+    """Transfer yolo26s.pt into the graph. THIS MUST RUN BEFORE remap_pan().
+
+    YOLO(<yaml>) builds a RANDOMLY INITIALISED model. remap_pan() only copies the
+    PAN rows that the P2 graph shifts (120 tensors, 2.97M of 9.67M params). If
+    .load() is skipped, the backbone and the whole top-down head start from
+    scratch and 69% of the network is random.
+
+    THIS EXACT BUG COST A FULL RUN. Symptoms, for the next person:
+        - no "Transferred X/Y items from pretrained weights" in the log
+        - epoch-1 mAP50 ~0.015 instead of ~0.4
+        - final mAP50 ~0.74 / mAP50-95 ~0.485 against a ~0.80 / ~0.55 baseline
+    """
+    sd_before = {k: v.detach().clone() for k, v in model.model.state_dict().items()}
+    model.load(WEIGHTS)
+    sd_after = model.model.state_dict()
+    total = sum(v.numel() for v in sd_after.values())
+    moved = sum(sd_after[k].numel() for k in sd_before
+                if not torch.equal(sd_before[k].float(), sd_after[k].float()))
+    frac = moved / total if total else 0.0
+    print(f"  [load ] {moved / 1e6:.2f}M of {total / 1e6:.2f}M params transferred "
+          f"from {WEIGHTS}  ({100 * frac:.1f}%)")
+    if frac < 0.45:
+        raise RuntimeError(
+            f"only {100 * frac:.1f}% of parameters came from {WEIGHTS}; the graph is "
+            f"mostly RANDOM and this run would train from near-scratch.")
+    return moved, frac
+
+
 # -------------------------------------------------------------------- remap --
 def remap_pan(model, rows):
     """Copy stock head rows 17-22 into the p2 graph's 23-28.
@@ -372,6 +402,7 @@ def run_one(rc):
           f"vs {rc['ctrl']:.2f} (p2dys + stock loss) | {d}\n")
     t0 = time.time()
     model = YOLO(CFG_P2DYS)
+    n_load, frac_load = load_pretrained(model)   # MUST precede remap_pan
     n_moved = remap_pan(model, REMAP_4LVL)
     state = attach_guard(model, rc)
     results = model.train(data=DATA_YAML, epochs=EPOCHS, imgsz=IMG_SIZE, batch=BATCH,

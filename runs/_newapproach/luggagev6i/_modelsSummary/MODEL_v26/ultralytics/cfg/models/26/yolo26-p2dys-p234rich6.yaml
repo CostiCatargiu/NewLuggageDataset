@@ -1,0 +1,85 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# yolo26-p2dys-p234rich with the fine-level depth pushed from 4 to 6.
+#
+# WHY. The p2 grid gave exactly one clean monotone signal, and it was depth at
+# the fine levels:
+#
+#     graph                depth(19,22)   small50   mAP50-95   AR50 small
+#     yolo26-p2dys-p234         2           78.10     55.44       95.95
+#     yolo26-p2dys-p234rich     4           78.72     56.10       95.54
+#                                          +0.62     +0.66
+#
+# It is the ONLY change in that round that gained on BOTH axes, and p234rich is
+# the only configuration of six that finished ABOVE the baseline on mAP50-95
+# (+0.80). It is also the one that preserves recall: AR50_95_small 70.92 against
+# the baseline's 71.14, while every other cell in the round fell to 66-68.
+#
+# Two points make a line, not a curve. This is the third point. If 6 continues
+# the trend the axis is open and worth a fourth; if it turns over, 4 is the
+# optimum and the axis is closed with a measured peak — which is a better
+# statement than an unbounded "more depth helped".
+#
+# WHY DEPTH AND NOT WIDTH. Width was tried three times and answered:
+#     y26_p2_wide 55.53   y26_wide_starve 55.46   y26_p2addw_base 55.06
+# all at or below the matched control. Repeat count at the fine levels had never
+# been touched before p234rich.
+#
+# CAVEAT THAT MUST GO IN ANY WRITE-UP. The p234 -> p234rich comparison is n=1 vs
+# n=1 at an arch run-to-run SE of ~0.488, so +0.62 is 1.3 SE. This graph is built
+# on a suggestive single-draw trend, not an established one.
+#
+# EXPECTED PARAMETERS: above p234rich (7.06M) but still well below p2dys (9.67M).
+# The preflight prints the count; if it exceeds p2dys the capacity-neutral
+# framing no longer applies and the label on this run is wrong.
+
+# Parameters
+nc: 80 # number of classes
+end2end: True # whether to use end-to-end mode
+reg_max: 1 # DFL bins
+scales:
+  # [depth, width, max_channels]
+  n: [0.50, 0.50, 1024]
+  s: [0.50, 0.50, 1024]
+  m: [0.50, 1.00, 512]
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.50, 512]
+
+# YOLO26n backbone — UNCHANGED from yolo26-p2dys.yaml
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]] # 2
+  - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]] # 4
+  - [-1, 1, Conv, [512, 3, 2]] # 5-P4/16
+  - [-1, 2, C3k2, [512, True]] # 6
+  - [-1, 1, Conv, [1024, 3, 2]] # 7-P5/32
+  - [-1, 2, C3k2, [1024, True]] # 8
+  - [-1, 1, SPPF, [1024, 5, 3, True]] # 9
+  - [-1, 2, C2PSA, [1024]] # 10   <- still feeds the top-down path at row 11
+
+# YOLO26n head
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 11
+  - [[-1, 6], 1, Concat, [1]] # 12 cat backbone P4
+  - [-1, 2, C3k2, [512, True]] # 13
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 14
+  - [[-1, 4], 1, Concat, [1]] # 15 cat backbone P3
+  - [-1, 2, C3k2, [256, True]] # 16 (P3/8-small)
+
+  - [-1, 1, DySample, [2]] # 17 content-aware P3 -> P2, groups=4 (campaign setting)
+  - [[-1, 2], 1, Concat, [1]] # 18 cat backbone P2
+  - [-1, 6, C3k2, [128, True]] # 19 (P2/4-xsmall)  <- REPEATS 4 -> 6
+
+  - [-1, 1, Conv, [128, 3, 2]] # 20
+  - [[-1, 16], 1, Concat, [1]] # 21 cat head P3
+  - [-1, 6, C3k2, [256, True]] # 22 (P3/8-small)   <- REPEATS 4 -> 6
+
+  - [-1, 1, Conv, [256, 3, 2]] # 23
+  - [[-1, 13], 1, Concat, [1]] # 24 cat head P4
+  - [-1, 2, C3k2, [512, True]] # 25 (P4/16-medium)
+
+  - [[19, 22, 25], 1, Detect, [nc]] # Detect(P2, P3, P4) — strides 4, 8, 16
