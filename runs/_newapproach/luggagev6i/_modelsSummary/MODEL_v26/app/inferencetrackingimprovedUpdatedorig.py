@@ -43,9 +43,7 @@ from ultralytics import YOLO
 
 # ================================ I/O ========================================
 VIDEO_IN = r"/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo.mpg"
-# Bare filename, never a path: it is written inside the run directory. An absolute value
-# here would make os.path.join drop the run directory entirely.
-OUT_VIDEO = "annotated.mp4"
+OUT_VIDEO = r"/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmout.mpg"
 # Every artefact of a run lands in OUT_DIR/<video>__p-<person>__l-<luggage>__<stamp><tag>/
 OUT_DIR = r"/home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/_newapproach/luggagev6i/_modelsSummary/MODEL_v26/app/runs"
 RUN_TAG = ""  # optional suffix for the folder name, e.g. "_down2.0"
@@ -95,12 +93,12 @@ MIN_PERSON_H = 20.0  # px; below this the height estimate is too noisy to divide
 # =========================
 # STABLE TRACKING PARAMS
 # =========================
-PERSON_TTL_SECONDS = 10.0
+PERSON_TTL_SECONDS = 6.0
 # An abandoned bag must outlive long crowd occlusions: losing the track means losing the
 # owner with it, and the fresh track would elect whoever happens to stand there next.
 LUGGAGE_TTL_SECONDS = 45.0
 
-PERSON_MAX_RELINK_AGE = 6.0
+PERSON_MAX_RELINK_AGE = 4.0
 LUGGAGE_MAX_RELINK_AGE = 30.0
 PREDICT_MAX_SEC = 2.0  # never extrapolate a track's motion further than this
 VEL_DECAY_WHEN_MISSED = 0.90  # unmatched tracks stop drifting instead of flying off
@@ -110,12 +108,6 @@ VEL_DECAY_WHEN_MISSED = 0.90  # unmatched tracks stop drifting instead of flying
 LUGGAGE_MEMORY_SEC = 90.0
 LUGGAGE_REVIVE_IOU = 0.30
 LUGGAGE_REVIVE_DIST = 90  # px between ground-contact points
-
-# The same for people: a missed detection must not cost somebody their ID. A retired
-# person track is reclaimed if someone reappears where it left off.
-PERSON_MEMORY_SEC = 20.0
-PERSON_REVIVE_IOU = 0.30
-PERSON_REVIVE_DIST = 150
 
 # The person tracker may re-create the owner under a new ID after an occlusion.
 OWNER_REBIND_SEC = 3.0  # how long the owner's last box stays valid for re-binding
@@ -530,18 +522,17 @@ def should_spawn_new_track(det, tracks, now_t):
     return True
 
 
-def revive_retired(det, retired, now_t, memory_s=LUGGAGE_MEMORY_SEC,
-                   iou_thr=LUGGAGE_REVIVE_IOU, dist_thr=LUGGAGE_REVIVE_DIST):
-    """Give a re-appearing object its old ID (and state) back instead of a fresh identity."""
+def revive_retired(det, retired, now_t):
+    """Give a re-appearing bag its old ID (and owner) back instead of a fresh identity."""
     dbx, dby = bottom_center(det["bbox"])
     best_lid, best_score = None, None
     for lid, st in retired.items():
-        if now_t - st["last_seen_t"] > memory_s:
+        if now_t - st["last_seen_t"] > LUGGAGE_MEMORY_SEC:
             continue
         iou = iou_xyxy(det["bbox"], st["bbox"])
         sx, sy = bottom_center(st["bbox"])
         dist = math.hypot(dbx - sx, dby - sy)
-        if iou < iou_thr and dist > dist_thr:
+        if iou < LUGGAGE_REVIVE_IOU and dist > LUGGAGE_REVIVE_DIST:
             continue
         score = iou - dist / 1000.0
         if best_score is None or score > best_score:
@@ -636,19 +627,12 @@ def person_heights_away(bag_bbox, persons):
 
 
 def rebind_owner(st, persons, now_t):
-    """Re-attach the owner after an ID switch.
-
-    Only a track BORN after the owner vanished can be the owner re-created under a new ID.
-    A track that already existed while the owner was visible is a different person, however
-    much it overlaps -- in a crowd two pedestrians reach IoU 0.5 routinely.
-    """
+    """A person track re-created at the owner's last position IS the owner (ID churn)."""
     last = st.get("owner_bbox")
     if last is None or now_t - st.get("owner_seen_t", -1e9) > OWNER_REBIND_SEC:
         return None
     best_pid, best_iou = None, OWNER_REBIND_IOU
     for p in persons:
-        if p["tid"] == st["owner_pid"] or p.get("first_t", 0.0) < st["owner_seen_t"]:
-            continue
         overlap = iou_xyxy(p["bbox"], last)
         if overlap >= best_iou:
             best_pid, best_iou = p["tid"], overlap
@@ -705,20 +689,13 @@ def update_ownership(st, persons, now_t, dt):
         if owner is not None:
             st["owner_bbox"] = np.array(owner["bbox"], dtype=float)
             st["owner_seen_t"] = now_t
-        st["owner_last_d"] = owner_d
         near = owner_d <= D_AWAY
     else:  # owner not visible -- occlusion or departure (note 3)
-        last_d = st.get("owner_last_d")
         if not was_missing:
             LOG.event("owner_lost", lid=lid, owner=st["owner_pid"],
-                      last_d_h=None if last_d is None else round(last_d, 3),
-                      departed=bool(last_d is not None and last_d > D_AWAY),
                       grace_s=OWNER_GRACE_SEC, visible_people=len(dists))
         st["owner_missing_s"] += dt
-        # going out of view only counts as presence if the owner was still beside the bag;
-        # an owner already measured walking away does not get the benefit of the doubt
-        near = (last_d is not None and last_d <= D_AWAY
-                and st["owner_missing_s"] < OWNER_GRACE_SEC)
+        near = st["owner_missing_s"] < OWNER_GRACE_SEC
 
     if near:
         st["away_since"] = None
@@ -726,9 +703,7 @@ def update_ownership(st, persons, now_t, dt):
         st["state"] = OWNED
     else:
         if st["away_since"] is None:
-            # the clock runs from the last moment the owner was verified beside the bag --
-            # not from when the grace ran out, or every occlusion is added to the delay
-            st["away_since"] = now_t - (st["owner_missing_s"] if owner_d is None else 0.0)
+            st["away_since"] = now_t
         st["unattended_s"] = now_t - st["away_since"]
         st["state"] = ALARM if st["unattended_s"] >= UNATTENDED_SECONDS else UNATTENDED
 
@@ -892,7 +867,7 @@ def run():
     num_luggage_classes = max(luggage_names) + 1 if luggage_names else 1
 
     run_dir = make_run_dir(VIDEO_IN, person_weights, luggage_weights)
-    out_video = os.path.join(run_dir, os.path.basename(OUT_VIDEO))
+    out_video = os.path.join(run_dir, OUT_VIDEO)
 
     cap = cv2.VideoCapture(VIDEO_IN)
     if not cap.isOpened():
@@ -925,12 +900,8 @@ def run():
 
     writer = None
     if SAVE_OUTPUT:
-        ext = os.path.splitext(out_video)[1].lower()
-        fourcc = cv2.VideoWriter_fourcc(*("mp4v" if ext == ".mp4" else "XVID"))
+        fourcc = cv2.VideoWriter_fourcc(*("mp4v" if out_video.lower().endswith(".mp4") else "XVID"))
         writer = cv2.VideoWriter(out_video, fourcc, video_fps, (canvas_w, canvas_h))
-        if not writer.isOpened():  # a silent writer drops every frame without a word
-            raise RuntimeError(f"VideoWriter refused {out_video} "
-                               f"({canvas_w}x{canvas_h} @ {video_fps:.2f}); try a .mp4 path")
         print(f"[SAVE] {out_video}  ({canvas_w}x{canvas_h})")
 
     if SHOW:
@@ -943,7 +914,6 @@ def run():
     next_luggage_id = 1
     luggage_tracks = {}  # LID -> the same + {state, owner_pid, votes, away_since, unattended_s}
     retired_bags = {}  # LID -> state of bags that vanished, kept for LUGGAGE_MEMORY_SEC
-    retired_persons = {}  # PID -> state of people who vanished, kept for PERSON_MEMORY_SEC
 
     alarm_manager = AlarmManager()
     events = []
@@ -1061,24 +1031,6 @@ def run():
         # create new person tracks
         for di in p_unmatched_det:
             d = person_dets[di]
-
-            # a missed detection must not cost somebody their ID
-            old_pid = revive_retired(d, retired_persons, now_t, PERSON_MEMORY_SEC,
-                                     PERSON_REVIVE_IOU, PERSON_REVIVE_DIST)
-            if old_pid is not None:
-                st = retired_persons.pop(old_pid)
-                LOG.event("track_revived", role="person", tid=old_pid,
-                          gap_s=round(now_t - st["last_seen_t"], 2),
-                          iou=round(iou_xyxy(d["bbox"], st["bbox"]), 3),
-                          conf=round(d["conf"], 3), bbox=d["bbox"])
-                st["bbox"] = np.array(d["bbox"], dtype=float)
-                st["conf"] = float(d["conf"])
-                st["last_seen_t"] = now_t
-                st["missed_s"] = 0.0
-                st["vx"] = st["vy"] = 0.0
-                person_tracks[old_pid] = st
-                continue
-
             pid = next_person_id
             next_person_id += 1
             cx, cy = center_xyxy(d["bbox"])
@@ -1100,10 +1052,6 @@ def run():
             LOG.event("track_lost", role="person", tid=pid,
                       alive_s=round(st["last_seen_t"] - st.get("first_t", st["last_seen_t"]), 2),
                       last_seen_t=round(st["last_seen_t"], 2), bbox=st["bbox"])
-            retired_persons[pid] = st
-        for pid in [k for k, s in retired_persons.items()
-                    if now_t - s["last_seen_t"] > PERSON_MEMORY_SEC]:
-            del retired_persons[pid]
 
         # visible persons list (recent only)
         persons = []
@@ -1227,7 +1175,6 @@ def run():
                 "owner_missing_s": 0.0,
                 "owner_bbox": None,
                 "owner_seen_t": -1e9,
-                "owner_last_d": None,
                 "away_since": None,
                 "unattended_s": 0.0,
                 "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
