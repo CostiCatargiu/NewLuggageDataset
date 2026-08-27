@@ -42,11 +42,11 @@ from scipy.optimize import linear_sum_assignment
 from ultralytics import YOLO
 
 # ================================ I/O ========================================
-VIDEO_IN = r"D:\ultralytics\_modelsSummary\videos\video1.avi"
+VIDEO_IN = r"/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo.mpg"
+OUT_VIDEO = r"/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmout.mpg"
 # Every artefact of a run lands in OUT_DIR/<video>__p-<person>__l-<luggage>__<stamp><tag>/
-OUT_DIR = r"D:\ultralytics\_modelsSummary\MODEL_v26\app\runs"
+OUT_DIR = r"/home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/_newapproach/luggagev6i/_modelsSummary/MODEL_v26/app/runs"
 RUN_TAG = ""  # optional suffix for the folder name, e.g. "_down2.0"
-OUT_VIDEO = "annotated.mp4"
 EVENTS_JSON = "events.json"
 # Newline-delimited JSON trace of everything that happened, for offline analysis:
 #   import pandas as pd; df = pd.read_json("trace.jsonl", lines=True)
@@ -62,7 +62,7 @@ WINDOW_NAME = "Unattended Luggage   [q] quit   [space] pause   [s] screenshot"
 MODEL_PERSON = r"yolov12x.pt"
 MODEL_LUGGAGE = r"runs_yolo26_overnight_r1213_v6i/y26_scb3_sbb50_cls075/weights/best.pt"
 # One COCO model for BOTH roles (e.g. "yolov26x.pt"); overrides the two paths above.
-SINGLE_MODEL = None
+SINGLE_MODEL = "yolov12x.pt"
 
 PERSON_CLASS_IDS = [0]  # COCO 'person'
 # None = keep every class the luggage model emits (correct for a custom luggage model).
@@ -76,9 +76,9 @@ COCO_TO_CUSTOM = {24: 0, 26: 1, 28: 2}  # backpack->backpack, handbag->bag, suit
 REMAP_COCO_LUGGAGE = True  # applied only when the luggage detector is a COCO model
 
 CONF_PERSON = 0.25
-CONF_LUGGAGE = 0.40
+CONF_LUGGAGE = 0.20
 IOU = 0.45
-IMGSZ = 960
+IMGSZ = 640
 DEVICE = "0"  # "0" GPU, or "cpu"
 
 # Persons are tracked by BoT-SORT (Kalman + appearance ReID) instead of the IoU tracker
