@@ -144,6 +144,7 @@ TRAJECTORY_MAX_AGE_SEC = 4.0  # seconds of video time drawn behind each track
 ALARM_COOLDOWN_SECONDS = 5.0  # minimum video time between re-triggers of the same bag
 ALARM_FLASH_DURATION = 2.0
 ALARM_SOUND_ENABLED = False  # terminal beep on every trigger
+ALARM_LATCH = True  # once raised, an alarm stays raised for the life of the track
 
 # =========================
 # ZONE DETECTION (optional)
@@ -155,18 +156,21 @@ RESTRICTED_ZONES = []  # e.g. [[(100, 100), (300, 100), (300, 300), (100, 300)]]
 # ANNOTATION
 # =========================
 SHOW_TRAJECTORIES = True
+TRAJECTORY_OWNERS_ONLY = True  # only trace people who own a bag, otherwise the view fills up
+# On-screen tags are kept to <tag><id> <conf>; the sidebar legend spells them out.
+SHORT_NAMES = {"backpack": "bck", "bag": "bg", "trolley": "tr",
+               "handbag": "bg", "suitcase": "tr"}
 # The info panel is rendered in its own column NEXT TO the video, never on top of it.
 SIDEBAR_WIDTH = 360  # px; 0 disables the panel entirely
 SIDEBAR_SIDE = "right"  # "right" or "left"
 SIDEBAR_BG = (26, 26, 26)
-SIDEBAR_MAX_TRACK_ROWS = 8  # per-bag rows listed under "tracked luggage"
+SIDEBAR_MAX_TRACK_ROWS = 6  # per-bag rows listed under "luggage / owner"
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 PENDING, OWNED, UNATTENDED, ALARM = "PENDING", "OWNED", "UNATTENDED", "ALARM"
 
 COLOR_PERSON = (255, 180, 0)
 COLOR_OWNER = (0, 255, 255)
-COLOR_LINK = (255, 255, 0)
 COLOR_PENDING = (200, 200, 200)
 COLOR_OWNED = (80, 200, 80)
 COLOR_UNATTENDED = (0, 165, 255)
@@ -227,12 +231,10 @@ def draw_label(img, text, x, y, color, scale=0.6, thickness=2, bg=True, alpha=0.
     return x1, y1, x2, y2
 
 
-def draw_label_block(img, lines, x, y, color, scale=0.5, thickness=1, above=True):
-    """Stack of labels anchored above (default) or below the point."""
-    step = int(cv2.getTextSize("Ag", FONT, scale, thickness)[0][1] + 11)
-    for i, line in enumerate(lines):
-        yy = y - (len(lines) - 1 - i) * step if above else y + (i + 1) * step
-        draw_label(img, line, x, yy, color, scale, thickness)
+def short_name(name):
+    """Compact tag for a class name, e.g. backpack -> bck."""
+    name = str(name).lower()
+    return SHORT_NAMES.get(name, name[:3])
 
 
 def predict_bbox(st, dt_pred):
@@ -537,6 +539,10 @@ def update_ownership(st, persons, now_t, dt):
                 st["away_since"] = now_t
         return dists
 
+    if ALARM_LATCH and st["state"] == ALARM:  # never hand a raised alarm back to anyone
+        st["unattended_s"] = now_t - st["away_since"]
+        return dists
+
     owner_d = dists.get(st["owner_pid"])
     if owner_d is not None:
         st["owner_missing_s"] = 0.0
@@ -619,11 +625,14 @@ def draw_zones(img, zones, color=ZONE_ALERT_COLOR, thickness=2):
         cv2.polylines(img, [pts], True, color, thickness, cv2.LINE_AA)
 
 
-def draw_sidebar(canvas, x0, width, rows, alarm_count, flash):
-    """Info column drawn beside the footage; `rows` are (text, colour, scale) or None gaps."""
+def draw_sidebar(canvas, x0, width, rows, footer, alarm_count, flash):
+    """Info column beside the footage; `rows` may be truncated, `footer` is bottom-anchored."""
     h = canvas.shape[0]
     x, right = x0 + 14, x0 + width - 14
     cv2.line(canvas, (x0, 0), (x0, h), (70, 70, 70), 1)
+
+    alarm_h = 72 if alarm_count else 0
+    footer_top = h - alarm_h - 22 * len(footer) - 18
 
     y = 32
     cv2.putText(canvas, "UNATTENDED LUGGAGE", (x, y), FONT, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
@@ -634,15 +643,21 @@ def draw_sidebar(canvas, x0, width, rows, alarm_count, flash):
     y += 26
 
     for row in rows:
+        if y > footer_top - 22:
+            break
         if row is None:  # section separator
             cv2.line(canvas, (x, y - 15), (right, y - 15), (60, 60, 60), 1)
             y += 8
             continue
         text, color, scale = row
-        if y > h - 90:
-            break
         cv2.putText(canvas, text, (x, y), FONT, scale, color, 1, cv2.LINE_AA)
         y += 24
+
+    y = footer_top
+    cv2.line(canvas, (x, y - 15), (right, y - 15), (60, 60, 60), 1)
+    for text, color, scale in footer:
+        cv2.putText(canvas, text, (x, y), FONT, scale, color, 1, cv2.LINE_AA)
+        y += 22
 
     if alarm_count:
         box_h = 58
@@ -655,10 +670,12 @@ def draw_sidebar(canvas, x0, width, rows, alarm_count, flash):
                     cv2.LINE_AA)
 
 
-def legend_rows():
-    return [("person", COLOR_PERSON, 0.45), ("owner of a bag", COLOR_OWNER, 0.45),
-            ("finding owner", COLOR_PENDING, 0.45), ("owned", COLOR_OWNED, 0.45),
-            ("unattended", COLOR_UNATTENDED, 0.45), ("ALARM", COLOR_ALARM, 0.45)]
+def legend_rows(names):
+    """Expands the on-screen tags, two per line, then the box-colour key."""
+    items = ["P=person"] + [f"{short_name(n)}={n}" for n in names.values()]
+    rows = [("   ".join(items[i:i + 2]), (205, 205, 205), 0.42) for i in range(0, len(items), 2)]
+    return rows + [("finding owner", COLOR_PENDING, 0.42), ("owned", COLOR_OWNED, 0.42),
+                   ("unattended", COLOR_UNATTENDED, 0.42), ("ALARM", COLOR_ALARM, 0.42)]
 
 
 def draw_alarm_border(img, flash):
@@ -956,21 +973,17 @@ def run():
         # --- persons first, so the bag/owner links land on top of the boxes ---
         for p in persons:
             x1, y1, x2, y2 = p["bbox"]
-            pred_flag = p.get("pred", False)
             owns = owner_of.get(p["tid"], [])
             color = COLOR_OWNER if owns else COLOR_PERSON
             cv2.rectangle(annotated, (int(x1), int(y1)), (int(x2), int(y2)), color,
-                          1 if pred_flag else 2)
+                          1 if p.get("pred") else 2)
 
-            if SHOW_TRAJECTORIES and p["tid"] in person_tracks:
+            # only owners get a trace, otherwise the frame fills up with paths
+            if SHOW_TRAJECTORIES and p["tid"] in person_tracks and (owns or not TRAJECTORY_OWNERS_ONLY):
                 draw_trajectory(annotated, person_tracks[p["tid"]]["trajectory"], color, now_t)
 
-            label = f"P{p['tid']} person {p['conf']:.2f}"
-            if owns:
-                label += "  owns " + ",".join(f"L{i}" for i in owns)
-            if pred_flag:
-                label += "  PRED"
-            draw_label(annotated, label, x1, y1 - 6, color, scale=0.5, thickness=1)
+            draw_label(annotated, f"P{p['tid']} {p['conf']:.2f}", x1, y1 - 6, color,
+                       scale=0.45, thickness=1)
 
         # --- luggage: ownership state machine + annotation ---
         visible_luggage = 0
@@ -1034,39 +1047,33 @@ def run():
 
             cid = int(st["cls_stable"])
             cname = str(luggage_names.get(cid, cid))
-            head = f"L{lid} {cname} {float(st['conf']):.2f}"
-            if int(st.get("cls_last", cid)) != cid:  # this frame disagrees with the class vote
-                head += f" (~{luggage_names.get(int(st['cls_last']), '?')})"
-            if pred_flag:
-                head += "  PRED"
-            if zone_violation:
-                head += "  [ZONE]"
+            tag = f"{short_name(cname)}{lid}"
+
+            label = f"{tag} {float(st['conf']):.2f}"
+            if state in (UNATTENDED, ALARM):
+                label += f"  {st['unattended_s']:.0f}s"
+            draw_label(annotated, label, x1, y1 - 6, color, scale=0.45, thickness=1)
 
             if state == PENDING:
-                tail = f"finding owner {now_t - st['first_t']:.1f}/{OWNERSHIP_SEC:.0f}s"
-                brief = "finding owner"
+                pair = f"{tag}  finding owner {now_t - st['first_t']:.0f}/{OWNERSHIP_SEC:.0f}s"
             elif state == OWNED:
-                tail = f"owner P{st['owner_pid']}" + (
-                    f"  {owner_d:.1f}h" if owner_d is not None else "  (occluded)")
-                brief = f"owner P{st['owner_pid']}" + (f" {owner_d:.1f}h" if owner_d is not None else " occl")
+                pair = f"{tag} - P{st['owner_pid']}   " + (
+                    f"{owner_d:.1f}h" if owner_d is not None else "occluded")
             elif state == UNATTENDED:
-                tail = (f"away {st['unattended_s']:.0f}s  "
-                        f"alarm in {UNATTENDED_SECONDS - st['unattended_s']:.0f}s")
-                brief = f"away {st['unattended_s']:.0f}s"
+                pair = f"{tag} - P{st['owner_pid']}   away {st['unattended_s']:.0f}s"
             else:
-                tail = f"UNATTENDED {st['unattended_s']:.0f}s"
-                brief = f"ALARM {st['unattended_s']:.0f}s"
-            draw_label_block(annotated, [head, tail], x1, y1 - 6, color, scale=0.5, thickness=1)
-            track_rows.append((f"L{lid} {cname[:9]:<10s}{brief}", color, 0.45))
+                pair = f"{tag} - P{st['owner_pid']}   ALARM {st['unattended_s']:.0f}s"
+            if pred_flag:
+                pair += " ?"
+            if zone_violation:
+                pair += " [Z]"
+            track_rows.append((pair, color, 0.45))
 
             # the bag/owner pairing this whole script exists for
             if owner is not None:
                 bx, by = bottom_center(bb)
                 ox, oy = bottom_center(owner["bbox"])
-                cv2.line(annotated, (int(bx), int(by)), (int(ox), int(oy)), COLOR_LINK, 2, cv2.LINE_AA)
-                if owner_d is not None:
-                    draw_label(annotated, f"P{owner['tid']}  {owner_d:.1f}h",
-                               (bx + ox) / 2, (by + oy) / 2, COLOR_LINK, scale=0.45, thickness=1)
+                cv2.line(annotated, (int(bx), int(by)), (int(ox), int(oy)), color, 2, cv2.LINE_AA)
 
         # -----------------------------
         # Sidebar (beside the video, never on top of it)
@@ -1091,15 +1098,14 @@ def run():
                 (f"alarms      {alarms_active} now / {len(alarm_manager.history)} total",
                  COLOR_ALARM, 0.52),
                 None,
-                ("TRACKED LUGGAGE", (255, 255, 255), 0.48),
+                ("LUGGAGE / OWNER", (255, 255, 255), 0.48),
                 *(track_rows[:SIDEBAR_MAX_TRACK_ROWS] or [("- none -", (130, 130, 130), 0.45)]),
                 None,
-                (f"own <= {D_OWN}h    away > {D_AWAY}h", (170, 170, 170), 0.45),
-                (f"alarm after {UNATTENDED_SECONDS:.0f}s away", (170, 170, 170), 0.45),
-                None,
-                *legend_rows(),
+                (f"own <= {D_OWN}h   away > {D_AWAY}h   {UNATTENDED_SECONDS:.0f}s",
+                 (170, 170, 170), 0.45),
             ]
-            draw_sidebar(canvas, side_x0, side_w, rows, alarms_active, flash)
+            draw_sidebar(canvas, side_x0, side_w, rows, legend_rows(luggage_names),
+                         alarms_active, flash)
         else:
             canvas = annotated
 
