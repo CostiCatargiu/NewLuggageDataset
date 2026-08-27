@@ -86,10 +86,24 @@ MIN_PERSON_H = 20.0  # px; below this the height estimate is too noisy to divide
 # STABLE TRACKING PARAMS
 # =========================
 PERSON_TTL_SECONDS = 6.0
-LUGGAGE_TTL_SECONDS = 10.0
+# An abandoned bag must outlive long crowd occlusions: losing the track means losing the
+# owner with it, and the fresh track would elect whoever happens to stand there next.
+LUGGAGE_TTL_SECONDS = 45.0
 
 PERSON_MAX_RELINK_AGE = 4.0
-LUGGAGE_MAX_RELINK_AGE = 6.0
+LUGGAGE_MAX_RELINK_AGE = 30.0
+PREDICT_MAX_SEC = 2.0  # never extrapolate a track's motion further than this
+VEL_DECAY_WHEN_MISSED = 0.90  # unmatched tracks stop drifting instead of flying off
+
+# Identity memory: a bag that vanished completely keeps its ownership if it comes back
+# in the same place, instead of being reborn with a new ID and a new owner.
+LUGGAGE_MEMORY_SEC = 90.0
+LUGGAGE_REVIVE_IOU = 0.30
+LUGGAGE_REVIVE_DIST = 90  # px between ground-contact points
+
+# The person tracker may re-create the owner under a new ID after an occlusion.
+OWNER_REBIND_SEC = 3.0  # how long the owner's last box stays valid for re-binding
+OWNER_REBIND_IOU = 0.40
 
 PERSON_MATCH_IOU_THR = 0.10
 PERSON_MATCH_DIST_THR = 220
@@ -165,6 +179,7 @@ SIDEBAR_WIDTH = 360  # px; 0 disables the panel entirely
 SIDEBAR_SIDE = "right"  # "right" or "left"
 SIDEBAR_BG = (26, 26, 26)
 SIDEBAR_MAX_TRACK_ROWS = 6  # per-bag rows listed under "luggage / owner"
+SIDEBAR_MIN_HEIGHT = 620  # canvas is padded to this so the panel is never clipped
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 PENDING, OWNED, UNATTENDED, ALARM = "PENDING", "OWNED", "UNATTENDED", "ALARM"
@@ -243,6 +258,7 @@ def predict_bbox(st, dt_pred):
     cx, cy = center_xyxy(st["bbox"])
     w = x2 - x1
     h = y2 - y1
+    dt_pred = min(dt_pred, PREDICT_MAX_SEC)  # a long gap must not fling the box away
     cx_p = cx + st.get("vx", 0.0) * dt_pred
     cy_p = cy + st.get("vy", 0.0) * dt_pred
     return np.array([cx_p - w / 2, cy_p - h / 2, cx_p + w / 2, cy_p + h / 2], dtype=float)
@@ -408,13 +424,18 @@ def update_tracks_with_matches(
 
     # unmatched tracks: keep alive, accumulate missed time
     for sid in unmatched_track_ids:
-        tracks[sid]["missed_s"] = tracks[sid].get("missed_s", 0.0) + dt_frame
+        st = tracks[sid]
+        st["missed_s"] = st.get("missed_s", 0.0) + dt_frame
+        st["vx"] = st.get("vx", 0.0) * VEL_DECAY_WHEN_MISSED
+        st["vy"] = st.get("vy", 0.0) * VEL_DECAY_WHEN_MISSED
 
 
 def prune_tracks_by_ttl(tracks, ttl_seconds: float):
-    for sid in list(tracks.keys()):
-        if tracks[sid].get("missed_s", 0.0) > ttl_seconds:
-            del tracks[sid]
+    """Drop expired tracks and return them, so the caller can remember their identity."""
+    dead = {sid: st for sid, st in tracks.items() if st.get("missed_s", 0.0) > ttl_seconds}
+    for sid in dead:
+        del tracks[sid]
+    return dead
 
 
 # -----------------------------
@@ -440,6 +461,24 @@ def should_spawn_new_track(det, tracks, now_t):
     return True
 
 
+def revive_retired(det, retired, now_t):
+    """Give a re-appearing bag its old ID (and owner) back instead of a fresh identity."""
+    dbx, dby = bottom_center(det["bbox"])
+    best_lid, best_score = None, None
+    for lid, st in retired.items():
+        if now_t - st["last_seen_t"] > LUGGAGE_MEMORY_SEC:
+            continue
+        iou = iou_xyxy(det["bbox"], st["bbox"])
+        sx, sy = bottom_center(st["bbox"])
+        dist = math.hypot(dbx - sx, dby - sy)
+        if iou < LUGGAGE_REVIVE_IOU and dist > LUGGAGE_REVIVE_DIST:
+            continue
+        score = iou - dist / 1000.0
+        if best_score is None or score > best_score:
+            best_lid, best_score = lid, score
+    return best_lid
+
+
 def merge_overlapping_tracks(tracks, now_t, merge_iou=0.70, max_age=0.8):
     """Merge duplicated luggage tracks that overlap strongly."""
     ids = list(tracks.keys())
@@ -462,20 +501,22 @@ def merge_overlapping_tracks(tracks, now_t, merge_iou=0.70, max_age=0.8):
                 continue
 
             if iou_xyxy(a["bbox"], b["bbox"]) >= merge_iou:
-                # keep the one seen more recently (or keep smaller id if tie)
-                if a["last_seen_t"] > b["last_seen_t"]:
+                # keep the OLDER identity -- ownership belongs to the first observation
+                if a.get("first_t", 0.0) <= b.get("first_t", 0.0):
                     keep_id, drop_id = a_id, b_id
-                elif b["last_seen_t"] > a["last_seen_t"]:
-                    keep_id, drop_id = b_id, a_id
                 else:
-                    keep_id, drop_id = (a_id, b_id) if a_id < b_id else (b_id, a_id)
+                    keep_id, drop_id = b_id, a_id
 
                 K = tracks[keep_id]
                 D = tracks[drop_id]
 
                 # Merge state
                 K["unattended_s"] = max(K.get("unattended_s", 0.0), D.get("unattended_s", 0.0))
-                K["first_t"] = min(K.get("first_t", 0.0), D.get("first_t", 0.0))
+                if D["last_seen_t"] > K["last_seen_t"]:  # the duplicate carries fresher geometry
+                    K["bbox"] = D["bbox"]
+                    K["conf"] = D["conf"]
+                    K["last_seen_t"] = D["last_seen_t"]
+                    K["missed_s"] = 0.0
                 if K.get("owner_pid") is None and D.get("owner_pid") is not None:
                     K["owner_pid"] = D["owner_pid"]
                     K["state"] = D["state"]
@@ -521,8 +562,22 @@ def person_heights_away(bag_bbox, persons):
     return out
 
 
+def rebind_owner(st, persons, now_t):
+    """A person track re-created at the owner's last position IS the owner (ID churn)."""
+    last = st.get("owner_bbox")
+    if last is None or now_t - st.get("owner_seen_t", -1e9) > OWNER_REBIND_SEC:
+        return None
+    best_pid, best_iou = None, OWNER_REBIND_IOU
+    for p in persons:
+        overlap = iou_xyxy(p["bbox"], last)
+        if overlap >= best_iou:
+            best_pid, best_iou = p["tid"], overlap
+    return best_pid
+
+
 def update_ownership(st, persons, now_t, dt):
     """Elect an owner over a window, then follow only that person. Returns distances."""
+    pmap = {p["tid"]: p for p in persons}
     dists = person_heights_away(st["bbox"], persons)
 
     if st["owner_pid"] is None and st["state"] == PENDING:
@@ -544,8 +599,18 @@ def update_ownership(st, persons, now_t, dt):
         return dists
 
     owner_d = dists.get(st["owner_pid"])
+    if owner_d is None and st["owner_pid"] is not None:
+        new_pid = rebind_owner(st, persons, now_t)
+        if new_pid is not None:
+            st["owner_pid"] = new_pid
+            owner_d = dists.get(new_pid)
+
     if owner_d is not None:
         st["owner_missing_s"] = 0.0
+        owner = pmap.get(st["owner_pid"])
+        if owner is not None:
+            st["owner_bbox"] = np.array(owner["bbox"], dtype=float)
+            st["owner_seen_t"] = now_t
         near = owner_d <= D_AWAY
     else:  # owner not visible -- occlusion or departure (note 3)
         st["owner_missing_s"] += dt
@@ -642,16 +707,21 @@ def draw_sidebar(canvas, x0, width, rows, footer, alarm_count, flash):
     cv2.line(canvas, (x, y), (right, y), (90, 90, 90), 1)
     y += 26
 
+    # spacing shrinks so every row fits between the header and the pinned footer
+    slots = sum(1 for r in rows if r is not None)
+    gaps = len(rows) - slots
+    line_h = int(np.clip((footer_top - 22 - y - gaps * 8) / max(1, slots), 15, 24))
+
     for row in rows:
         if y > footer_top - 22:
             break
         if row is None:  # section separator
-            cv2.line(canvas, (x, y - 15), (right, y - 15), (60, 60, 60), 1)
+            cv2.line(canvas, (x, y - line_h + 9), (right, y - line_h + 9), (60, 60, 60), 1)
             y += 8
             continue
         text, color, scale = row
         cv2.putText(canvas, text, (x, y), FONT, scale, color, 1, cv2.LINE_AA)
-        y += 24
+        y += line_h
 
     y = footer_top
     cv2.line(canvas, (x, y - 15), (right, y - 15), (60, 60, 60), 1)
@@ -732,24 +802,27 @@ def run():
     # the panel gets its own column, so the rendered canvas is wider than the video
     side_w = max(0, SIDEBAR_WIDTH)
     canvas_w = w + side_w
+    canvas_h = max(h, SIDEBAR_MIN_HEIGHT) if side_w else h
     video_x0 = side_w if SIDEBAR_SIDE == "left" else 0
+    video_y0 = (canvas_h - h) // 2
     side_x0 = 0 if SIDEBAR_SIDE == "left" else w
 
     writer = None
     if SAVE_OUTPUT:
         fourcc = cv2.VideoWriter_fourcc(*("mp4v" if VIDEO_OUT.lower().endswith(".mp4") else "XVID"))
-        writer = cv2.VideoWriter(VIDEO_OUT, fourcc, video_fps, (canvas_w, h))
-        print(f"[SAVE] {VIDEO_OUT}  ({canvas_w}x{h})")
+        writer = cv2.VideoWriter(VIDEO_OUT, fourcc, video_fps, (canvas_w, canvas_h))
+        print(f"[SAVE] {VIDEO_OUT}  ({canvas_w}x{canvas_h})")
 
     if SHOW:
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(WINDOW_NAME, min(1800, canvas_w), min(1000, h))
+        cv2.resizeWindow(WINDOW_NAME, min(1800, canvas_w), min(1000, canvas_h))
 
     # Tracks (IDs never reused)
     next_person_id = 1
     person_tracks = {}  # PID -> {bbox, conf, last_seen_t, missed_s, vx, vy, trajectory}
     next_luggage_id = 1
     luggage_tracks = {}  # LID -> the same + {state, owner_pid, votes, away_since, unattended_s}
+    retired_bags = {}  # LID -> state of bags that vanished, kept for LUGGAGE_MEMORY_SEC
 
     alarm_manager = AlarmManager()
     events = []
@@ -926,6 +999,22 @@ def run():
             if not should_spawn_new_track(d, luggage_tracks, now_t):
                 continue
 
+            # a bag returning to the same spot keeps its ID, its owner and its timer
+            old_lid = revive_retired(d, retired_bags, now_t)
+            if old_lid is not None:
+                st = retired_bags.pop(old_lid)
+                gap = now_t - st["last_seen_t"]  # time out of sight is not observed time
+                st["first_t"] += gap
+                if st["away_since"] is not None:
+                    st["away_since"] += gap
+                st["bbox"] = np.array(d["bbox"], dtype=float)
+                st["conf"] = float(d["conf"])
+                st["last_seen_t"] = now_t
+                st["missed_s"] = 0.0
+                st["vx"] = st["vy"] = 0.0
+                luggage_tracks[old_lid] = st
+                continue
+
             lid = next_luggage_id
             next_luggage_id += 1
 
@@ -952,6 +1041,8 @@ def run():
                 "votes": {},
                 "owner_pid": None,
                 "owner_missing_s": 0.0,
+                "owner_bbox": None,
+                "owner_seen_t": -1e9,
                 "away_since": None,
                 "unattended_s": 0.0,
                 "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
@@ -960,7 +1051,10 @@ def run():
         # (3) merge any duplicates that slipped through
         merge_overlapping_tracks(luggage_tracks, now_t, merge_iou=MERGE_TRACK_IOU, max_age=MERGE_TRACK_MAX_AGE)
 
-        prune_tracks_by_ttl(luggage_tracks, LUGGAGE_TTL_SECONDS)
+        retired_bags.update(prune_tracks_by_ttl(luggage_tracks, LUGGAGE_TTL_SECONDS))
+        for lid in [k for k, s in retired_bags.items()
+                    if now_t - s["last_seen_t"] > LUGGAGE_MEMORY_SEC]:
+            del retired_bags[lid]
 
         # -----------------------------
         # Unattended logic + drawing
@@ -1054,15 +1148,16 @@ def run():
                 label += f"  {st['unattended_s']:.0f}s"
             draw_label(annotated, label, x1, y1 - 6, color, scale=0.45, thickness=1)
 
+            own = f"P{st['owner_pid']}" if st["owner_pid"] is not None else "no owner"
             if state == PENDING:
                 pair = f"{tag}  finding owner {now_t - st['first_t']:.0f}/{OWNERSHIP_SEC:.0f}s"
             elif state == OWNED:
-                pair = f"{tag} - P{st['owner_pid']}   " + (
+                pair = f"{tag} - {own}   " + (
                     f"{owner_d:.1f}h" if owner_d is not None else "occluded")
             elif state == UNATTENDED:
-                pair = f"{tag} - P{st['owner_pid']}   away {st['unattended_s']:.0f}s"
+                pair = f"{tag} - {own}   away {st['unattended_s']:.0f}s"
             else:
-                pair = f"{tag} - P{st['owner_pid']}   ALARM {st['unattended_s']:.0f}s"
+                pair = f"{tag} - {own}   ALARM {st['unattended_s']:.0f}s"
             if pred_flag:
                 pair += " ?"
             if zone_violation:
@@ -1084,8 +1179,8 @@ def run():
             draw_alarm_border(annotated, flash)
 
         if side_w:
-            canvas = np.full((h, canvas_w, 3), SIDEBAR_BG, np.uint8)
-            canvas[:, video_x0:video_x0 + w] = annotated
+            canvas = np.full((canvas_h, canvas_w, 3), SIDEBAR_BG, np.uint8)
+            canvas[video_y0:video_y0 + h, video_x0:video_x0 + w] = annotated
             rows = [
                 (f"frame  {frame_count}/{total_frames or '?'}", (215, 215, 215), 0.5),
                 (f"video  t = {now_t:.1f}s", (215, 215, 215), 0.5),
