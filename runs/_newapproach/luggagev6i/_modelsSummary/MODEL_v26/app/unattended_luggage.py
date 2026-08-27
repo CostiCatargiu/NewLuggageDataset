@@ -23,14 +23,18 @@ Three things here are not obvious and are where naive versions go wrong:
    is alive. Conversely a lost OWNER track is treated as away only after a grace period,
    so a brief occlusion of the owner does not start the clock.
 
-Usage:
-    python unattended_luggage.py --source clip.mp4
-    python unattended_luggage.py --source clip.mp4 --out annotated.mp4 --limit 3000
+Everything is configured in the CONFIG block below -- there are no command-line
+arguments. Edit the constants and run:
+
+    python unattended_luggage.py
+
+The person and luggage detectors can be the same model (set SINGLE_MODEL) if that model
+detects both COCO 'person' (0) and the luggage classes ('backpack' 24, 'handbag' 26,
+'suitcase' 28). Supply yolov12x.pt or yolov26x.pt for either role.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import math
 import os
@@ -39,12 +43,28 @@ from dataclasses import dataclass, field
 import cv2
 from ultralytics import YOLO
 
-# =============================================================================
+# ============================== CONFIG =======================================
+SOURCE = "clip.mp4"  # input video file, RTSP url or camera index
+OUT = "unattended_out.mp4"  # annotated video written here
+EVENTS_JSON = "unattended_events.json"  # alarm log written here
+SHOW = True  # live preview window (ESC quits); needs GUI opencv-python
+LIMIT = 0  # stop after N frames (0 = whole video)
+
 LUGGAGE_WEIGHTS = "runs_yolo26_overnight_r1213_v6i/y26_scb3_sbb50_cls075/weights/best.pt"
 PERSON_WEIGHTS = "yolov12x.pt"
+# One COCO model for BOTH roles, e.g. "yolov26x.pt". Overrides the two paths above and
+# implies COCO_LUGGAGE. Set to None to run the two separate detectors.
+SINGLE_MODEL = None
+# Filter the luggage detector to COCO backpack/handbag/suitcase. Leave False for a
+# custom single-class luggage model, which reports whatever class it emits.
+COCO_LUGGAGE = False
+
 TRACKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "botsort_static.yaml")
 
 PERSON_CLASS = 0  # COCO 'person'
+# COCO luggage classes -- used only when the luggage detector is a stock COCO model
+# (custom single-class luggage models ignore this and report whatever class they emit).
+COCO_LUGGAGE_CLASSES = [24, 26, 28]  # backpack, handbag, suitcase
 PERSON_CONF = 0.35
 LUGGAGE_CONF = 0.35
 
@@ -68,6 +88,7 @@ class Det:
     box: tuple[float, float, float, float]
     conf: float
     cls: int
+    name: str = ""
 
     @property
     def base(self) -> tuple[float, float]:
@@ -103,14 +124,23 @@ def norm_dist(bag: Det, person: Det) -> float:
     return math.hypot(bx - px, by - py) / person.height
 
 
-def detections(res) -> dict[int, Det]:
-    """Tracked boxes only -- detections without an ID cannot be reasoned about over time."""
+def detections(res, keep: set[int] | None = None) -> dict[int, Det]:
+    """Tracked boxes only -- detections without an ID cannot be reasoned about over time.
+
+    keep: if given, only detections whose class is in this set are returned. Used to
+    split a single COCO tracker's output into people and luggage without running the
+    tracker twice (which would corrupt its shared state).
+    """
     out: dict[int, Det] = {}
     b = getattr(res, "boxes", None)
     if b is None or b.id is None:
         return out
+    names = getattr(res, "names", {}) or {}
     for box, tid, conf, cls in zip(b.xyxy.tolist(), b.id.tolist(), b.conf.tolist(), b.cls.tolist()):
-        out[int(tid)] = Det(int(tid), tuple(box), float(conf), int(cls))
+        c = int(cls)
+        if keep is not None and c not in keep:
+            continue
+        out[int(tid)] = Det(int(tid), tuple(box), float(conf), c, str(names.get(c, c)))
     return out
 
 
@@ -178,7 +208,8 @@ def draw(frame, bags, people, states, t):
     for p in people.values():
         x1, y1, x2, y2 = (int(v) for v in p.box)
         cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 170, 0), 1)
-        cv2.putText(frame, f"P{p.tid}", (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 170, 0), 1)
+        cv2.putText(frame, f"{p.name} P{p.tid} {p.conf:.2f}", (x1, y1 - 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 170, 0), 1)
 
     alarms = 0
     for tid, bag in bags.items():
@@ -188,13 +219,13 @@ def draw(frame, bags, people, states, t):
         x1, y1, x2, y2 = (int(v) for v in bag.box)
         cv2.rectangle(frame, (x1, y1), (x2, y2), c, 2)
 
-        tag = f"B{tid}"
+        tag = f"{bag.name} B{tid} {bag.conf:.2f}"
         if st and st.owner is not None:
             tag += f" own:P{st.owner}"
         if st and st.away_since is not None and state != ALARM:
             tag += f" {T_ALARM - (t - st.away_since):.0f}s"
         if state == ALARM:
-            tag, alarms = f"B{tid} UNATTENDED", alarms + 1
+            tag, alarms = f"{bag.name} B{tid} UNATTENDED", alarms + 1
         cv2.putText(frame, tag, (x1, y2 + 14), cv2.FONT_HERSHEY_SIMPLEX, 0.5, c, 2)
 
         if st and st.owner in people:  # link the bag to its owner
@@ -210,48 +241,58 @@ def draw(frame, bags, people, states, t):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--source", required=True)
-    ap.add_argument("--out", default="unattended_out.mp4")
-    ap.add_argument("--luggage", default=LUGGAGE_WEIGHTS)
-    ap.add_argument("--person", default=PERSON_WEIGHTS)
-    ap.add_argument("--limit", type=int, default=0, help="stop after N frames (0 = all)")
-    ap.add_argument("--show", action="store_true")
-    a = ap.parse_args()
+    coco_luggage = COCO_LUGGAGE or SINGLE_MODEL is not None
+    luggage_weights = SINGLE_MODEL or LUGGAGE_WEIGHTS
+    person_weights = SINGLE_MODEL or PERSON_WEIGHTS
+    luggage_classes = COCO_LUGGAGE_CLASSES if coco_luggage else None
 
-    cap = cv2.VideoCapture(a.source)
+    cap = cv2.VideoCapture(SOURCE)
     if not cap.isOpened():
-        raise SystemExit(f"cannot open {a.source}")
+        raise SystemExit(f"cannot open {SOURCE}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    print(f"  {a.source}  {w}x{h} @ {fps:.2f} fps, {total} frames")
-    print(f"  luggage: {a.luggage}")
-    print(f"  person : {a.person}")
+    print(f"  {SOURCE}  {w}x{h} @ {fps:.2f} fps, {total} frames")
+    print(f"  luggage: {luggage_weights}"
+          f"{'  (COCO classes 24/26/28)' if coco_luggage else ''}")
+    print(f"  person : {person_weights}")
     print(f"  owner within {D_OWN} person-heights, away beyond {D_ALARM}, alarm after {T_ALARM}s\n")
 
-    luggage_model, person_model = YOLO(a.luggage), YOLO(a.person)
-    writer = cv2.VideoWriter(a.out, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+    luggage_model = YOLO(luggage_weights)
+    # reuse the same object when both roles share a model -- avoids loading twice
+    person_model = luggage_model if person_weights == luggage_weights else YOLO(person_weights)
+    writer = cv2.VideoWriter(OUT, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
 
     states: dict[int, BagState] = {}
     events: list = []
     i = 0
     while True:
         ok, frame = cap.read()
-        if not ok or (a.limit and i >= a.limit):
+        if not ok or (LIMIT and i >= LIMIT):
             break
         t = i / fps
 
-        pr = person_model.track(frame, persist=True, tracker=TRACKER, classes=[PERSON_CLASS],
-                                conf=PERSON_CONF, verbose=False)[0]
-        lr = luggage_model.track(frame, persist=True, tracker=TRACKER,
-                                 conf=LUGGAGE_CONF, verbose=False)[0]
-        people, bags = detections(pr), detections(lr)
+        if person_model is luggage_model:
+            # single shared model: ONE track() call, then split by class. Calling
+            # track(persist=True) twice on one instance would corrupt the tracker's
+            # single internal state (note: person and bag IDs then share one space).
+            wanted = [PERSON_CLASS] + (luggage_classes or COCO_LUGGAGE_CLASSES)
+            conf = min(PERSON_CONF, LUGGAGE_CONF)
+            r = person_model.track(frame, persist=True, tracker=TRACKER, classes=wanted,
+                                   conf=conf, verbose=False)[0]
+            people = detections(r, keep={PERSON_CLASS})
+            bags = detections(r, keep=set(luggage_classes or COCO_LUGGAGE_CLASSES))
+        else:
+            pr = person_model.track(frame, persist=True, tracker=TRACKER, classes=[PERSON_CLASS],
+                                    conf=PERSON_CONF, verbose=False)[0]
+            lr = luggage_model.track(frame, persist=True, tracker=TRACKER, classes=luggage_classes,
+                                     conf=LUGGAGE_CONF, verbose=False)[0]
+            people, bags = detections(pr), detections(lr)
 
         update(bags, people, states, i, t, fps, events)
         writer.write(draw(frame, bags, people, states, t))
-        if a.show:
+        if SHOW:
             cv2.imshow("unattended", frame)
             if cv2.waitKey(1) == 27:
                 break
@@ -263,12 +304,12 @@ def main():
     writer.release()
     cv2.destroyAllWindows()
 
-    with open("unattended_events.json", "w") as f:
-        json.dump({"source": a.source, "fps": fps, "frames": i,
+    with open(EVENTS_JSON, "w") as f:
+        json.dump({"source": SOURCE, "fps": fps, "frames": i,
                    "params": {"d_own": D_OWN, "d_alarm": D_ALARM, "t_alarm": T_ALARM},
                    "events": events}, f, indent=2)
 
-    print(f"\n  {i} frames, {len(events)} alarm(s) -> {a.out}, unattended_events.json")
+    print(f"\n  {i} frames, {len(events)} alarm(s) -> {OUT}, {EVENTS_JSON}")
     for e in events:
         print(f"    bag#{e['bag_track']} owner#{e['owner_track']} "
               f"left {e['left_at_sec']}s, alarm {e['alarm_at_sec']}s")
