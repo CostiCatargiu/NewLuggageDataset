@@ -90,6 +90,10 @@ UNATTENDED_SECONDS = 10.0  # seconds away before the alarm fires
 # Grace for an owner who disappears while still beside the bag -- occlusion or a dropped
 # track, not a departure. An owner last measured beyond D_AWAY gets no grace at all.
 OWNER_GRACE_SEC = 4.0
+# Start the abandonment timer only once the owner has actually been MEASURED beyond
+# D_AWAY. Without this, every dropped person track next to a bag becomes an alarm.
+# Set False to fall back to the grace period alone (more recall, far less precision).
+REQUIRE_DEPARTURE_EVIDENCE = True
 MIN_PERSON_H = 20.0  # px; below this the height estimate is too noisy to divide by
 
 # =========================
@@ -100,7 +104,7 @@ PERSON_TTL_SECONDS = 6.0
 # owner with it, and the fresh track would elect whoever happens to stand there next.
 LUGGAGE_TTL_SECONDS = 45.0
 
-PERSON_MAX_RELINK_AGE = 4.0
+PERSON_MAX_RELINK_AGE = 2.0
 LUGGAGE_MAX_RELINK_AGE = 30.0
 PREDICT_MAX_SEC = 2.0  # never extrapolate a track's motion further than this
 VEL_DECAY_WHEN_MISSED = 0.90  # unmatched tracks stop drifting instead of flying off
@@ -114,9 +118,14 @@ LUGGAGE_REVIVE_DIST = 90  # px between ground-contact points
 # The person tracker may re-create the owner under a new ID after an occlusion.
 OWNER_REBIND_SEC = 3.0  # how long the owner's last box stays valid for re-binding
 OWNER_REBIND_IOU = 0.55
+# An owner who "returns" faster than this did not return: the person tracker handed their
+# ID to somebody else. Person-heights per second; a brisk walk is ~0.8.
+OWNER_MAX_SPEED_H = 1.2
 
 PERSON_MATCH_IOU_THR = 0.10
-PERSON_MATCH_DIST_THR = 220
+# A third of the frame is far too permissive: a stale track then re-links onto a passer-by
+# and silently inherits the owner's identity.
+PERSON_MATCH_DIST_THR = 140
 
 LUGGAGE_MATCH_IOU_THR = 0.08
 LUGGAGE_MATCH_DIST_THR = 260
@@ -690,6 +699,22 @@ def update_ownership(st, persons, now_t, dt):
             owner_d = dists.get(new_pid)
 
     was_missing = st["owner_missing_s"] > 0.0
+    if owner_d is not None and was_missing and st.get("owner_bbox") is not None:
+        # an owner cannot cross the hall while out of view -- that is an ID swap onto a
+        # passer-by, and accepting it would reset the abandonment timer
+        cand = pmap[st["owner_pid"]]
+        ph = max(MIN_PERSON_H, cand["bbox"][3] - cand["bbox"][1])
+        cx0, cy0 = bottom_center(cand["bbox"])
+        lx0, ly0 = bottom_center(st["owner_bbox"])
+        speed = math.hypot(cx0 - lx0, cy0 - ly0) / ph / max(st["owner_missing_s"], dt)
+        if speed > OWNER_MAX_SPEED_H:
+            LOG.event("owner_impostor", lid=lid, owner=st["owner_pid"],
+                      hidden_s=round(st["owner_missing_s"], 2), speed_h_s=round(speed, 2),
+                      d_h=round(owner_d, 3),
+                      last_d_h=None if st.get("owner_last_d") is None
+                      else round(st["owner_last_d"], 3))
+            owner_d = None
+
     if owner_d is not None:
         if was_missing:
             LOG.event("owner_back", lid=lid, owner=st["owner_pid"],
@@ -700,17 +725,26 @@ def update_ownership(st, persons, now_t, dt):
             st["owner_bbox"] = np.array(owner["bbox"], dtype=float)
             st["owner_seen_t"] = now_t
         st["owner_last_d"] = owner_d
+        st["owner_unverified"] = False
         near = owner_d <= D_AWAY
     else:  # owner not visible -- occlusion, lost track, or departure (note 3)
         last_d = st.get("owner_last_d")
+        left = last_d is not None and last_d > D_AWAY
         if not was_missing:
-            LOG.event("owner_lost", lid=lid, owner=st["owner_pid"],
+            LOG.event("owner_lost", lid=lid, owner=st["owner_pid"], departed=left,
                       last_d_h=None if last_d is None else round(last_d, 3),
                       grace_s=OWNER_GRACE_SEC, visible_people=len(dists))
         st["owner_missing_s"] += dt
-        # going out of view only counts as presence if the owner was still beside the bag
-        near = (last_d is not None and last_d <= D_AWAY
-                and st["owner_missing_s"] < OWNER_GRACE_SEC)
+        if left:  # measured walking away -- going out of view does not excuse that
+            near = False
+        elif REQUIRE_DEPARTURE_EVIDENCE:
+            near = True  # track died beside the bag: no evidence anybody left
+            if not st.get("owner_unverified"):
+                st["owner_unverified"] = True
+                LOG.event("owner_hold", lid=lid, owner=st["owner_pid"],
+                          last_d_h=None if last_d is None else round(last_d, 3))
+        else:
+            near = st["owner_missing_s"] < OWNER_GRACE_SEC
 
     if near:
         st["away_since"] = None
@@ -1194,6 +1228,7 @@ def run():
                 "owner_bbox": None,
                 "owner_seen_t": -1e9,
                 "owner_last_d": None,
+                "owner_unverified": False,
                 "away_since": None,
                 "unattended_s": 0.0,
                 "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
@@ -1315,7 +1350,8 @@ def run():
                 pair = f"{tag}  finding owner {now_t - st['first_t']:.0f}/{OWNERSHIP_SEC:.0f}s"
             elif state == OWNED:
                 pair = f"{tag} - {own}   " + (
-                    f"{owner_d:.1f}h" if owner_d is not None else "occluded")
+                    f"{owner_d:.1f}h" if owner_d is not None else
+                    ("track lost" if st.get("owner_unverified") else "occluded"))
             elif state == UNATTENDED:
                 pair = f"{tag} - {own}   away {st['unattended_s']:.0f}s"
             else:
