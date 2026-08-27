@@ -81,6 +81,12 @@ IOU = 0.45
 IMGSZ = 960
 DEVICE = "0"  # "0" GPU, or "cpu"
 
+# Persons are tracked by BoT-SORT (Kalman + appearance ReID) instead of the IoU tracker
+# below: appearance is the only cue that survives a crowd crossing, and an owner whose ID
+# is stolen or dropped breaks the whole abandonment measurement.
+USE_BUILTIN_PERSON_TRACKER = True
+PERSON_TRACKER = "botsort_person.yaml"  # resolved next to this file
+
 # ======================== UNATTENDED PARAMETERS ==============================
 # distances in PERSON-HEIGHTS (note 2)
 D_OWN = 1.5  # must be this close to be a candidate owner
@@ -94,6 +100,9 @@ OWNER_GRACE_SEC = 4.0
 # D_AWAY. Without this, every dropped person track next to a bag becomes an alarm.
 # Set False to fall back to the grace period alone (more recall, far less precision).
 REQUIRE_DEPARTURE_EVIDENCE = True
+# ...but do not hold forever: after this long with no sign of the owner, accept that they
+# are gone and start the timer anyway, or a lost track suppresses every alarm.
+OWNER_HOLD_MAX_SEC = 15.0
 MIN_PERSON_H = 20.0  # px; below this the height estimate is too noisy to divide by
 
 # =========================
@@ -104,7 +113,7 @@ PERSON_TTL_SECONDS = 6.0
 # owner with it, and the fresh track would elect whoever happens to stand there next.
 LUGGAGE_TTL_SECONDS = 45.0
 
-PERSON_MAX_RELINK_AGE = 2.0
+PERSON_MAX_RELINK_AGE = 4.0
 LUGGAGE_MAX_RELINK_AGE = 30.0
 PREDICT_MAX_SEC = 2.0  # never extrapolate a track's motion further than this
 VEL_DECAY_WHEN_MISSED = 0.90  # unmatched tracks stop drifting instead of flying off
@@ -123,9 +132,9 @@ OWNER_REBIND_IOU = 0.55
 OWNER_MAX_SPEED_H = 1.2
 
 PERSON_MATCH_IOU_THR = 0.10
-# A third of the frame is far too permissive: a stale track then re-links onto a passer-by
-# and silently inherits the owner's identity.
-PERSON_MATCH_DIST_THR = 140
+# Deliberately permissive: the owner must be followed far enough to MEASURE them walking
+# away. ID theft by a passer-by is rejected on physics instead (OWNER_MAX_SPEED_H).
+PERSON_MATCH_DIST_THR = 220
 
 LUGGAGE_MATCH_IOU_THR = 0.08
 LUGGAGE_MATCH_DIST_THR = 260
@@ -617,6 +626,67 @@ def merge_overlapping_tracks(tracks, now_t, merge_iou=0.70, max_age=0.8):
 # -----------------------------
 # Ownership (notes 2 and 3)
 # -----------------------------
+def person_detections(res):
+    """Person boxes above threshold, carrying their tracker ID when the result has one."""
+    out = []
+    b = getattr(res, "boxes", None)
+    if b is None or len(b) == 0:
+        return out
+    xyxy = b.xyxy.detach().cpu().numpy().astype(float)
+    conf = b.conf.detach().cpu().numpy().astype(float)
+    cls = b.cls.detach().cpu().numpy().astype(int)
+    ids = b.id.detach().cpu().numpy().astype(int) if b.id is not None else [None] * len(cls)
+    for bb, cf, cid, tid in zip(xyxy, conf, cls, ids):
+        if int(cid) not in PERSON_CLASS_IDS or cf < CONF_PERSON:
+            continue
+        out.append({"bbox": bb, "conf": float(cf), "cls": 0,
+                    "tid": None if tid is None else int(tid)})
+        if LOG_DETECTIONS:
+            LOG.event("det", role="person", conf=round(float(cf), 3), bbox=bb,
+                      tid=None if tid is None else int(tid))
+    return out
+
+
+def sync_person_tracks(dets, tracks, now_t, dt):
+    """Fold BoT-SORT's IDs into the track dict the ownership logic reads.
+
+    No smoothing or re-association here -- the tracker's Kalman filter has already done it,
+    and re-matching its output would reintroduce the ID theft this replaces.
+    """
+    seen = set()
+    for d in dets:
+        tid = d["tid"]
+        if tid is None:  # detection the tracker did not confirm into a track
+            continue
+        seen.add(tid)
+        bb = np.array(d["bbox"], dtype=float)
+        cx, cy = center_xyxy(bb)
+        st = tracks.get(tid)
+        if st is None:
+            tracks[tid] = {
+                "bbox": bb, "conf": d["conf"], "cls": 0,
+                "first_t": now_t, "last_seen_t": now_t, "missed_s": 0.0,
+                "vx": 0.0, "vy": 0.0,
+                "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS),
+            }
+            LOG.event("track_new", role="person", tid=tid, conf=round(d["conf"], 3), bbox=bb)
+        else:
+            ox, oy = center_xyxy(st["bbox"])
+            gap = max(1e-6, now_t - st["last_seen_t"])
+            st["vx"] = PERSON_VEL_ALPHA * (cx - ox) / gap + (1 - PERSON_VEL_ALPHA) * st["vx"]
+            st["vy"] = PERSON_VEL_ALPHA * (cy - oy) / gap + (1 - PERSON_VEL_ALPHA) * st["vy"]
+            st["bbox"], st["conf"] = bb, d["conf"]
+            st["last_seen_t"], st["missed_s"] = now_t, 0.0
+            st["trajectory"].append((int(cx), int(cy), now_t))
+
+    for tid, st in tracks.items():
+        if tid not in seen:
+            st["missed_s"] = st.get("missed_s", 0.0) + dt
+            st["vx"] *= VEL_DECAY_WHEN_MISSED
+            st["vy"] *= VEL_DECAY_WHEN_MISSED
+    return seen
+
+
 def get_person_by_id(persons, pid):
     for p in persons:
         if p["tid"] == pid:
@@ -737,14 +807,20 @@ def update_ownership(st, persons, now_t, dt):
         st["owner_missing_s"] += dt
         if left:  # measured walking away -- going out of view does not excuse that
             near = False
-        elif REQUIRE_DEPARTURE_EVIDENCE:
-            near = True  # track died beside the bag: no evidence anybody left
+        elif REQUIRE_DEPARTURE_EVIDENCE and st["owner_missing_s"] < OWNER_HOLD_MAX_SEC:
+            near = True  # track died beside the bag: no evidence anybody left, yet
             if not st.get("owner_unverified"):
                 st["owner_unverified"] = True
                 LOG.event("owner_hold", lid=lid, owner=st["owner_pid"],
+                          hold_max_s=OWNER_HOLD_MAX_SEC,
                           last_d_h=None if last_d is None else round(last_d, 3))
         else:
             near = st["owner_missing_s"] < OWNER_GRACE_SEC
+            if st.get("owner_unverified") and not near:
+                st["owner_unverified"] = False
+                LOG.event("owner_hold_expired", lid=lid, owner=st["owner_pid"],
+                          hidden_s=round(st["owner_missing_s"], 2),
+                          last_d_h=None if last_d is None else round(last_d, 3))
 
     if near:
         st["away_since"] = None
@@ -899,12 +975,17 @@ def run():
     person_weights = SINGLE_MODEL or MODEL_PERSON
     luggage_weights = SINGLE_MODEL or MODEL_LUGGAGE
     model_person = YOLO(person_weights)
-    # one model in both roles: load once, infer once per frame, split the result by class
-    shared_model = luggage_weights == person_weights
+    # BoT-SORT keeps state on the model's predictor, so the luggage role needs its own
+    # instance even when the weights are identical.
+    same_weights = luggage_weights == person_weights
+    shared_model = same_weights and not USE_BUILTIN_PERSON_TRACKER
     model_luggage = model_person if shared_model else YOLO(luggage_weights)
+    person_tracker = os.path.join(os.path.dirname(os.path.abspath(__file__)), PERSON_TRACKER)
+    if USE_BUILTIN_PERSON_TRACKER and not os.path.exists(person_tracker):
+        raise FileNotFoundError(f"person tracker config not found: {person_tracker}")
 
     luggage_class_ids = LUGGAGE_CLASS_IDS
-    if shared_model and luggage_class_ids is None:
+    if same_weights and luggage_class_ids is None:
         luggage_class_ids = COCO_LUGGAGE_CLASS_IDS
     luggage_names = model_luggage.names  # read from the weights, never hardcoded
     # a COCO detector emits 24/26/28 -- fold them onto the custom 3-label space
@@ -931,7 +1012,8 @@ def run():
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     print(f"  input   : {VIDEO_IN}  {w}x{h} @ {video_fps:.2f} fps, {total_frames} frames")
-    print(f"  person  : {person_weights}  classes {PERSON_CLASS_IDS}")
+    print(f"  person  : {person_weights}  classes {PERSON_CLASS_IDS}"
+          f"{'  [BoT-SORT+ReID]' if USE_BUILTIN_PERSON_TRACKER else '  [IoU tracker]'}")
     print(f"  luggage : {luggage_weights}  classes {luggage_class_ids or 'all'}"
           f"{'  [shared]' if shared_model else ''}")
     if label_map is not None:
@@ -960,6 +1042,7 @@ def run():
     # Tracks (IDs never reused)
     next_person_id = 1
     person_tracks = {}  # PID -> {bbox, conf, last_seen_t, missed_s, vx, vy, trajectory}
+    person_ids_seen = set()
     next_luggage_id = 1
     luggage_tracks = {}  # LID -> the same + {state, owner_pid, votes, away_since, unattended_s}
     retired_bags = {}  # LID -> state of bags that vanished, kept for LUGGAGE_MEMORY_SEC
@@ -972,6 +1055,7 @@ def run():
     LOG.event("run", source=VIDEO_IN, size=[w, h], fps=round(video_fps, 3), frames=total_frames,
               person_model=person_weights, luggage_model=luggage_weights,
               shared_model=shared_model, luggage_classes=luggage_class_ids,
+              person_tracker=PERSON_TRACKER if USE_BUILTIN_PERSON_TRACKER else "iou",
               run_dir=run_dir,
               label_map=None if label_map is None else {str(k): v for k, v in label_map.items()},
               names={str(k): v for k, v in luggage_names.items()},
@@ -1020,15 +1104,28 @@ def run():
                 verbose=False
             )[0]
         else:
-            res_p = model_person.predict(
-                source=frame,
-                conf=CONF_PERSON,
-                iou=IOU,
-                imgsz=IMGSZ,
-                device=DEVICE,
-                classes=PERSON_CLASS_IDS,
-                verbose=False
-            )[0]
+            if USE_BUILTIN_PERSON_TRACKER:
+                res_p = model_person.track(
+                    source=frame,
+                    persist=True,
+                    tracker=person_tracker,
+                    conf=CONF_PERSON,
+                    iou=IOU,
+                    imgsz=IMGSZ,
+                    device=DEVICE,
+                    classes=PERSON_CLASS_IDS,
+                    verbose=False
+                )[0]
+            else:
+                res_p = model_person.predict(
+                    source=frame,
+                    conf=CONF_PERSON,
+                    iou=IOU,
+                    imgsz=IMGSZ,
+                    device=DEVICE,
+                    classes=PERSON_CLASS_IDS,
+                    verbose=False
+                )[0]
 
             res_l = model_luggage.predict(
                 source=frame,
@@ -1050,52 +1147,46 @@ def run():
         # -----------------------------
         # PERSON DETS -> stable person tracks
         # -----------------------------
-        person_dets = []
-        if res_p.boxes is not None and len(res_p.boxes) > 0:
-            p_xyxy = res_p.boxes.xyxy.detach().cpu().numpy().astype(float)
-            p_conf = res_p.boxes.conf.detach().cpu().numpy().astype(float)
-            p_cls = res_p.boxes.cls.detach().cpu().numpy().astype(int)
-            for bb, cf, cid in zip(p_xyxy, p_conf, p_cls):
-                if int(cid) in PERSON_CLASS_IDS and cf >= CONF_PERSON:
-                    person_dets.append({"bbox": bb, "conf": float(cf), "cls": 0})
-                    if LOG_DETECTIONS:
-                        LOG.event("det", role="person", conf=round(float(cf), 3), bbox=bb)
+        person_dets = person_detections(res_p)
 
-        p_matches, p_unmatched_det, p_unmatched_tracks = hungarian_match(
-            person_dets, person_tracks, now_t,
-            require_same_class=False,
-            max_relink_age=PERSON_MAX_RELINK_AGE,
-            match_iou_thr=PERSON_MATCH_IOU_THR,
-            match_dist_thr=PERSON_MATCH_DIST_THR,
-            class_mismatch_penalty=0.0
-        )
+        if USE_BUILTIN_PERSON_TRACKER:
+            person_ids_seen |= sync_person_tracks(person_dets, person_tracks, now_t, dt)
+        else:
+            p_matches, p_unmatched_det, p_unmatched_tracks = hungarian_match(
+                person_dets, person_tracks, now_t,
+                require_same_class=False,
+                max_relink_age=PERSON_MAX_RELINK_AGE,
+                match_iou_thr=PERSON_MATCH_IOU_THR,
+                match_dist_thr=PERSON_MATCH_DIST_THR,
+                class_mismatch_penalty=0.0
+            )
 
-        update_tracks_with_matches(
-            person_dets, person_tracks, p_matches, p_unmatched_tracks,
-            dt_frame=dt, now_t=now_t,
-            smooth_alpha=PERSON_SMOOTH_ALPHA, vel_alpha=PERSON_VEL_ALPHA,
-            update_class=False
-        )
+            update_tracks_with_matches(
+                person_dets, person_tracks, p_matches, p_unmatched_tracks,
+                dt_frame=dt, now_t=now_t,
+                smooth_alpha=PERSON_SMOOTH_ALPHA, vel_alpha=PERSON_VEL_ALPHA,
+                update_class=False
+            )
 
-        # create new person tracks
-        for di in p_unmatched_det:
-            d = person_dets[di]
-            pid = next_person_id
-            next_person_id += 1
-            cx, cy = center_xyxy(d["bbox"])
-            LOG.event("track_new", role="person", tid=pid, conf=round(d["conf"], 3),
-                      bbox=d["bbox"])
-            person_tracks[pid] = {
-                "bbox": np.array(d["bbox"], dtype=float),
-                "conf": float(d["conf"]),
-                "cls": 0,
-                "first_t": now_t,
-                "last_seen_t": now_t,
-                "missed_s": 0.0,
-                "vx": 0.0,
-                "vy": 0.0,
-                "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
-            }
+            # create new person tracks
+            for di in p_unmatched_det:
+                d = person_dets[di]
+                pid = next_person_id
+                next_person_id += 1
+                cx, cy = center_xyxy(d["bbox"])
+                LOG.event("track_new", role="person", tid=pid, conf=round(d["conf"], 3),
+                          bbox=d["bbox"])
+                person_tracks[pid] = {
+                    "bbox": np.array(d["bbox"], dtype=float),
+                    "conf": float(d["conf"]),
+                    "cls": 0,
+                    "first_t": now_t,
+                    "last_seen_t": now_t,
+                    "missed_s": 0.0,
+                    "vx": 0.0,
+                    "vy": 0.0,
+                    "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
+                }
 
         for pid, st in prune_tracks_by_ttl(person_tracks, PERSON_TTL_SECONDS).items():
             LOG.event("track_lost", role="person", tid=pid,
@@ -1455,7 +1546,9 @@ def run():
                   away_since=None if st["away_since"] is None else round(st["away_since"], 2),
                   alarmed=lid in alarmed_lids)
     LOG.event("end", frames=frame_count, alarms=len(events),
-              person_ids_used=next_person_id - 1, luggage_ids_used=next_luggage_id - 1,
+              person_ids_used=len(person_ids_seen) if USE_BUILTIN_PERSON_TRACKER
+              else next_person_id - 1,
+              luggage_ids_used=next_luggage_id - 1,
               event_counts=LOG.counts)
     LOG.close()
 

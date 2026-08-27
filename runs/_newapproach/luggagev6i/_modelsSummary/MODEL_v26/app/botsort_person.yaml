@@ -1,0 +1,28 @@
+# BoT-SORT for PERSONS on a fixed camera, tuned to keep an owner's ID through a crowd.
+#
+# Why these differ from the shipped botsort.yaml:
+#   gmc_method: none      -- the camera is fixed, so global motion compensation is pure cost
+#   with_reid: True       -- appearance is the only thing that survives a crowd crossing;
+#                            motion+IoU alone is what let passers-by inherit an owner's ID
+#   proximity_thresh: 0.9 -- ReID is only consulted for candidates with IoU distance below
+#                            this, so the 0.5 default silently restricts it to boxes that
+#                            already overlap by 50% -- useless for re-acquiring after an
+#                            occlusion. 0.9 lets appearance decide from IoU >= 0.1.
+#   appearance_thresh: 0.6-- correspondingly stricter, since matches are now allowed further
+#   track_buffer: 150     -- 5 s at 30 fps; an owner occluded that long keeps their ID
+#   new_track_thresh: 0.4 -- do not spawn an identity from a weak detection
+tracker_type: botsort
+
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.4
+track_buffer: 150
+match_thresh: 0.8
+fuse_score: True
+
+gmc_method: none
+
+proximity_thresh: 0.9
+appearance_thresh: 0.6
+with_reid: True
+model: auto
