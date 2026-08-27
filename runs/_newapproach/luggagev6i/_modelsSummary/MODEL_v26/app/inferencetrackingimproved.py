@@ -61,6 +61,12 @@ PERSON_CLASS_IDS = [0]  # COCO 'person'
 LUGGAGE_CLASS_IDS = None
 COCO_LUGGAGE_CLASS_IDS = [24, 26, 28]  # backpack, handbag, suitcase -- used with SINGLE_MODEL
 
+# Report every detector in the custom dataset's label space, so a stock COCO model and the
+# custom model produce identical annotations and identical event logs.
+CUSTOM_LUGGAGE_NAMES = {0: "backpack", 1: "bag", 2: "trolley"}
+COCO_TO_CUSTOM = {24: 0, 26: 1, 28: 2}  # backpack->backpack, handbag->bag, suitcase->trolley
+REMAP_COCO_LUGGAGE = True  # applied only when the luggage detector is a COCO model
+
 CONF_PERSON = 0.25
 CONF_LUGGAGE = 0.40
 IOU = 0.45
@@ -678,6 +684,12 @@ def run():
     if shared_model and luggage_class_ids is None:
         luggage_class_ids = COCO_LUGGAGE_CLASS_IDS
     luggage_names = model_luggage.names  # read from the weights, never hardcoded
+    # a COCO detector emits 24/26/28 -- fold them onto the custom 3-label space
+    label_map = COCO_TO_CUSTOM if REMAP_COCO_LUGGAGE and luggage_names.get(0) == "person" else None
+    if label_map is not None:
+        if luggage_class_ids is None:
+            luggage_class_ids = sorted(label_map)
+        luggage_names = dict(CUSTOM_LUGGAGE_NAMES)
     num_luggage_classes = max(luggage_names) + 1 if luggage_names else 1
 
     cap = cv2.VideoCapture(VIDEO_IN)
@@ -696,6 +708,8 @@ def run():
     print(f"  person  : {person_weights}  classes {PERSON_CLASS_IDS}")
     print(f"  luggage : {luggage_weights}  classes {luggage_class_ids or 'all'}"
           f"{'  [shared]' if shared_model else ''}")
+    if label_map is not None:
+        print(f"  labels  : {', '.join(f'{k}->{luggage_names[v]}' for k, v in sorted(label_map.items()))}")
     print(f"  owner within {D_OWN}h, away beyond {D_AWAY}h, alarm after {UNATTENDED_SECONDS:.0f}s\n")
 
     # the panel gets its own column, so the rendered canvas is wider than the video
@@ -858,9 +872,14 @@ def run():
             for cid, cf, bb in zip(l_cls, l_conf, l_xyxy):
                 if cf < CONF_LUGGAGE:
                     continue
-                if luggage_class_ids is not None and int(cid) not in luggage_class_ids:
+                cid = int(cid)
+                if luggage_class_ids is not None and cid not in luggage_class_ids:
                     continue
-                luggage_dets.append({"cls": int(cid), "conf": float(cf), "bbox": bb})
+                if label_map is not None:
+                    if cid not in label_map:
+                        continue
+                    cid = label_map[cid]
+                luggage_dets.append({"cls": cid, "conf": float(cf), "bbox": bb})
 
         # (1) class-agnostic NMS to kill duplicate boxes across classes
         luggage_dets = nms_dets_xyxy(luggage_dets, iou_thr=LUGGAGE_DET_NMS_IOU, class_agnostic=True)
