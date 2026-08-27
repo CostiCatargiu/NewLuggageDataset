@@ -86,6 +86,11 @@ DEVICE = "0"  # "0" GPU, or "cpu"
 # is stolen or dropped breaks the whole abandonment measurement.
 USE_BUILTIN_PERSON_TRACKER = True
 PERSON_TRACKER = "botsort_person.yaml"  # resolved next to this file
+# BoT-SORT is a BYTE-family tracker: its second association stage carries a track through
+# partial occlusion using LOW-score detections. Filtering at CONF_PERSON before the tracker
+# throws those away and the track dies on the first occluded frame, so hand it everything
+# down to track_low_thresh and let it decide. Must be <= track_low_thresh in the YAML.
+PERSON_TRACK_CONF = 0.10
 
 # ======================== UNATTENDED PARAMETERS ==============================
 # distances in PERSON-HEIGHTS (note 2)
@@ -626,7 +631,7 @@ def merge_overlapping_tracks(tracks, now_t, merge_iou=0.70, max_age=0.8):
 # -----------------------------
 # Ownership (notes 2 and 3)
 # -----------------------------
-def person_detections(res):
+def person_detections(res, conf_thr=CONF_PERSON):
     """Person boxes above threshold, carrying their tracker ID when the result has one."""
     out = []
     b = getattr(res, "boxes", None)
@@ -637,7 +642,7 @@ def person_detections(res):
     cls = b.cls.detach().cpu().numpy().astype(int)
     ids = b.id.detach().cpu().numpy().astype(int) if b.id is not None else [None] * len(cls)
     for bb, cf, cid, tid in zip(xyxy, conf, cls, ids):
-        if int(cid) not in PERSON_CLASS_IDS or cf < CONF_PERSON:
+        if int(cid) not in PERSON_CLASS_IDS or cf < conf_thr:
             continue
         out.append({"bbox": bb, "conf": float(cf), "cls": 0,
                     "tid": None if tid is None else int(tid)})
@@ -658,10 +663,13 @@ def sync_person_tracks(dets, tracks, now_t, dt):
         tid = d["tid"]
         if tid is None:  # detection the tracker did not confirm into a track
             continue
+        st = tracks.get(tid)
+        # high bar to introduce a person, low bar to keep following one
+        if st is None and d["conf"] < CONF_PERSON:
+            continue
         seen.add(tid)
         bb = np.array(d["bbox"], dtype=float)
         cx, cy = center_xyxy(bb)
-        st = tracks.get(tid)
         if st is None:
             tracks[tid] = {
                 "bbox": bb, "conf": d["conf"], "cls": 0,
@@ -1109,7 +1117,7 @@ def run():
                     source=frame,
                     persist=True,
                     tracker=person_tracker,
-                    conf=CONF_PERSON,
+                    conf=PERSON_TRACK_CONF,
                     iou=IOU,
                     imgsz=IMGSZ,
                     device=DEVICE,
@@ -1147,7 +1155,8 @@ def run():
         # -----------------------------
         # PERSON DETS -> stable person tracks
         # -----------------------------
-        person_dets = person_detections(res_p)
+        person_dets = person_detections(
+            res_p, PERSON_TRACK_CONF if USE_BUILTIN_PERSON_TRACKER else CONF_PERSON)
 
         if USE_BUILTIN_PERSON_TRACKER:
             person_ids_seen |= sync_person_tracks(person_dets, person_tracks, now_t, dt)
