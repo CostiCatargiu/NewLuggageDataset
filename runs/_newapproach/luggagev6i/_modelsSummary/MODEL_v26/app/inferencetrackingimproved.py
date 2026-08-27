@@ -81,10 +81,10 @@ IOU = 0.45
 IMGSZ = 960
 DEVICE = "0"  # "0" GPU, or "cpu"
 
-# Persons are tracked by BoT-SORT (Kalman + appearance ReID) instead of the IoU tracker
-# below: appearance is the only cue that survives a crowd crossing, and an owner whose ID
-# is stolen or dropped breaks the whole abandonment measurement.
-USE_BUILTIN_PERSON_TRACKER = True
+# Route persons through Ultralytics BoT-SORT instead of the IoU tracker below. Only worth
+# it when the install actually implements ReID (ultralytics/trackers/utils/reid.py): motion
+# -only BoT-SORT measured 66 person IDs on AVSS S07 medium against 23 for the tracker here.
+USE_BUILTIN_PERSON_TRACKER = False
 PERSON_TRACKER = "botsort_person.yaml"  # resolved next to this file
 # BoT-SORT is a BYTE-family tracker: its second association stage carries a track through
 # partial occlusion using LOW-score detections. Filtering at CONF_PERSON before the tracker
@@ -102,23 +102,23 @@ UNATTENDED_SECONDS = 10.0  # seconds away before the alarm fires
 # track, not a departure. An owner last measured beyond D_AWAY gets no grace at all.
 OWNER_GRACE_SEC = 4.0
 # Start the abandonment timer only once the owner has actually been MEASURED beyond
-# D_AWAY. Without this, every dropped person track next to a bag becomes an alarm.
-# Set False to fall back to the grace period alone (more recall, far less precision).
-REQUIRE_DEPARTURE_EVIDENCE = True
-# ...but do not hold forever: after this long with no sign of the owner, accept that they
-# are gone and start the timer anyway, or a lost track suppresses every alarm.
+# D_AWAY. It buys precision -- every dropped person track beside a bag would otherwise
+# alarm -- at the cost of missing an owner who leaves without ever being seen leaving.
+REQUIRE_DEPARTURE_EVIDENCE = False
+# ...and do not hold forever: after this long with no sign of the owner, accept that they
+# are gone. Only consulted when REQUIRE_DEPARTURE_EVIDENCE is on.
 OWNER_HOLD_MAX_SEC = 15.0
 MIN_PERSON_H = 20.0  # px; below this the height estimate is too noisy to divide by
 
 # =========================
 # STABLE TRACKING PARAMS
 # =========================
-PERSON_TTL_SECONDS = 6.0
+PERSON_TTL_SECONDS = 10.0
 # An abandoned bag must outlive long crowd occlusions: losing the track means losing the
 # owner with it, and the fresh track would elect whoever happens to stand there next.
 LUGGAGE_TTL_SECONDS = 45.0
 
-PERSON_MAX_RELINK_AGE = 4.0
+PERSON_MAX_RELINK_AGE = 6.0
 LUGGAGE_MAX_RELINK_AGE = 30.0
 PREDICT_MAX_SEC = 2.0  # never extrapolate a track's motion further than this
 VEL_DECAY_WHEN_MISSED = 0.90  # unmatched tracks stop drifting instead of flying off
@@ -128,6 +128,12 @@ VEL_DECAY_WHEN_MISSED = 0.90  # unmatched tracks stop drifting instead of flying
 LUGGAGE_MEMORY_SEC = 90.0
 LUGGAGE_REVIVE_IOU = 0.30
 LUGGAGE_REVIVE_DIST = 90  # px between ground-contact points
+
+# The same for people: a missed detection must not cost the owner their ID. A retired
+# person track is reclaimed if somebody reappears where it left off.
+PERSON_MEMORY_SEC = 20.0
+PERSON_REVIVE_IOU = 0.30
+PERSON_REVIVE_DIST = 150
 
 # The person tracker may re-create the owner under a new ID after an occlusion.
 OWNER_REBIND_SEC = 3.0  # how long the owner's last box stays valid for re-binding
@@ -550,17 +556,18 @@ def should_spawn_new_track(det, tracks, now_t):
     return True
 
 
-def revive_retired(det, retired, now_t):
-    """Give a re-appearing bag its old ID (and owner) back instead of a fresh identity."""
+def revive_retired(det, retired, now_t, memory_s=LUGGAGE_MEMORY_SEC,
+                   iou_thr=LUGGAGE_REVIVE_IOU, dist_thr=LUGGAGE_REVIVE_DIST):
+    """Give a re-appearing object its old ID (and state) back instead of a fresh identity."""
     dbx, dby = bottom_center(det["bbox"])
     best_lid, best_score = None, None
     for lid, st in retired.items():
-        if now_t - st["last_seen_t"] > LUGGAGE_MEMORY_SEC:
+        if now_t - st["last_seen_t"] > memory_s:
             continue
         iou = iou_xyxy(det["bbox"], st["bbox"])
         sx, sy = bottom_center(st["bbox"])
         dist = math.hypot(dbx - sx, dby - sy)
-        if iou < LUGGAGE_REVIVE_IOU and dist > LUGGAGE_REVIVE_DIST:
+        if iou < iou_thr and dist > dist_thr:
             continue
         score = iou - dist / 1000.0
         if best_score is None or score > best_score:
@@ -847,7 +854,9 @@ def update_ownership(st, persons, now_t, dt):
         st["state"] = OWNED
     else:
         if st["away_since"] is None:
-            st["away_since"] = now_t
+            # the clock runs from the last moment the owner was verified beside the bag --
+            # not from when the grace ran out, or every occlusion is added to the delay
+            st["away_since"] = now_t - (st["owner_missing_s"] if owner_d is None else 0.0)
         st["unattended_s"] = now_t - st["away_since"]
         st["state"] = ALARM if st["unattended_s"] >= UNATTENDED_SECONDS else UNATTENDED
 
@@ -1062,6 +1071,7 @@ def run():
     next_person_id = 1
     person_tracks = {}  # PID -> {bbox, conf, last_seen_t, missed_s, vx, vy, trajectory}
     person_ids_seen = set()
+    retired_persons = {}  # PID -> state of people who vanished, kept for PERSON_MEMORY_SEC
     next_luggage_id = 1
     luggage_tracks = {}  # LID -> the same + {state, owner_pid, votes, away_since, unattended_s}
     retired_bags = {}  # LID -> state of bags that vanished, kept for LUGGAGE_MEMORY_SEC
@@ -1191,6 +1201,24 @@ def run():
             # create new person tracks
             for di in p_unmatched_det:
                 d = person_dets[di]
+
+                # a missed detection must not cost somebody their ID
+                old_pid = revive_retired(d, retired_persons, now_t, PERSON_MEMORY_SEC,
+                                         PERSON_REVIVE_IOU, PERSON_REVIVE_DIST)
+                if old_pid is not None:
+                    st = retired_persons.pop(old_pid)
+                    LOG.event("track_revived", role="person", tid=old_pid,
+                              gap_s=round(now_t - st["last_seen_t"], 2),
+                              iou=round(iou_xyxy(d["bbox"], st["bbox"]), 3),
+                              conf=round(d["conf"], 3), bbox=d["bbox"])
+                    st["bbox"] = np.array(d["bbox"], dtype=float)
+                    st["conf"] = float(d["conf"])
+                    st["last_seen_t"] = now_t
+                    st["missed_s"] = 0.0
+                    st["vx"] = st["vy"] = 0.0
+                    person_tracks[old_pid] = st
+                    continue
+
                 pid = next_person_id
                 next_person_id += 1
                 cx, cy = center_xyxy(d["bbox"])
@@ -1212,6 +1240,10 @@ def run():
             LOG.event("track_lost", role="person", tid=pid,
                       alive_s=round(st["last_seen_t"] - st.get("first_t", st["last_seen_t"]), 2),
                       last_seen_t=round(st["last_seen_t"], 2), bbox=st["bbox"])
+            retired_persons[pid] = st
+        for pid in [k for k, s in retired_persons.items()
+                    if now_t - s["last_seen_t"] > PERSON_MEMORY_SEC]:
+            del retired_persons[pid]
 
         # visible persons list (recent only)
         persons = []
@@ -1426,6 +1458,8 @@ def run():
                               name=str(luggage_names.get(int(st["cls_stable"]), st["cls_stable"])),
                               left_at_sec=round(st["away_since"], 2),
                               first_seen_sec=round(st["first_t"], 2),
+                              departed=bool(st.get("owner_last_d") is not None
+                                            and st["owner_last_d"] > D_AWAY),
                               unattended_s=round(st["unattended_s"], 2), bbox=bb)
                 unattended_now += 1
             else:
