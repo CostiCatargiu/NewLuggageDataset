@@ -87,7 +87,9 @@ D_OWN = 1.5  # must be this close to be a candidate owner
 D_AWAY = 2.5  # farther than this counts as "away"
 OWNERSHIP_SEC = 2.0  # window used to elect the owner (note 3)
 UNATTENDED_SECONDS = 10.0  # seconds away before the alarm fires
-OWNER_GRACE_SEC = 2.0  # owner track may vanish this long before counting as away
+# Grace for an owner who disappears while still beside the bag -- occlusion or a dropped
+# track, not a departure. An owner last measured beyond D_AWAY gets no grace at all.
+OWNER_GRACE_SEC = 4.0
 MIN_PERSON_H = 20.0  # px; below this the height estimate is too noisy to divide by
 
 # =========================
@@ -697,13 +699,18 @@ def update_ownership(st, persons, now_t, dt):
         if owner is not None:
             st["owner_bbox"] = np.array(owner["bbox"], dtype=float)
             st["owner_seen_t"] = now_t
+        st["owner_last_d"] = owner_d
         near = owner_d <= D_AWAY
-    else:  # owner not visible -- occlusion or departure (note 3)
+    else:  # owner not visible -- occlusion, lost track, or departure (note 3)
+        last_d = st.get("owner_last_d")
         if not was_missing:
             LOG.event("owner_lost", lid=lid, owner=st["owner_pid"],
+                      last_d_h=None if last_d is None else round(last_d, 3),
                       grace_s=OWNER_GRACE_SEC, visible_people=len(dists))
         st["owner_missing_s"] += dt
-        near = st["owner_missing_s"] < OWNER_GRACE_SEC
+        # going out of view only counts as presence if the owner was still beside the bag
+        near = (last_d is not None and last_d <= D_AWAY
+                and st["owner_missing_s"] < OWNER_GRACE_SEC)
 
     if near:
         st["away_since"] = None
@@ -1186,6 +1193,7 @@ def run():
                 "owner_missing_s": 0.0,
                 "owner_bbox": None,
                 "owner_seen_t": -1e9,
+                "owner_last_d": None,
                 "away_since": None,
                 "unattended_s": 0.0,
                 "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
