@@ -43,8 +43,16 @@ from ultralytics import YOLO
 
 # ================================ I/O ========================================
 VIDEO_IN = r"D:\ultralytics\_modelsSummary\videos\video1.avi"
-VIDEO_OUT = r"D:\ultralytics\_modelsSummary\videos\unattended_output.mp4"
-EVENTS_JSON = r"unattended_events.json"
+# Every artefact of a run lands in OUT_DIR/<video>__p-<person>__l-<luggage>__<stamp><tag>/
+OUT_DIR = r"D:\ultralytics\_modelsSummary\MODEL_v26\app\runs"
+RUN_TAG = ""  # optional suffix for the folder name, e.g. "_down2.0"
+OUT_VIDEO = "annotated.mp4"
+EVENTS_JSON = "events.json"
+# Newline-delimited JSON trace of everything that happened, for offline analysis:
+#   import pandas as pd; df = pd.read_json("trace.jsonl", lines=True)
+LOG_JSONL = "trace.jsonl"
+LOG_DETECTIONS = True  # one record per raw detection (large, but complete)
+LOG_PAIRS_EVERY_N = 1  # bag/owner snapshot cadence in frames (0 = never)
 SAVE_OUTPUT = True
 SHOW = True
 FRAME_LIMIT = 0  # stop after N frames (0 = whole video)
@@ -169,8 +177,8 @@ RESTRICTED_ZONES = []  # e.g. [[(100, 100), (300, 100), (300, 300), (100, 300)]]
 # =========================
 # ANNOTATION
 # =========================
-SHOW_TRAJECTORIES = True
-TRAJECTORY_OWNERS_ONLY = True  # only trace people who own a bag, otherwise the view fills up
+SHOW_TRAJECTORIES = False  # motion traces clutter a busy scene; the log keeps the history
+TRAJECTORY_OWNERS_ONLY = True  # if traces are on, only trace people who own a bag
 # On-screen tags are kept to <tag><id> <conf>; the sidebar legend spells them out.
 SHORT_NAMES = {"backpack": "bck", "bag": "bg", "trolley": "tr",
                "handbag": "bg", "suitcase": "tr"}
@@ -193,6 +201,59 @@ COLOR_ALARM = (0, 0, 255)
 ZONE_ALERT_COLOR = (0, 140, 255)
 STATE_COLOR = {PENDING: COLOR_PENDING, OWNED: COLOR_OWNED,
                UNATTENDED: COLOR_UNATTENDED, ALARM: COLOR_ALARM}
+
+
+# -----------------------------
+# Analysis log
+# -----------------------------
+def _json_safe(o):
+    if isinstance(o, np.ndarray):
+        return [round(float(v), 1) for v in o.tolist()]
+    if isinstance(o, (np.floating, np.integer)):
+        return o.item()
+    return str(o)
+
+
+class EventLog:
+    """One JSON record per line: every detection, track, association and state change."""
+
+    def __init__(self, path=None):
+        self.f = open(path, "w", encoding="utf-8") if path else None
+        self.t, self.frame, self.n = 0.0, 0, 0
+        self.counts = {}
+
+    def mark(self, t, frame):
+        self.t, self.frame = t, frame
+
+    def event(self, kind, **fields):
+        self.counts[kind] = self.counts.get(kind, 0) + 1
+        if self.f is None:
+            return
+        rec = {"t": round(float(self.t), 3), "frame": int(self.frame), "event": kind}
+        rec.update(fields)
+        self.f.write(json.dumps(rec, default=_json_safe) + "\n")
+        self.n += 1
+
+    def close(self):
+        if self.f:
+            self.f.close()
+            self.f = None
+
+
+LOG = EventLog()  # replaced in run()
+
+
+def make_run_dir(video, person_weights, luggage_weights):
+    """OUT_DIR/<video>__p-<person>__l-<luggage>__<timestamp><tag>, created on the spot."""
+    def slug(path):
+        stem = os.path.splitext(os.path.basename(str(path)))[0]
+        return "".join(c if c.isalnum() or c in "-." else "_" for c in stem)[:40]
+
+    name = (f"{slug(video)}__p-{slug(person_weights)}__l-{slug(luggage_weights)}"
+            f"__{time.strftime('%Y%m%d-%H%M%S')}{RUN_TAG}")
+    path = os.path.join(OUT_DIR, name)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 # -----------------------------
@@ -509,6 +570,9 @@ def merge_overlapping_tracks(tracks, now_t, merge_iou=0.70, max_age=0.8):
 
                 K = tracks[keep_id]
                 D = tracks[drop_id]
+                LOG.event("track_merged", role="luggage", keep=keep_id, drop=drop_id,
+                          iou=round(iou_xyxy(a["bbox"], b["bbox"]), 3),
+                          keep_owner=K.get("owner_pid"), drop_owner=D.get("owner_pid"))
 
                 # Merge state
                 K["unattended_s"] = max(K.get("unattended_s", 0.0), D.get("unattended_s", 0.0))
@@ -577,6 +641,8 @@ def rebind_owner(st, persons, now_t):
 
 def update_ownership(st, persons, now_t, dt):
     """Elect an owner over a window, then follow only that person. Returns distances."""
+    lid = st.get("lid")
+    prev_state = st["state"]
     pmap = {p["tid"]: p for p in persons}
     dists = person_heights_away(st["bbox"], persons)
 
@@ -585,13 +651,18 @@ def update_ownership(st, persons, now_t, dt):
             if d <= D_OWN:
                 st["votes"].setdefault(pid, []).append(d)
         if now_t - st["first_t"] >= OWNERSHIP_SEC:
-            if st["votes"]:
-                st["owner_pid"] = min(st["votes"],
-                                      key=lambda k: sum(st["votes"][k]) / len(st["votes"][k]))
+            means = {p: sum(v) / len(v) for p, v in st["votes"].items()}
+            if means:
+                st["owner_pid"] = min(means, key=means.get)
                 st["state"] = OWNED
+                LOG.event("owner_elected", lid=lid, owner=st["owner_pid"],
+                          mean_h=round(means[st["owner_pid"]], 3),
+                          votes={str(p): [round(m, 3), len(st["votes"][p])] for p, m in means.items()},
+                          window_s=OWNERSHIP_SEC)
             else:  # nobody was ever near it -- already unattended when it entered view
                 st["state"] = UNATTENDED
                 st["away_since"] = now_t
+                LOG.event("owner_none", lid=lid, candidates=len(dists))
         return dists
 
     if ALARM_LATCH and st["state"] == ALARM:  # never hand a raised alarm back to anyone
@@ -602,10 +673,17 @@ def update_ownership(st, persons, now_t, dt):
     if owner_d is None and st["owner_pid"] is not None:
         new_pid = rebind_owner(st, persons, now_t)
         if new_pid is not None:
+            LOG.event("owner_rebind", lid=lid, old_owner=st["owner_pid"], new_owner=new_pid,
+                      gap_s=round(now_t - st["owner_seen_t"], 2),
+                      iou=round(iou_xyxy(pmap[new_pid]["bbox"], st["owner_bbox"]), 3))
             st["owner_pid"] = new_pid
             owner_d = dists.get(new_pid)
 
+    was_missing = st["owner_missing_s"] > 0.0
     if owner_d is not None:
+        if was_missing:
+            LOG.event("owner_back", lid=lid, owner=st["owner_pid"],
+                      hidden_s=round(st["owner_missing_s"], 2), d_h=round(owner_d, 3))
         st["owner_missing_s"] = 0.0
         owner = pmap.get(st["owner_pid"])
         if owner is not None:
@@ -613,6 +691,9 @@ def update_ownership(st, persons, now_t, dt):
             st["owner_seen_t"] = now_t
         near = owner_d <= D_AWAY
     else:  # owner not visible -- occlusion or departure (note 3)
+        if not was_missing:
+            LOG.event("owner_lost", lid=lid, owner=st["owner_pid"],
+                      grace_s=OWNER_GRACE_SEC, visible_people=len(dists))
         st["owner_missing_s"] += dt
         near = st["owner_missing_s"] < OWNER_GRACE_SEC
 
@@ -625,6 +706,12 @@ def update_ownership(st, persons, now_t, dt):
             st["away_since"] = now_t
         st["unattended_s"] = now_t - st["away_since"]
         st["state"] = ALARM if st["unattended_s"] >= UNATTENDED_SECONDS else UNATTENDED
+
+    if st["state"] != prev_state:
+        LOG.event("state", lid=lid, frm=prev_state, to=st["state"], owner=st["owner_pid"],
+                  d_h=None if owner_d is None else round(owner_d, 3),
+                  unattended_s=round(st["unattended_s"], 2),
+                  owner_hidden_s=round(st["owner_missing_s"], 2))
 
     return dists
 
@@ -779,6 +866,9 @@ def run():
         luggage_names = dict(CUSTOM_LUGGAGE_NAMES)
     num_luggage_classes = max(luggage_names) + 1 if luggage_names else 1
 
+    run_dir = make_run_dir(VIDEO_IN, person_weights, luggage_weights)
+    out_video = os.path.join(run_dir, OUT_VIDEO)
+
     cap = cv2.VideoCapture(VIDEO_IN)
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video: {VIDEO_IN}")
@@ -797,6 +887,7 @@ def run():
           f"{'  [shared]' if shared_model else ''}")
     if label_map is not None:
         print(f"  labels  : {', '.join(f'{k}->{luggage_names[v]}' for k, v in sorted(label_map.items()))}")
+    print(f"  run dir : {run_dir}")
     print(f"  owner within {D_OWN}h, away beyond {D_AWAY}h, alarm after {UNATTENDED_SECONDS:.0f}s\n")
 
     # the panel gets its own column, so the rendered canvas is wider than the video
@@ -809,9 +900,9 @@ def run():
 
     writer = None
     if SAVE_OUTPUT:
-        fourcc = cv2.VideoWriter_fourcc(*("mp4v" if VIDEO_OUT.lower().endswith(".mp4") else "XVID"))
-        writer = cv2.VideoWriter(VIDEO_OUT, fourcc, video_fps, (canvas_w, canvas_h))
-        print(f"[SAVE] {VIDEO_OUT}  ({canvas_w}x{canvas_h})")
+        fourcc = cv2.VideoWriter_fourcc(*("mp4v" if out_video.lower().endswith(".mp4") else "XVID"))
+        writer = cv2.VideoWriter(out_video, fourcc, video_fps, (canvas_w, canvas_h))
+        print(f"[SAVE] {out_video}  ({canvas_w}x{canvas_h})")
 
     if SHOW:
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
@@ -827,6 +918,21 @@ def run():
     alarm_manager = AlarmManager()
     events = []
 
+    global LOG
+    LOG = EventLog(os.path.join(run_dir, LOG_JSONL))
+    LOG.event("run", source=VIDEO_IN, size=[w, h], fps=round(video_fps, 3), frames=total_frames,
+              person_model=person_weights, luggage_model=luggage_weights,
+              shared_model=shared_model, luggage_classes=luggage_class_ids,
+              run_dir=run_dir,
+              label_map=None if label_map is None else {str(k): v for k, v in label_map.items()},
+              names={str(k): v for k, v in luggage_names.items()},
+              params={"d_own": D_OWN, "d_away": D_AWAY, "ownership_sec": OWNERSHIP_SEC,
+                      "unattended_seconds": UNATTENDED_SECONDS,
+                      "owner_grace_sec": OWNER_GRACE_SEC, "alarm_latch": ALARM_LATCH,
+                      "luggage_ttl": LUGGAGE_TTL_SECONDS, "luggage_memory": LUGGAGE_MEMORY_SEC,
+                      "owner_rebind_sec": OWNER_REBIND_SEC,
+                      "conf_person": CONF_PERSON, "conf_luggage": CONF_LUGGAGE, "imgsz": IMGSZ})
+
     frame_count = 0
     now_t = 0.0
     fps_smooth = None
@@ -841,6 +947,7 @@ def run():
 
         now_t = frame_count / video_fps  # video timestamp in seconds
         frame_count += 1
+        LOG.mark(now_t, frame_count)
 
         wall_now = time.perf_counter()
         inst_fps = 1.0 / max(1e-6, wall_now - wall_last)
@@ -902,6 +1009,8 @@ def run():
             for bb, cf, cid in zip(p_xyxy, p_conf, p_cls):
                 if int(cid) in PERSON_CLASS_IDS and cf >= CONF_PERSON:
                     person_dets.append({"bbox": bb, "conf": float(cf), "cls": 0})
+                    if LOG_DETECTIONS:
+                        LOG.event("det", role="person", conf=round(float(cf), 3), bbox=bb)
 
         p_matches, p_unmatched_det, p_unmatched_tracks = hungarian_match(
             person_dets, person_tracks, now_t,
@@ -925,10 +1034,13 @@ def run():
             pid = next_person_id
             next_person_id += 1
             cx, cy = center_xyxy(d["bbox"])
+            LOG.event("track_new", role="person", tid=pid, conf=round(d["conf"], 3),
+                      bbox=d["bbox"])
             person_tracks[pid] = {
                 "bbox": np.array(d["bbox"], dtype=float),
                 "conf": float(d["conf"]),
                 "cls": 0,
+                "first_t": now_t,
                 "last_seen_t": now_t,
                 "missed_s": 0.0,
                 "vx": 0.0,
@@ -936,7 +1048,10 @@ def run():
                 "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
             }
 
-        prune_tracks_by_ttl(person_tracks, PERSON_TTL_SECONDS)
+        for pid, st in prune_tracks_by_ttl(person_tracks, PERSON_TTL_SECONDS).items():
+            LOG.event("track_lost", role="person", tid=pid,
+                      alive_s=round(st["last_seen_t"] - st.get("first_t", st["last_seen_t"]), 2),
+                      last_seen_t=round(st["last_seen_t"], 2), bbox=st["bbox"])
 
         # visible persons list (recent only)
         persons = []
@@ -970,9 +1085,16 @@ def run():
                         continue
                     cid = label_map[cid]
                 luggage_dets.append({"cls": cid, "conf": float(cf), "bbox": bb})
+                if LOG_DETECTIONS:
+                    LOG.event("det", role="luggage", cls=cid,
+                              name=str(luggage_names.get(cid, cid)),
+                              conf=round(float(cf), 3), bbox=bb)
 
         # (1) class-agnostic NMS to kill duplicate boxes across classes
+        n_raw = len(luggage_dets)
         luggage_dets = nms_dets_xyxy(luggage_dets, iou_thr=LUGGAGE_DET_NMS_IOU, class_agnostic=True)
+        if n_raw != len(luggage_dets):
+            LOG.event("nms", role="luggage", before=n_raw, after=len(luggage_dets))
 
         l_matches, l_unmatched_det, l_unmatched_tracks = hungarian_match(
             luggage_dets, luggage_tracks, now_t,
@@ -997,6 +1119,8 @@ def run():
 
             # prevent duplicate LIDs for same physical bag
             if not should_spawn_new_track(d, luggage_tracks, now_t):
+                LOG.event("spawn_suppressed", role="luggage", cls=d["cls"],
+                          conf=round(d["conf"], 3), bbox=d["bbox"])
                 continue
 
             # a bag returning to the same spot keeps its ID, its owner and its timer
@@ -1004,6 +1128,10 @@ def run():
             if old_lid is not None:
                 st = retired_bags.pop(old_lid)
                 gap = now_t - st["last_seen_t"]  # time out of sight is not observed time
+                LOG.event("track_revived", role="luggage", lid=old_lid, gap_s=round(gap, 2),
+                          owner=st["owner_pid"], state=st["state"],
+                          iou=round(iou_xyxy(d["bbox"], st["bbox"]), 3),
+                          conf=round(d["conf"], 3), bbox=d["bbox"])
                 st["first_t"] += gap
                 if st["away_since"] is not None:
                     st["away_since"] += gap
@@ -1017,6 +1145,9 @@ def run():
 
             lid = next_luggage_id
             next_luggage_id += 1
+            LOG.event("track_new", role="luggage", lid=lid, cls=int(d["cls"]),
+                      name=str(luggage_names.get(int(d["cls"]), d["cls"])),
+                      conf=round(d["conf"], 3), bbox=d["bbox"])
 
             scores = np.zeros(num_luggage_classes, dtype=float)
             k = int(d["cls"])
@@ -1036,6 +1167,7 @@ def run():
                 "cls_stable": int(np.argmax(scores)),
                 "cls_last": int(d["cls"]),
                 # ownership state (note 3)
+                "lid": lid,
                 "first_t": now_t,
                 "state": PENDING,
                 "votes": {},
@@ -1051,9 +1183,15 @@ def run():
         # (3) merge any duplicates that slipped through
         merge_overlapping_tracks(luggage_tracks, now_t, merge_iou=MERGE_TRACK_IOU, max_age=MERGE_TRACK_MAX_AGE)
 
-        retired_bags.update(prune_tracks_by_ttl(luggage_tracks, LUGGAGE_TTL_SECONDS))
+        retired = prune_tracks_by_ttl(luggage_tracks, LUGGAGE_TTL_SECONDS)
+        for lid, st in retired.items():
+            LOG.event("track_lost", role="luggage", lid=lid, owner=st["owner_pid"],
+                      state=st["state"], alive_s=round(st["last_seen_t"] - st["first_t"], 2),
+                      unattended_s=round(st["unattended_s"], 2), bbox=st["bbox"])
+        retired_bags.update(retired)
         for lid in [k for k, s in retired_bags.items()
                     if now_t - s["last_seen_t"] > LUGGAGE_MEMORY_SEC]:
+            LOG.event("track_forgotten", role="luggage", lid=lid, owner=retired_bags[lid]["owner_pid"])
             del retired_bags[lid]
 
         # -----------------------------
@@ -1118,6 +1256,11 @@ def run():
                     })
                     print(f"  [ALARM] t={now_t:7.1f}s  L{lid}  owner P{st['owner_pid']}  "
                           f"unattended since {st['away_since']:.1f}s")
+                    LOG.event("alarm", lid=lid, owner=st["owner_pid"],
+                              name=str(luggage_names.get(int(st["cls_stable"]), st["cls_stable"])),
+                              left_at_sec=round(st["away_since"], 2),
+                              first_seen_sec=round(st["first_t"], 2),
+                              unattended_s=round(st["unattended_s"], 2), bbox=bb)
                 unattended_now += 1
             else:
                 alarm_manager.clear(lid)
@@ -1164,6 +1307,19 @@ def run():
                 pair += " [Z]"
             track_rows.append((pair, color, 0.45))
 
+            if LOG_PAIRS_EVERY_N and frame_count % LOG_PAIRS_EVERY_N == 0:
+                near3 = sorted(dists.items(), key=lambda kv: kv[1])[:3]
+                LOG.event("pair", lid=lid, tag=tag, cls=cid, name=cname,
+                          conf=round(float(st["conf"]), 3), bbox=bb, state=state,
+                          owner=st["owner_pid"],
+                          d_h=None if owner_d is None else round(owner_d, 3),
+                          owner_visible=owner is not None,
+                          owner_hidden_s=round(st["owner_missing_s"], 2),
+                          age_s=round(now_t - st["first_t"], 2),
+                          unattended_s=round(st["unattended_s"], 2),
+                          predicted=pred_flag, zone=zone_violation,
+                          people_near={str(p): round(d, 2) for p, d in near3})
+
             # the bag/owner pairing this whole script exists for
             if owner is not None:
                 bx, by = bottom_center(bb)
@@ -1175,6 +1331,12 @@ def run():
         # -----------------------------
         alarms_active = len(alarm_manager.active)
         flash = any(alarm_manager.is_flashing(i, now_t) for i in alarm_manager.active)
+        LOG.event("frame", persons=len(persons), luggage=visible_luggage, owned=owned_now,
+                  unattended=unattended_now, alarms=alarms_active,
+                  person_tracks=len(person_tracks), luggage_tracks=len(luggage_tracks),
+                  retired=len(retired_bags), person_dets=len(person_dets),
+                  luggage_dets=len(luggage_dets), infer_ms=round(infer_ms, 1),
+                  loop_fps=round(fps_smooth or 0.0, 2))
         if alarms_active:
             draw_alarm_border(annotated, flash)
 
@@ -1215,7 +1377,7 @@ def run():
             if key == ord(" "):
                 paused = not paused
             elif key == ord("s"):
-                path = f"screenshot_{frame_count:06d}.jpg"
+                path = os.path.join(run_dir, f"screenshot_{frame_count:06d}.jpg")
                 cv2.imwrite(path, canvas)
                 print(f"  screenshot -> {path}")
 
@@ -1228,7 +1390,21 @@ def run():
         writer.release()
     cv2.destroyAllWindows()
 
-    with open(EVENTS_JSON, "w") as f:
+    LOG.mark(now_t, frame_count)
+    alarmed_lids = {e["lid"] for e in alarm_manager.history}
+    for lid, st in sorted({**retired_bags, **luggage_tracks}.items()):
+        LOG.event("bag_summary", lid=lid, owner=st["owner_pid"], state=st["state"],
+                  name=str(luggage_names.get(int(st["cls_stable"]), st["cls_stable"])),
+                  first_t=round(st["first_t"], 2), last_seen_t=round(st["last_seen_t"], 2),
+                  unattended_s=round(st["unattended_s"], 2),
+                  away_since=None if st["away_since"] is None else round(st["away_since"], 2),
+                  alarmed=lid in alarmed_lids)
+    LOG.event("end", frames=frame_count, alarms=len(events),
+              person_ids_used=next_person_id - 1, luggage_ids_used=next_luggage_id - 1,
+              event_counts=LOG.counts)
+    LOG.close()
+
+    with open(os.path.join(run_dir, EVENTS_JSON), "w") as f:
         json.dump({
             "source": VIDEO_IN,
             "fps": video_fps,
@@ -1239,7 +1415,9 @@ def run():
             "events": events,
         }, f, indent=2)
 
-    print(f"\n  {frame_count} frames, {len(events)} alarm(s) -> {VIDEO_OUT}, {EVENTS_JSON}")
+    print(f"\n  {frame_count} frames, {len(events)} alarm(s) -> {run_dir}")
+    print(f"  trace log: {LOG_JSONL}  ({LOG.n} records)  " +
+          "  ".join(f"{k}={v}" for k, v in sorted(LOG.counts.items())))
     for e in events:
         print(f"    L{e['luggage_track']} ({e['class']}) owner P{e['owner_track']}  "
               f"left {e['left_at_sec']}s, alarm {e['alarm_at_sec']}s")
