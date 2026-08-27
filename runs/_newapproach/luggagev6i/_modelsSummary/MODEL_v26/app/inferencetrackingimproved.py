@@ -1,42 +1,80 @@
 #!/usr/bin/env python3
+"""Unattended-luggage detection from a fixed camera.
+
+Two detectors run on every frame -- a luggage model and a person model (optionally the
+same COCO model in both roles, see SINGLE_MODEL) -- each feeding its own Hungarian
+tracker, so the two ID spaces never mix. Every luggage track is paired with an owner and
+an alarm fires when that owner stays away longer than UNATTENDED_SECONDS.
+
+Three things here are where naive versions go wrong:
+
+1. TIME IS VIDEO TIME, NOT WALL-CLOCK TIME. Timers advance by 1/video_fps per frame, not
+   by how long inference took. Otherwise "10 seconds unattended" means 10 seconds of GPU
+   time and every result depends on the machine that produced it.
+
+2. DISTANCE IS NORMALISED BY PERSON HEIGHT. Raw pixel distance is meaningless under
+   perspective -- 120 px near the camera is metres, 120 px at the back of the hall is
+   centimetres. A standing adult is ~1.7 m, so the person's own bbox height is a local
+   pixels-per-metre estimate. All distances below are in PERSON-HEIGHTS ("h"), measured
+   between box BOTTOMS (feet, bag base) so they approximate ground-plane distance.
+
+3. OWNERSHIP IS ELECTED OVER A WINDOW, AND OCCLUSION IS NOT DEPARTURE. In a crowd the
+   nearest person in any single frame is frequently not the owner, so the owner is the
+   person minimising MEAN distance over the first OWNERSHIP_SEC of the bag's life. After
+   that only THAT person counts as supervision -- a stranger walking past does not reset
+   the clock. The timer advances only while the bag itself is visible, and a lost owner
+   track counts as away only after OWNER_GRACE_SEC.
+
+Keys: q quit, space pause, s screenshot.
+"""
+
+from __future__ import annotations
+
+import json
+import math
 import os
-import sys
 import time
+from collections import deque
+
 import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
-from collections import deque
-
-# Use your local YOLOv12 Ultralytics fork
-sys.path.insert(0, "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12")
 from ultralytics import YOLO
 
-# =========================
-# CONFIG
-# =========================
-VIDEO_IN = r"/home/constantin/Downloads/ABODA-master/video1.avi"
-VIDEO_OUT = r"/home/constantin/Downloads/ABODA-master/unattended_output.avi"
+# ================================ I/O ========================================
+VIDEO_IN = r"D:\ultralytics\_modelsSummary\videos\video1.avi"
+VIDEO_OUT = r"D:\ultralytics\_modelsSummary\videos\unattended_output.mp4"
+EVENTS_JSON = r"unattended_events.json"
 SAVE_OUTPUT = True
+SHOW = True
+FRAME_LIMIT = 0  # stop after N frames (0 = whole video)
+WINDOW_NAME = "Unattended Luggage   [q] quit   [space] pause   [s] screenshot"
 
-# Model A (COCO) for persons
-MODEL_PERSON = r"/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/runs_custom/yolov12m_custom_train/weights/yolov12x.pt"
-PERSON_CLASS_IDS = [0]  # COCO: person
+# =============================== MODELS ======================================
+MODEL_PERSON = r"yolov12x.pt"
+MODEL_LUGGAGE = r"runs_yolo26_overnight_r1213_v6i/y26_scb3_sbb50_cls075/weights/best.pt"
+# One COCO model for BOTH roles (e.g. "yolov26x.pt"); overrides the two paths above.
+SINGLE_MODEL = None
 
-# Model B (your dataset) for luggage
-MODEL_LUGGAGE = r"/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/runs_custom/yolov12m_custom_train/weights/best.pt"
-LUGGAGE_NAMES = ["backpack", "bag", "trolley"]  # class 0/1/2
+PERSON_CLASS_IDS = [0]  # COCO 'person'
+# None = keep every class the luggage model emits (correct for a custom luggage model).
+LUGGAGE_CLASS_IDS = None
+COCO_LUGGAGE_CLASS_IDS = [24, 26, 28]  # backpack, handbag, suitcase -- used with SINGLE_MODEL
 
-CONF_PERSON = 0.20
+CONF_PERSON = 0.25
 CONF_LUGGAGE = 0.40
 IOU = 0.45
-IMGZ = 960
+IMGSZ = 960
 DEVICE = "0"  # "0" GPU, or "cpu"
 
-WINDOW_NAME = "Unattended Luggage (press q to quit)"
-
-# --- unattended parameters ---
-OWNER_RADIUS_PX = 120
-UNATTENDED_SECONDS = 10.0
+# ======================== UNATTENDED PARAMETERS ==============================
+# distances in PERSON-HEIGHTS (note 2)
+D_OWN = 1.5  # must be this close to be a candidate owner
+D_AWAY = 2.5  # farther than this counts as "away"
+OWNERSHIP_SEC = 2.0  # window used to elect the owner (note 3)
+UNATTENDED_SECONDS = 10.0  # seconds away before the alarm fires
+OWNER_GRACE_SEC = 2.0  # owner track may vanish this long before counting as away
+MIN_PERSON_H = 20.0  # px; below this the height estimate is too noisy to divide by
 
 # =========================
 # STABLE TRACKING PARAMS
@@ -89,46 +127,56 @@ MERGE_TRACK_IOU = 0.70
 MERGE_TRACK_MAX_AGE = 0.8
 
 # =========================
-# OWNER STABILIZATION (anti-flip)
+# TRAJECTORY HISTORY
 # =========================
-OWNER_SWITCH_MARGIN_PX = 35  # new owner must be at least this much closer
-OWNER_CONFIRM_TIME = 0.6  # seconds before switching owner
+TRAJECTORY_MAX_POINTS = 45
+TRAJECTORY_MAX_AGE_SEC = 4.0  # seconds of video time drawn behind each track
 
 # =========================
-# NEW: TRAJECTORY HISTORY
+# ALARM SYSTEM
 # =========================
-TRAJECTORY_MAX_POINTS = 30  # max points to keep in trajectory
-TRAJECTORY_DRAW_POINTS = 15  # how many recent points to draw
+ALARM_COOLDOWN_SECONDS = 5.0  # minimum video time between re-triggers of the same bag
+ALARM_FLASH_DURATION = 2.0
+ALARM_SOUND_ENABLED = False  # terminal beep on every trigger
 
 # =========================
-# NEW: ALARM SYSTEM
+# ZONE DETECTION (optional)
 # =========================
-ALARM_COOLDOWN_SECONDS = 5.0  # minimum time between alarms for same luggage
-ALARM_FLASH_DURATION = 2.0  # how long to flash the alarm
-ALARM_SOUND_ENABLED = False  # set to True if you want beep sounds
+ENABLE_ZONES = False
+RESTRICTED_ZONES = []  # e.g. [[(100, 100), (300, 100), (300, 300), (100, 300)]]
 
 # =========================
-# NEW: ZONE DETECTION
+# ANNOTATION
 # =========================
-ENABLE_ZONES = False  # set to True to enable zone-based alerts
-# Define zones as list of polygons: [[(x1,y1), (x2,y2), ...], ...]
-RESTRICTED_ZONES = []  # e.g., [[(100,100), (300,100), (300,300), (100,300)]]
-ZONE_ALERT_COLOR = (0, 140, 255)  # orange for zone violations
+SHOW_TRAJECTORIES = True
+# The info panel is rendered in its own column NEXT TO the video, never on top of it.
+SIDEBAR_WIDTH = 360  # px; 0 disables the panel entirely
+SIDEBAR_SIDE = "right"  # "right" or "left"
+SIDEBAR_BG = (26, 26, 26)
+SIDEBAR_MAX_TRACK_ROWS = 8  # per-bag rows listed under "tracked luggage"
+FONT = cv2.FONT_HERSHEY_SIMPLEX
 
-# =========================
-# NEW: STATISTICS TRACKING
-# =========================
-ENABLE_STATISTICS = True
-STATS_WINDOW_SECONDS = 60.0  # rolling window for statistics
+PENDING, OWNED, UNATTENDED, ALARM = "PENDING", "OWNED", "UNATTENDED", "ALARM"
+
+COLOR_PERSON = (255, 180, 0)
+COLOR_OWNER = (0, 255, 255)
+COLOR_LINK = (255, 255, 0)
+COLOR_PENDING = (200, 200, 200)
+COLOR_OWNED = (80, 200, 80)
+COLOR_UNATTENDED = (0, 165, 255)
+COLOR_ALARM = (0, 0, 255)
+ZONE_ALERT_COLOR = (0, 140, 255)
+STATE_COLOR = {PENDING: COLOR_PENDING, OWNED: COLOR_OWNED,
+               UNATTENDED: COLOR_UNATTENDED, ALARM: COLOR_ALARM}
 
 
 # -----------------------------
 # Geometry helpers
 # -----------------------------
 def iou_xyxy(a, b):
-    x1 = max(a[0], b[0]);
+    x1 = max(a[0], b[0])
     y1 = max(a[1], b[1])
-    x2 = min(a[2], b[2]);
+    x2 = min(a[2], b[2])
     y2 = min(a[3], b[3])
     inter = max(0, x2 - x1) * max(0, y2 - y1)
     if inter <= 0:
@@ -142,12 +190,43 @@ def center_xyxy(bb):
     return ((bb[0] + bb[2]) / 2.0, (bb[1] + bb[3]) / 2.0)
 
 
-def draw_label(img, text, x, y, color, scale=0.6, thickness=2):
+def bottom_center(bb):
+    """Feet of a person / resting point of a bag -- the ground-plane contact point."""
+    return ((bb[0] + bb[2]) / 2.0, bb[3])
+
+
+def _text_color(bg):
+    b, g, r = bg
+    return (0, 0, 0) if (0.299 * r + 0.587 * g + 0.114 * b) > 140 else (255, 255, 255)
+
+
+def draw_label(img, text, x, y, color, scale=0.6, thickness=2, bg=True, alpha=0.75):
+    """Text on a filled translucent plate; (x, y) is the text baseline. Returns its box."""
     x, y = int(x), int(y)
-    cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0),
-                thickness + 2, cv2.LINE_AA)
-    cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color,
+    (tw, th), base = cv2.getTextSize(text, FONT, scale, thickness)
+    pad = 4
+    x = int(np.clip(x, pad, max(pad, img.shape[1] - tw - pad - 1)))
+    y = int(np.clip(y, th + pad + 1, img.shape[0] - base - pad - 1))
+    x1, y1, x2, y2 = x - pad, y - th - pad, x + tw + pad, y + base + pad
+
+    if bg:
+        roi = img[max(0, y1):y2, max(0, x1):x2]
+        if roi.size:
+            plate = np.full(roi.shape, color, dtype=np.uint8)
+            cv2.addWeighted(plate, alpha, roi, 1.0 - alpha, 0, roi)
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, 1, cv2.LINE_AA)
+
+    cv2.putText(img, text, (x, y), FONT, scale, _text_color(color) if bg else color,
                 thickness, cv2.LINE_AA)
+    return x1, y1, x2, y2
+
+
+def draw_label_block(img, lines, x, y, color, scale=0.5, thickness=1, above=True):
+    """Stack of labels anchored above (default) or below the point."""
+    step = int(cv2.getTextSize("Ag", FONT, scale, thickness)[0][1] + 11)
+    for i, line in enumerate(lines):
+        yy = y - (len(lines) - 1 - i) * step if above else y + (i + 1) * step
+        draw_label(img, line, x, yy, color, scale, thickness)
 
 
 def predict_bbox(st, dt_pred):
@@ -161,32 +240,10 @@ def predict_bbox(st, dt_pred):
     return np.array([cx_p - w / 2, cy_p - h / 2, cx_p + w / 2, cy_p + h / 2], dtype=float)
 
 
-def point_in_polygon(point, polygon):
-    """Check if point (x, y) is inside polygon using ray casting."""
-    x, y = point
-    n = len(polygon)
-    inside = False
-    p1x, p1y = polygon[0]
-    for i in range(1, n + 1):
-        p2x, p2y = polygon[i % n]
-        if y > min(p1y, p2y):
-            if y <= max(p1y, p2y):
-                if x <= max(p1x, p2x):
-                    if p1y != p2y:
-                        xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
-                    if p1x == p2x or x <= xinters:
-                        inside = not inside
-        p1x, p1y = p2x, p2y
-    return inside
-
-
 def bbox_in_zone(bbox, zones):
-    """Check if bbox center is in any restricted zone."""
-    cx, cy = center_xyxy(bbox)
-    for zone in zones:
-        if point_in_polygon((cx, cy), zone):
-            return True
-    return False
+    """True if the bbox ground-contact point falls inside any restricted zone."""
+    pt = tuple(float(v) for v in bottom_center(bbox))
+    return any(cv2.pointPolygonTest(np.asarray(z, np.int32), pt, False) >= 0 for z in zones)
 
 
 # -----------------------------
@@ -410,8 +467,11 @@ def merge_overlapping_tracks(tracks, now_t, merge_iou=0.70, max_age=0.8):
 
                 # Merge state
                 K["unattended_s"] = max(K.get("unattended_s", 0.0), D.get("unattended_s", 0.0))
-                if K.get("owner_person_id") is None and D.get("owner_person_id") is not None:
-                    K["owner_person_id"] = D.get("owner_person_id")
+                K["first_t"] = min(K.get("first_t", 0.0), D.get("first_t", 0.0))
+                if K.get("owner_pid") is None and D.get("owner_pid") is not None:
+                    K["owner_pid"] = D["owner_pid"]
+                    K["state"] = D["state"]
+                    K["away_since"] = D["away_since"]
 
                 if "cls_scores" in K and "cls_scores" in D and K["cls_scores"].shape == D["cls_scores"].shape:
                     K["cls_scores"] = K["cls_scores"] + D["cls_scores"]
@@ -431,7 +491,7 @@ def merge_overlapping_tracks(tracks, now_t, merge_iou=0.70, max_age=0.8):
 
 
 # -----------------------------
-# Owner stabilization
+# Ownership (notes 2 and 3)
 # -----------------------------
 def get_person_by_id(persons, pid):
     for p in persons:
@@ -440,278 +500,165 @@ def get_person_by_id(persons, pid):
     return None
 
 
-def update_owner_with_hysteresis(st, persons, cx, cy, dt):
-    """
-    Stable owner assignment:
-    - pick nearest within OWNER_RADIUS_PX
-    - only switch if new is closer by margin and confirmed for OWNER_CONFIRM_TIME
-    """
-    # Find nearest candidate
-    cand = None
-    cand_dist = None
+def person_heights_away(bag_bbox, persons):
+    """Bag-to-person distances in person-heights, measured on the ground plane."""
+    bx, by = bottom_center(bag_bbox)
+    out = {}
     for p in persons:
-        dist = ((p["cx"] - cx) ** 2 + (p["cy"] - cy) ** 2) ** 0.5
-        if cand_dist is None or dist < cand_dist:
-            cand_dist = dist
-            cand = p
+        h = p["bbox"][3] - p["bbox"][1]
+        if h < MIN_PERSON_H:
+            continue
+        px, py = bottom_center(p["bbox"])
+        out[p["tid"]] = math.hypot(bx - px, by - py) / h
+    return out
 
-    if cand is None or cand_dist is None or cand_dist > OWNER_RADIUS_PX:
-        # Not supervised; keep current owner id (optional) but do not build candidate
-        st["owner_candidate_id"] = None
-        st["owner_candidate_s"] = 0.0
-        return False, None  # supervised, owner
 
-    # supervised
-    cur_owner = st.get("owner_person_id", None)
+def update_ownership(st, persons, now_t, dt):
+    """Elect an owner over a window, then follow only that person. Returns distances."""
+    dists = person_heights_away(st["bbox"], persons)
 
-    if cur_owner is None:
-        st["owner_person_id"] = cand["tid"]
-        st["owner_candidate_id"] = None
-        st["owner_candidate_s"] = 0.0
-        return True, cand
+    if st["owner_pid"] is None and st["state"] == PENDING:
+        for pid, d in dists.items():
+            if d <= D_OWN:
+                st["votes"].setdefault(pid, []).append(d)
+        if now_t - st["first_t"] >= OWNERSHIP_SEC:
+            if st["votes"]:
+                st["owner_pid"] = min(st["votes"],
+                                      key=lambda k: sum(st["votes"][k]) / len(st["votes"][k]))
+                st["state"] = OWNED
+            else:  # nobody was ever near it -- already unattended when it entered view
+                st["state"] = UNATTENDED
+                st["away_since"] = now_t
+        return dists
 
-    if cur_owner == cand["tid"]:
-        st["owner_candidate_id"] = None
-        st["owner_candidate_s"] = 0.0
-        return True, cand
+    owner_d = dists.get(st["owner_pid"])
+    if owner_d is not None:
+        st["owner_missing_s"] = 0.0
+        near = owner_d <= D_AWAY
+    else:  # owner not visible -- occlusion or departure (note 3)
+        st["owner_missing_s"] += dt
+        near = st["owner_missing_s"] < OWNER_GRACE_SEC
 
-    # compute current owner's distance if visible
-    cur_p = get_person_by_id(persons, cur_owner)
-    cur_dist = None
-    if cur_p is not None:
-        cur_dist = ((cur_p["cx"] - cx) ** 2 + (cur_p["cy"] - cy) ** 2) ** 0.5
-
-    # Only consider switching if candidate is meaningfully closer OR current owner not visible
-    if cur_dist is None or (cur_dist - cand_dist) >= OWNER_SWITCH_MARGIN_PX:
-        if st.get("owner_candidate_id") == cand["tid"]:
-            st["owner_candidate_s"] += dt
-        else:
-            st["owner_candidate_id"] = cand["tid"]
-            st["owner_candidate_s"] = dt
-
-        if st["owner_candidate_s"] >= OWNER_CONFIRM_TIME:
-            st["owner_person_id"] = cand["tid"]
-            st["owner_candidate_id"] = None
-            st["owner_candidate_s"] = 0.0
-            return True, cand
+    if near:
+        st["away_since"] = None
+        st["unattended_s"] = 0.0
+        st["state"] = OWNED
     else:
-        st["owner_candidate_id"] = None
-        st["owner_candidate_s"] = 0.0
+        if st["away_since"] is None:
+            st["away_since"] = now_t
+        st["unattended_s"] = now_t - st["away_since"]
+        st["state"] = ALARM if st["unattended_s"] >= UNATTENDED_SECONDS else UNATTENDED
 
-    # still supervised; owner remains current
-    return True, get_person_by_id(persons, st.get("owner_person_id", None))
+    return dists
 
 
 # -----------------------------
-# NEW: Alarm Management
+# Alarm management
 # -----------------------------
 class AlarmManager:
     def __init__(self):
-        self.active_alarms = {}  # lid -> {"start_time": t, "last_trigger": t}
-        self.alarm_history = deque(maxlen=100)  # Keep last 100 alarms
+        self.active = {}  # lid -> {"start_time", "last_trigger", "info"}
+        self.history = []  # every alarm ever raised, in order
 
-    def trigger_alarm(self, lid, now_t, luggage_info):
-        """Trigger or update an alarm for a luggage item."""
-        if lid not in self.active_alarms:
-            # New alarm
-            self.active_alarms[lid] = {
-                "start_time": now_t,
-                "last_trigger": now_t,
-                "luggage_info": luggage_info
-            }
-            self.alarm_history.append({
-                "lid": lid,
-                "time": now_t,
-                "info": luggage_info
-            })
-            if ALARM_SOUND_ENABLED:
-                # You can add sound here: print('\a') or use a library
-                print('\a')  # Terminal beep
-            return True  # New alarm
-        else:
-            # Update existing alarm
-            alarm = self.active_alarms[lid]
-            if now_t - alarm["last_trigger"] >= ALARM_COOLDOWN_SECONDS:
-                alarm["last_trigger"] = now_t
-                if ALARM_SOUND_ENABLED:
-                    print('\a')
-                return True
-            return False
+    def trigger(self, lid, now_t, info):
+        """Raise or refresh an alarm. True only the first time this bag alarms."""
+        alarm = self.active.get(lid)
+        if alarm is None:
+            self.active[lid] = {"start_time": now_t, "last_trigger": now_t, "info": info}
+            self.history.append({"lid": lid, "time": now_t, "info": info})
+            self._beep()
+            return True
+        if now_t - alarm["last_trigger"] >= ALARM_COOLDOWN_SECONDS:
+            alarm["last_trigger"] = now_t
+            self._beep()
+        return False
 
-    def clear_alarm(self, lid):
-        """Clear an alarm when luggage is attended again."""
-        if lid in self.active_alarms:
-            del self.active_alarms[lid]
+    def clear(self, lid):
+        self.active.pop(lid, None)
 
     def is_flashing(self, lid, now_t):
-        """Check if alarm should be flashing."""
-        if lid not in self.active_alarms:
+        alarm = self.active.get(lid)
+        if alarm is None:
             return False
-        alarm = self.active_alarms[lid]
         elapsed = now_t - alarm["last_trigger"]
-        if elapsed > ALARM_FLASH_DURATION:
-            return False
-        # Flash at 2 Hz
-        return (int(elapsed * 4) % 2) == 0
+        return elapsed <= ALARM_FLASH_DURATION and int(elapsed * 4) % 2 == 0
 
-    def get_active_count(self):
-        return len(self.active_alarms)
-
-
-# -----------------------------
-# NEW: Statistics Tracker
-# -----------------------------
-class StatisticsTracker:
-    def __init__(self, window_seconds=60.0):
-        self.window_seconds = window_seconds
-        self.events = deque()  # (timestamp, event_type, data)
-
-    def add_event(self, now_t, event_type, data=None):
-        """Add an event to the tracker."""
-        self.events.append((now_t, event_type, data))
-        self._cleanup(now_t)
-
-    def _cleanup(self, now_t):
-        """Remove events outside the time window."""
-        while self.events and (now_t - self.events[0][0]) > self.window_seconds:
-            self.events.popleft()
-
-    def get_stats(self, now_t):
-        """Get statistics for the current window."""
-        self._cleanup(now_t)
-
-        stats = {
-            "total_detections": 0,
-            "person_count": 0,
-            "luggage_count": 0,
-            "unattended_count": 0,
-            "alarms_triggered": 0,
-            "avg_unattended_time": 0.0
-        }
-
-        unattended_times = []
-
-        for timestamp, event_type, data in self.events:
-            if event_type == "detection":
-                stats["total_detections"] += 1
-            elif event_type == "person":
-                stats["person_count"] = max(stats["person_count"], data)
-            elif event_type == "luggage":
-                stats["luggage_count"] = max(stats["luggage_count"], data)
-            elif event_type == "unattended":
-                stats["unattended_count"] += 1
-                if data:
-                    unattended_times.append(data)
-            elif event_type == "alarm":
-                stats["alarms_triggered"] += 1
-
-        if unattended_times:
-            stats["avg_unattended_time"] = sum(unattended_times) / len(unattended_times)
-
-        return stats
+    @staticmethod
+    def _beep():
+        if ALARM_SOUND_ENABLED:
+            print("\a", end="", flush=True)
 
 
 # -----------------------------
-# NEW: Drawing Functions
+# Drawing
 # -----------------------------
-def draw_trajectory(img, trajectory, color, now_t, max_age=5.0):
-    """Draw trajectory path with fading effect."""
-    if len(trajectory) < 2:
+def draw_trajectory(img, trajectory, color, now_t, max_age=TRAJECTORY_MAX_AGE_SEC):
+    """Recent path, thinning with age so the current position reads as the head."""
+    pts = [(x, y, now_t - ts) for x, y, ts in trajectory if 0.0 <= now_t - ts <= max_age]
+    if len(pts) < 2:
         return
-
-    points = []
-    for x, y, t in trajectory:
-        age = now_t - t
-        if age <= max_age:
-            points.append((x, y, age))
-
-    if len(points) < 2:
-        return
-
-    for i in range(len(points) - 1):
-        x1, y1, age1 = points[i]
-        x2, y2, age2 = points[i + 1]
-
-        # Fade based on age
-        alpha = max(0.0, 1.0 - (age2 / max_age))
-        thickness = max(1, int(3 * alpha))
-
-        # Interpolate color with background (fade effect)
-        faded_color = tuple(int(c * alpha) for c in color)
-
-        cv2.line(img, (x1, y1), (x2, y2), faded_color, thickness)
-
-    # Draw current position as a circle
-    if points:
-        x, y, _ = points[-1]
-        cv2.circle(img, (x, y), 4, color, -1)
+    for (x1, y1, _), (x2, y2, age) in zip(pts, pts[1:]):
+        w = max(1, int(1 + 2 * (1.0 - age / max_age)))
+        cv2.line(img, (x1, y1), (x2, y2), color, w, cv2.LINE_AA)
+    cv2.circle(img, pts[-1][:2], 4, color, -1, cv2.LINE_AA)
 
 
-def draw_zones(img, zones, color=(0, 140, 255), thickness=2):
+def draw_zones(img, zones, color=ZONE_ALERT_COLOR, thickness=2):
     """Draw restricted zones on the image."""
     for zone in zones:
-        pts = np.array(zone, np.int32)
-        pts = pts.reshape((-1, 1, 2))
-        cv2.polylines(img, [pts], True, color, thickness)
-        # Semi-transparent fill
+        pts = np.asarray(zone, np.int32).reshape((-1, 1, 2))
         overlay = img.copy()
         cv2.fillPoly(overlay, [pts], color)
         cv2.addWeighted(overlay, 0.2, img, 0.8, 0, img)
+        cv2.polylines(img, [pts], True, color, thickness, cv2.LINE_AA)
 
 
-def draw_statistics_panel(img, stats, alarm_count, fps, infer_ms):
-    """Draw statistics panel on the image."""
-    panel_height = 200
-    panel_width = 350
-    margin = 10
+def draw_sidebar(canvas, x0, width, rows, alarm_count, flash):
+    """Info column drawn beside the footage; `rows` are (text, colour, scale) or None gaps."""
+    h = canvas.shape[0]
+    x, right = x0 + 14, x0 + width - 14
+    cv2.line(canvas, (x0, 0), (x0, h), (70, 70, 70), 1)
 
-    # Create semi-transparent panel
-    overlay = img.copy()
-    cv2.rectangle(overlay, (margin, margin),
-                  (margin + panel_width, margin + panel_height),
-                  (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.7, img, 0.3, 0, img)
+    y = 32
+    cv2.putText(canvas, "UNATTENDED LUGGAGE", (x, y), FONT, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+    y += 21
+    cv2.putText(canvas, "MONITOR", (x, y), FONT, 0.6, (150, 150, 150), 1, cv2.LINE_AA)
+    y += 14
+    cv2.line(canvas, (x, y), (right, y), (90, 90, 90), 1)
+    y += 26
 
-    # Draw border
-    cv2.rectangle(img, (margin, margin),
-                  (margin + panel_width, margin + panel_height),
-                  (255, 255, 255), 2)
+    for row in rows:
+        if row is None:  # section separator
+            cv2.line(canvas, (x, y - 15), (right, y - 15), (60, 60, 60), 1)
+            y += 8
+            continue
+        text, color, scale = row
+        if y > h - 90:
+            break
+        cv2.putText(canvas, text, (x, y), FONT, scale, color, 1, cv2.LINE_AA)
+        y += 24
 
-    # Draw statistics
-    y_offset = margin + 30
-    line_height = 25
-
-    draw_label(img, "=== STATISTICS ===", margin + 10, y_offset,
-               (255, 255, 255), 0.7, 2)
-    y_offset += line_height
-
-    draw_label(img, f"FPS: {fps:.1f} | Infer: {infer_ms:.1f}ms",
-               margin + 10, y_offset, (0, 255, 0), 0.6, 2)
-    y_offset += line_height
-
-    draw_label(img, f"Persons: {stats['person_count']}",
-               margin + 10, y_offset, (255, 180, 0), 0.6, 2)
-    y_offset += line_height
-
-    draw_label(img, f"Luggage: {stats['luggage_count']}",
-               margin + 10, y_offset, (0, 200, 0), 0.6, 2)
-    y_offset += line_height
-
-    draw_label(img, f"Unattended: {stats['unattended_count']}",
-               margin + 10, y_offset, (0, 165, 255), 0.6, 2)
-    y_offset += line_height
-
-    draw_label(img, f"Active Alarms: {alarm_count}",
-               margin + 10, y_offset, (0, 0, 255), 0.6, 2)
-    y_offset += line_height
-
-    if stats['avg_unattended_time'] > 0:
-        draw_label(img, f"Avg Unattended: {stats['avg_unattended_time']:.1f}s",
-                   margin + 10, y_offset, (255, 255, 0), 0.6, 2)
+    if alarm_count:
+        box_h = 58
+        top = h - box_h - 14
+        fill = (255, 255, 255) if flash else COLOR_ALARM
+        ink = (0, 0, 0) if flash else (255, 255, 255)
+        cv2.rectangle(canvas, (x0 + 10, top), (x0 + width - 10, top + box_h), fill, -1)
+        cv2.putText(canvas, "ALARM", (x, top + 26), FONT, 0.85, ink, 2, cv2.LINE_AA)
+        cv2.putText(canvas, f"{alarm_count} unattended bag(s)", (x, top + 47), FONT, 0.5, ink, 1,
+                    cv2.LINE_AA)
 
 
-BOTTOM_MARGIN = 20
-LINE_HEIGHT = 28
+def legend_rows():
+    return [("person", COLOR_PERSON, 0.45), ("owner of a bag", COLOR_OWNER, 0.45),
+            ("finding owner", COLOR_PENDING, 0.45), ("owned", COLOR_OWNED, 0.45),
+            ("unattended", COLOR_UNATTENDED, 0.45), ("ALARM", COLOR_ALARM, 0.45)]
+
+
+def draw_alarm_border(img, flash):
+    """Edge-only alert so nothing is hidden behind a banner."""
+    h, w = img.shape[:2]
+    cv2.rectangle(img, (0, 0), (w - 1, h - 1), (255, 255, 255) if flash else COLOR_ALARM, 6)
 
 
 # -----------------------------
@@ -719,60 +666,81 @@ LINE_HEIGHT = 28
 # -----------------------------
 def run():
     assert os.path.exists(VIDEO_IN), f"Input video not found: {VIDEO_IN}"
-    assert os.path.exists(MODEL_PERSON), f"Person model not found: {MODEL_PERSON}"
-    assert os.path.exists(MODEL_LUGGAGE), f"Luggage model not found: {MODEL_LUGGAGE}"
 
-    model_person = YOLO(MODEL_PERSON)
-    model_luggage = YOLO(MODEL_LUGGAGE)
+    person_weights = SINGLE_MODEL or MODEL_PERSON
+    luggage_weights = SINGLE_MODEL or MODEL_LUGGAGE
+    model_person = YOLO(person_weights)
+    # one model in both roles: load once, infer once per frame, split the result by class
+    shared_model = luggage_weights == person_weights
+    model_luggage = model_person if shared_model else YOLO(luggage_weights)
+
+    luggage_class_ids = LUGGAGE_CLASS_IDS
+    if shared_model and luggage_class_ids is None:
+        luggage_class_ids = COCO_LUGGAGE_CLASS_IDS
+    luggage_names = model_luggage.names  # read from the weights, never hardcoded
+    num_luggage_classes = max(luggage_names) + 1 if luggage_names else 1
 
     cap = cv2.VideoCapture(VIDEO_IN)
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video: {VIDEO_IN}")
 
     video_fps = cap.get(cv2.CAP_PROP_FPS)
+    if not video_fps or video_fps <= 1e-3:
+        video_fps = 25.0
+    dt = 1.0 / video_fps  # every timer below runs on video time, not wall clock (note 1)
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"Input: {w}x{h} @ {video_fps:.2f} FPS")
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    print(f"  input   : {VIDEO_IN}  {w}x{h} @ {video_fps:.2f} fps, {total_frames} frames")
+    print(f"  person  : {person_weights}  classes {PERSON_CLASS_IDS}")
+    print(f"  luggage : {luggage_weights}  classes {luggage_class_ids or 'all'}"
+          f"{'  [shared]' if shared_model else ''}")
+    print(f"  owner within {D_OWN}h, away beyond {D_AWAY}h, alarm after {UNATTENDED_SECONDS:.0f}s\n")
+
+    # the panel gets its own column, so the rendered canvas is wider than the video
+    side_w = max(0, SIDEBAR_WIDTH)
+    canvas_w = w + side_w
+    video_x0 = side_w if SIDEBAR_SIDE == "left" else 0
+    side_x0 = 0 if SIDEBAR_SIDE == "left" else w
 
     writer = None
     if SAVE_OUTPUT:
-        fourcc = cv2.VideoWriter_fourcc(*"XVID")
-        writer = cv2.VideoWriter(VIDEO_OUT, fourcc, video_fps if video_fps > 0 else 25.0, (w, h))
-        print(f"[SAVE] {VIDEO_OUT}")
+        fourcc = cv2.VideoWriter_fourcc(*("mp4v" if VIDEO_OUT.lower().endswith(".mp4") else "XVID"))
+        writer = cv2.VideoWriter(VIDEO_OUT, fourcc, video_fps, (canvas_w, h))
+        print(f"[SAVE] {VIDEO_OUT}  ({canvas_w}x{h})")
 
-    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+    if SHOW:
+        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(WINDOW_NAME, min(1800, canvas_w), min(1000, h))
 
     # Tracks (IDs never reused)
     next_person_id = 1
     person_tracks = {}  # PID -> {bbox, conf, last_seen_t, missed_s, vx, vy, trajectory}
-
     next_luggage_id = 1
-    luggage_tracks = {}  # LID -> {bbox, cls, conf, last_seen_t, missed_s, vx, vy, unattended_s, owner_person_id, cls_scores, cls_stable, owner_candidate_id, owner_candidate_s, trajectory}
+    luggage_tracks = {}  # LID -> the same + {state, owner_pid, votes, away_since, unattended_s}
 
-    # NEW: Initialize alarm manager and statistics tracker
     alarm_manager = AlarmManager()
-    stats_tracker = StatisticsTracker(STATS_WINDOW_SECONDS) if ENABLE_STATISTICS else None
-
-    last_loop_t = time.perf_counter()
-    fps_smooth = None
-
-    num_luggage_classes = len(LUGGAGE_NAMES)
+    events = []
 
     frame_count = 0
+    now_t = 0.0
+    fps_smooth = None
+    infer_ms = 0.0
+    wall_last = time.perf_counter()
+    paused = False
 
     while True:
         ok, frame = cap.read()
-        if not ok:
+        if not ok or (FRAME_LIMIT and frame_count >= FRAME_LIMIT):
             break
 
+        now_t = frame_count / video_fps  # video timestamp in seconds
         frame_count += 1
-        now_t = time.perf_counter()
-        dt = now_t - last_loop_t
-        last_loop_t = now_t
-        if dt <= 0:
-            dt = 1e-6
 
-        inst_fps = 1.0 / dt
+        wall_now = time.perf_counter()
+        inst_fps = 1.0 / max(1e-6, wall_now - wall_last)
+        wall_last = wall_now
         fps_smooth = inst_fps if fps_smooth is None else (0.9 * fps_smooth + 0.1 * inst_fps)
 
         # -----------------------------
@@ -780,29 +748,42 @@ def run():
         # -----------------------------
         t0 = time.perf_counter()
 
-        res_p = model_person.predict(
-            source=frame,
-            conf=CONF_PERSON,
-            iou=IOU,
-            imgsz=IMGZ,
-            device=DEVICE,
-            classes=PERSON_CLASS_IDS,
-            verbose=False
-        )[0]
+        if shared_model:
+            wanted = list(PERSON_CLASS_IDS) + list(luggage_class_ids or [])
+            res_p = res_l = model_person.predict(
+                source=frame,
+                conf=min(CONF_PERSON, CONF_LUGGAGE),
+                iou=IOU,
+                imgsz=IMGSZ,
+                device=DEVICE,
+                classes=wanted or None,
+                verbose=False
+            )[0]
+        else:
+            res_p = model_person.predict(
+                source=frame,
+                conf=CONF_PERSON,
+                iou=IOU,
+                imgsz=IMGSZ,
+                device=DEVICE,
+                classes=PERSON_CLASS_IDS,
+                verbose=False
+            )[0]
 
-        res_l = model_luggage.predict(
-            source=frame,
-            conf=CONF_LUGGAGE,
-            iou=IOU,
-            imgsz=IMGZ,
-            device=DEVICE,
-            verbose=False
-        )[0]
+            res_l = model_luggage.predict(
+                source=frame,
+                conf=CONF_LUGGAGE,
+                iou=IOU,
+                imgsz=IMGSZ,
+                device=DEVICE,
+                classes=luggage_class_ids,
+                verbose=False
+            )[0]
 
         infer_ms = (time.perf_counter() - t0) * 1000.0
         annotated = frame.copy()
 
-        # NEW: Draw zones if enabled
+        # Draw zones if enabled
         if ENABLE_ZONES and RESTRICTED_ZONES:
             draw_zones(annotated, RESTRICTED_ZONES)
 
@@ -813,8 +794,10 @@ def run():
         if res_p.boxes is not None and len(res_p.boxes) > 0:
             p_xyxy = res_p.boxes.xyxy.detach().cpu().numpy().astype(float)
             p_conf = res_p.boxes.conf.detach().cpu().numpy().astype(float)
-            for bb, cf in zip(p_xyxy, p_conf):
-                person_dets.append({"bbox": bb, "conf": float(cf), "cls": 0})
+            p_cls = res_p.boxes.cls.detach().cpu().numpy().astype(int)
+            for bb, cf, cid in zip(p_xyxy, p_conf, p_cls):
+                if int(cid) in PERSON_CLASS_IDS and cf >= CONF_PERSON:
+                    person_dets.append({"bbox": bb, "conf": float(cf), "cls": 0})
 
         p_matches, p_unmatched_det, p_unmatched_tracks = hungarian_match(
             person_dets, person_tracks, now_t,
@@ -873,6 +856,10 @@ def run():
             l_conf = res_l.boxes.conf.detach().cpu().numpy().astype(float)
             l_xyxy = res_l.boxes.xyxy.detach().cpu().numpy().astype(float)
             for cid, cf, bb in zip(l_cls, l_conf, l_xyxy):
+                if cf < CONF_LUGGAGE:
+                    continue
+                if luggage_class_ids is not None and int(cid) not in luggage_class_ids:
+                    continue
                 luggage_dets.append({"cls": int(cid), "conf": float(cf), "bbox": bb})
 
         # (1) class-agnostic NMS to kill duplicate boxes across classes
@@ -920,15 +907,17 @@ def run():
                 "missed_s": 0.0,
                 "vx": 0.0,
                 "vy": 0.0,
-                "unattended_s": 0.0,
-                "owner_person_id": None,
                 "cls_scores": scores,
                 "cls_stable": int(np.argmax(scores)),
                 "cls_last": int(d["cls"]),
-                # owner hysteresis state
-                "owner_candidate_id": None,
-                "owner_candidate_s": 0.0,
-                # NEW: trajectory
+                # ownership state (note 3)
+                "first_t": now_t,
+                "state": PENDING,
+                "votes": {},
+                "owner_pid": None,
+                "owner_missing_s": 0.0,
+                "away_since": None,
+                "unattended_s": 0.0,
                 "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
             }
 
@@ -940,160 +929,200 @@ def run():
         # -----------------------------
         # Unattended logic + drawing
         # -----------------------------
-        any_alarm = False
-        unattended_count = 0
+        owner_of = {}  # PID -> [LID, ...], so a person can be annotated as an owner
+        for lid, st in luggage_tracks.items():
+            if st["owner_pid"] is not None and now_t - st["last_seen_t"] <= DRAW_RECENT_SECONDS:
+                owner_of.setdefault(st["owner_pid"], []).append(lid)
 
-        for lid, st in list(luggage_tracks.items()):
-            age = now_t - st["last_seen_t"]
-
-            is_recent = age <= DRAW_RECENT_SECONDS
-            if is_recent:
-                bb = st["bbox"]
-                pred_flag = False
-            else:
-                if not DRAW_PREDICTED_WHEN_MISSING or age > LUGGAGE_MAX_RELINK_AGE:
-                    continue
-                bb = predict_bbox(st, age)
-                pred_flag = True
-
-            cid_stable = int(st.get("cls_stable", st.get("cls", 0)))
-            cf = float(st.get("conf", 0.0))
-            cx, cy = center_xyxy(bb)
-
-            # Stable owner association
-            supervised, owner = update_owner_with_hysteresis(st, persons, cx, cy, dt)
-
-            # Only grow unattended timer if luggage track is "recently seen"
-            if is_recent:
-                if supervised:
-                    st["unattended_s"] = 0.0
-                    alarm_manager.clear_alarm(lid)
-                else:
-                    st["unattended_s"] += dt
-                    unattended_count += 1
-
-            alarm = st["unattended_s"] >= UNATTENDED_SECONDS
-
-            # NEW: Check zone violation
-            zone_violation = False
-            if ENABLE_ZONES and RESTRICTED_ZONES:
-                zone_violation = bbox_in_zone(bb, RESTRICTED_ZONES)
-
-            # NEW: Trigger alarm
-            if alarm:
-                luggage_info = {
-                    "lid": lid,
-                    "class": LUGGAGE_NAMES[cid_stable] if 0 <= cid_stable < len(LUGGAGE_NAMES) else str(cid_stable),
-                    "unattended_time": st["unattended_s"],
-                    "position": (cx, cy)
-                }
-                alarm_manager.trigger_alarm(lid, now_t, luggage_info)
-                any_alarm = True
-
-                if stats_tracker:
-                    stats_tracker.add_event(now_t, "alarm", st["unattended_s"])
-
-            # Determine color based on state
-            if alarm and alarm_manager.is_flashing(lid, now_t):
-                color = (255, 255, 255)  # white flash
-            elif alarm:
-                color = (0, 0, 255)  # red
-            elif zone_violation:
-                color = ZONE_ALERT_COLOR  # orange for zone
-            elif supervised:
-                color = (0, 200, 0)  # green
-            else:
-                color = (0, 165, 255)  # orange
-
-            thickness = 3 if alarm else (2 if not pred_flag else 1)
-
-            x1, y1, x2, y2 = bb
-            cv2.rectangle(annotated, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness)
-
-            # NEW: Draw trajectory
-            if "trajectory" in st and len(st["trajectory"]) > 1:
-                draw_trajectory(annotated, st["trajectory"], color, now_t)
-
-            cname = LUGGAGE_NAMES[cid_stable] if 0 <= cid_stable < len(LUGGAGE_NAMES) else str(cid_stable)
-            last_cls = int(st.get("cls_last", cid_stable))
-            last_name = LUGGAGE_NAMES[last_cls] if 0 <= last_cls < len(LUGGAGE_NAMES) else str(last_cls)
-            tag = "PRED" if pred_flag else ""
-            zone_tag = " [ZONE!]" if zone_violation else ""
-
-            label = f"LID:{lid} {cname} ({last_name}) {cf:.2f} un:{st['unattended_s']:.1f}s {tag}{zone_tag}"
-            draw_label(annotated, label, x1, y1 - 8, color, scale=0.55, thickness=2)
-
-            # draw owner line + label if supervised
-            if supervised and owner is not None:
-                cv2.line(annotated, (int(cx), int(cy)), (int(owner["cx"]), int(owner["cy"])), (255, 255, 0), 2)
-                draw_label(annotated, f"owner PID:{owner['tid']}", x1, y2 + 18, (255, 255, 0), scale=0.55, thickness=2)
-
-        # draw persons
+        # --- persons first, so the bag/owner links land on top of the boxes ---
         for p in persons:
             x1, y1, x2, y2 = p["bbox"]
             pred_flag = p.get("pred", False)
-            thickness = 2 if not pred_flag else 1
-            cv2.rectangle(annotated, (int(x1), int(y1)), (int(x2), int(y2)), (255, 180, 0), thickness)
+            owns = owner_of.get(p["tid"], [])
+            color = COLOR_OWNER if owns else COLOR_PERSON
+            cv2.rectangle(annotated, (int(x1), int(y1)), (int(x2), int(y2)), color,
+                          1 if pred_flag else 2)
 
-            # NEW: Draw person trajectory
-            pid = p["tid"]
-            if pid in person_tracks and "trajectory" in person_tracks[pid]:
-                draw_trajectory(annotated, person_tracks[pid]["trajectory"], (255, 180, 0), now_t)
+            if SHOW_TRAJECTORIES and p["tid"] in person_tracks:
+                draw_trajectory(annotated, person_tracks[p["tid"]]["trajectory"], color, now_t)
 
-            tag = "PRED" if pred_flag else ""
-            draw_label(annotated, f"person PID:{p['tid']} {p['conf']:.2f} {tag}", x1, y1 - 8, (255, 180, 0), scale=0.55,
-                       thickness=2)
+            label = f"P{p['tid']} person {p['conf']:.2f}"
+            if owns:
+                label += "  owns " + ",".join(f"L{i}" for i in owns)
+            if pred_flag:
+                label += "  PRED"
+            draw_label(annotated, label, x1, y1 - 6, color, scale=0.5, thickness=1)
 
-        # NEW: Update statistics
-        if stats_tracker:
-            stats_tracker.add_event(now_t, "detection")
-            stats_tracker.add_event(now_t, "person", len(persons))
-            stats_tracker.add_event(now_t, "luggage", len([l for l in luggage_tracks.values() if
-                                                           now_t - l["last_seen_t"] <= DRAW_RECENT_SECONDS]))
-            if unattended_count > 0:
-                stats_tracker.add_event(now_t, "unattended", unattended_count)
+        # --- luggage: ownership state machine + annotation ---
+        visible_luggage = 0
+        owned_now = 0
+        unattended_now = 0
+        track_rows = []
 
-        # NEW: Draw statistics panel
-        if ENABLE_STATISTICS and stats_tracker:
-            stats = stats_tracker.get_stats(now_t)
-            draw_statistics_panel(annotated, stats, alarm_manager.get_active_count(), fps_smooth, infer_ms)
+        for lid, st in list(luggage_tracks.items()):
+            age = now_t - st["last_seen_t"]
+            is_recent = age <= DRAW_RECENT_SECONDS
+            if is_recent:
+                bb, pred_flag = st["bbox"], False
+                visible_luggage += 1
+            else:
+                if not DRAW_PREDICTED_WHEN_MISSING or age > LUGGAGE_MAX_RELINK_AGE:
+                    continue
+                bb, pred_flag = predict_bbox(st, age), True
 
-        # Draw alarm banner
-        if any_alarm:
-            cv2.rectangle(annotated, (0, 0), (w, 60), (0, 0, 255), -1)
-            draw_label(annotated, f"⚠️ ALARM: {alarm_manager.get_active_count()} UNATTENDED LUGGAGE!",
-                       15, 45, (255, 255, 255), scale=1.1, thickness=3)
+            # the clock only advances while the BAG itself is visible (note 3)
+            dists = update_ownership(st, persons, now_t, dt) if is_recent else {}
+            state = st["state"]
+            owner = get_person_by_id(persons, st["owner_pid"])
+            owner_d = dists.get(st["owner_pid"])
 
-        cv2.imshow(WINDOW_NAME, annotated)
+            zone_violation = bool(ENABLE_ZONES and RESTRICTED_ZONES
+                                  and bbox_in_zone(bb, RESTRICTED_ZONES))
+
+            if state == ALARM:
+                if alarm_manager.trigger(lid, now_t, {"lid": lid, "owner": st["owner_pid"]}):
+                    events.append({
+                        "luggage_track": lid,
+                        "owner_track": st["owner_pid"],
+                        "class": str(luggage_names.get(int(st["cls_stable"]), st["cls_stable"])),
+                        "first_seen_sec": round(st["first_t"], 2),
+                        "left_at_sec": round(st["away_since"], 2),
+                        "alarm_at_sec": round(now_t, 2),
+                        "alarm_frame": frame_count,
+                    })
+                    print(f"  [ALARM] t={now_t:7.1f}s  L{lid}  owner P{st['owner_pid']}  "
+                          f"unattended since {st['away_since']:.1f}s")
+                unattended_now += 1
+            else:
+                alarm_manager.clear(lid)
+                if state == UNATTENDED:
+                    unattended_now += 1
+                elif state == OWNED:
+                    owned_now += 1
+
+            color = STATE_COLOR[state]
+            if state == ALARM and alarm_manager.is_flashing(lid, now_t):
+                color = (255, 255, 255)
+            elif zone_violation and state != ALARM:
+                color = ZONE_ALERT_COLOR
+
+            x1, y1, x2, y2 = bb
+            cv2.rectangle(annotated, (int(x1), int(y1)), (int(x2), int(y2)), color,
+                          3 if state == ALARM else (1 if pred_flag else 2))
+
+            if SHOW_TRAJECTORIES:
+                draw_trajectory(annotated, st["trajectory"], color, now_t)
+
+            cid = int(st["cls_stable"])
+            cname = str(luggage_names.get(cid, cid))
+            head = f"L{lid} {cname} {float(st['conf']):.2f}"
+            if int(st.get("cls_last", cid)) != cid:  # this frame disagrees with the class vote
+                head += f" (~{luggage_names.get(int(st['cls_last']), '?')})"
+            if pred_flag:
+                head += "  PRED"
+            if zone_violation:
+                head += "  [ZONE]"
+
+            if state == PENDING:
+                tail = f"finding owner {now_t - st['first_t']:.1f}/{OWNERSHIP_SEC:.0f}s"
+                brief = "finding owner"
+            elif state == OWNED:
+                tail = f"owner P{st['owner_pid']}" + (
+                    f"  {owner_d:.1f}h" if owner_d is not None else "  (occluded)")
+                brief = f"owner P{st['owner_pid']}" + (f" {owner_d:.1f}h" if owner_d is not None else " occl")
+            elif state == UNATTENDED:
+                tail = (f"away {st['unattended_s']:.0f}s  "
+                        f"alarm in {UNATTENDED_SECONDS - st['unattended_s']:.0f}s")
+                brief = f"away {st['unattended_s']:.0f}s"
+            else:
+                tail = f"UNATTENDED {st['unattended_s']:.0f}s"
+                brief = f"ALARM {st['unattended_s']:.0f}s"
+            draw_label_block(annotated, [head, tail], x1, y1 - 6, color, scale=0.5, thickness=1)
+            track_rows.append((f"L{lid} {cname[:9]:<10s}{brief}", color, 0.45))
+
+            # the bag/owner pairing this whole script exists for
+            if owner is not None:
+                bx, by = bottom_center(bb)
+                ox, oy = bottom_center(owner["bbox"])
+                cv2.line(annotated, (int(bx), int(by)), (int(ox), int(oy)), COLOR_LINK, 2, cv2.LINE_AA)
+                if owner_d is not None:
+                    draw_label(annotated, f"P{owner['tid']}  {owner_d:.1f}h",
+                               (bx + ox) / 2, (by + oy) / 2, COLOR_LINK, scale=0.45, thickness=1)
+
+        # -----------------------------
+        # Sidebar (beside the video, never on top of it)
+        # -----------------------------
+        alarms_active = len(alarm_manager.active)
+        flash = any(alarm_manager.is_flashing(i, now_t) for i in alarm_manager.active)
+        if alarms_active:
+            draw_alarm_border(annotated, flash)
+
+        if side_w:
+            canvas = np.full((h, canvas_w, 3), SIDEBAR_BG, np.uint8)
+            canvas[:, video_x0:video_x0 + w] = annotated
+            rows = [
+                (f"frame  {frame_count}/{total_frames or '?'}", (215, 215, 215), 0.5),
+                (f"video  t = {now_t:.1f}s", (215, 215, 215), 0.5),
+                (f"speed  {fps_smooth:.1f} fps   {infer_ms:.0f} ms", (120, 255, 120), 0.5),
+                None,
+                (f"persons     {len(persons)}", COLOR_PERSON, 0.52),
+                (f"luggage     {visible_luggage}", COLOR_OWNED, 0.52),
+                (f"owned       {owned_now}", COLOR_OWNED, 0.52),
+                (f"unattended  {unattended_now}", COLOR_UNATTENDED, 0.52),
+                (f"alarms      {alarms_active} now / {len(alarm_manager.history)} total",
+                 COLOR_ALARM, 0.52),
+                None,
+                ("TRACKED LUGGAGE", (255, 255, 255), 0.48),
+                *(track_rows[:SIDEBAR_MAX_TRACK_ROWS] or [("- none -", (130, 130, 130), 0.45)]),
+                None,
+                (f"own <= {D_OWN}h    away > {D_AWAY}h", (170, 170, 170), 0.45),
+                (f"alarm after {UNATTENDED_SECONDS:.0f}s away", (170, 170, 170), 0.45),
+                None,
+                *legend_rows(),
+            ]
+            draw_sidebar(canvas, side_x0, side_w, rows, alarms_active, flash)
+        else:
+            canvas = annotated
+
         if SAVE_OUTPUT and writer is not None:
-            writer.write(annotated)
+            writer.write(canvas)
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
-            break
-        elif key == ord("s"):  # NEW: Save screenshot
-            screenshot_path = f"screenshot_{frame_count}.jpg"
-            cv2.imwrite(screenshot_path, annotated)
-            print(f"Screenshot saved: {screenshot_path}")
+        if SHOW:
+            cv2.imshow(WINDOW_NAME, canvas)
+            key = cv2.waitKey(0 if paused else 1) & 0xFF
+            if key == ord("q"):
+                break
+            if key == ord(" "):
+                paused = not paused
+            elif key == ord("s"):
+                path = f"screenshot_{frame_count:06d}.jpg"
+                cv2.imwrite(path, canvas)
+                print(f"  screenshot -> {path}")
+
+        if frame_count % 200 == 0:
+            print(f"    frame {frame_count}/{total_frames or '?'}  t={now_t:.0f}s  "
+                  f"tracked bags={len(luggage_tracks)}  alarms={len(alarm_manager.history)}")
 
     cap.release()
     if writer is not None:
         writer.release()
     cv2.destroyAllWindows()
 
-    # NEW: Print final statistics
-    if ENABLE_STATISTICS and stats_tracker:
-        print("\n" + "=" * 50)
-        print("FINAL STATISTICS")
-        print("=" * 50)
-        final_stats = stats_tracker.get_stats(now_t)
-        print(f"Total Alarms Triggered: {len(alarm_manager.alarm_history)}")
-        print(f"Average Unattended Time: {final_stats['avg_unattended_time']:.2f}s")
-        print(f"Peak Person Count: {final_stats['person_count']}")
-        print(f"Peak Luggage Count: {final_stats['luggage_count']}")
-        print("=" * 50)
+    with open(EVENTS_JSON, "w") as f:
+        json.dump({
+            "source": VIDEO_IN,
+            "fps": video_fps,
+            "frames": frame_count,
+            "params": {"d_own": D_OWN, "d_away": D_AWAY, "ownership_sec": OWNERSHIP_SEC,
+                       "owner_grace_sec": OWNER_GRACE_SEC,
+                       "unattended_seconds": UNATTENDED_SECONDS},
+            "events": events,
+        }, f, indent=2)
 
-    print("✅ Finished.")
+    print(f"\n  {frame_count} frames, {len(events)} alarm(s) -> {VIDEO_OUT}, {EVENTS_JSON}")
+    for e in events:
+        print(f"    L{e['luggage_track']} ({e['class']}) owner P{e['owner_track']}  "
+              f"left {e['left_at_sec']}s, alarm {e['alarm_at_sec']}s")
 
 
 if __name__ == "__main__":
