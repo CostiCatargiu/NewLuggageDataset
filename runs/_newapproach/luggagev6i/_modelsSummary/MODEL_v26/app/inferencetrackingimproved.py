@@ -111,7 +111,7 @@ LUGGAGE_REVIVE_DIST = 90  # px between ground-contact points
 
 # The person tracker may re-create the owner under a new ID after an occlusion.
 OWNER_REBIND_SEC = 3.0  # how long the owner's last box stays valid for re-binding
-OWNER_REBIND_IOU = 0.40
+OWNER_REBIND_IOU = 0.55
 
 PERSON_MATCH_IOU_THR = 0.10
 PERSON_MATCH_DIST_THR = 220
@@ -627,12 +627,19 @@ def person_heights_away(bag_bbox, persons):
 
 
 def rebind_owner(st, persons, now_t):
-    """A person track re-created at the owner's last position IS the owner (ID churn)."""
+    """Re-attach the owner after an ID switch.
+
+    Only a track BORN after the owner vanished can be the owner re-created under a new ID.
+    A track that already existed while the owner was visible is a different person, however
+    much it overlaps -- in a crowd two pedestrians reach IoU 0.5 routinely.
+    """
     last = st.get("owner_bbox")
     if last is None or now_t - st.get("owner_seen_t", -1e9) > OWNER_REBIND_SEC:
         return None
     best_pid, best_iou = None, OWNER_REBIND_IOU
     for p in persons:
+        if p["tid"] == st["owner_pid"] or p.get("first_t", 0.0) < st["owner_seen_t"]:
+            continue
         overlap = iou_xyxy(p["bbox"], last)
         if overlap >= best_iou:
             best_pid, best_iou = p["tid"], overlap
@@ -675,6 +682,7 @@ def update_ownership(st, persons, now_t, dt):
         if new_pid is not None:
             LOG.event("owner_rebind", lid=lid, old_owner=st["owner_pid"], new_owner=new_pid,
                       gap_s=round(now_t - st["owner_seen_t"], 2),
+                      born_t=round(pmap[new_pid].get("first_t", 0.0), 2),
                       iou=round(iou_xyxy(pmap[new_pid]["bbox"], st["owner_bbox"]), 3))
             st["owner_pid"] = new_pid
             owner_d = dists.get(new_pid)
@@ -1060,11 +1068,14 @@ def run():
             if age <= DRAW_RECENT_SECONDS:
                 bb = st["bbox"]
                 cx, cy = center_xyxy(bb)
-                persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy, "conf": st.get("conf", 0.0)})
+                persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy,
+                                "first_t": st["first_t"], "conf": st.get("conf", 0.0)})
             elif DRAW_PREDICTED_WHEN_MISSING and age <= PERSON_MAX_RELINK_AGE:
                 bb = predict_bbox(st, age)
                 cx, cy = center_xyxy(bb)
-                persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy, "conf": st.get("conf", 0.0), "pred": True})
+                persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy,
+                                "first_t": st["first_t"], "conf": st.get("conf", 0.0),
+                                "pred": True})
 
         # -----------------------------
         # LUGGAGE DETS -> stable luggage tracks
