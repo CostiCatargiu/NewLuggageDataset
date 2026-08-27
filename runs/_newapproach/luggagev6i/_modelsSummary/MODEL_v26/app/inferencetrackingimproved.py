@@ -42,11 +42,11 @@ from scipy.optimize import linear_sum_assignment
 from ultralytics import YOLO
 
 # ================================ I/O ========================================
-VIDEO_IN = r"/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo.mpg"
-OUT_VIDEO = r"/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmout.mpg"
+VIDEO_IN = r"D:\ultralytics\_modelsSummary\videos\video1.avi"
 # Every artefact of a run lands in OUT_DIR/<video>__p-<person>__l-<luggage>__<stamp><tag>/
-OUT_DIR = r"/home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/_newapproach/luggagev6i/_modelsSummary/MODEL_v26/app/runs"
-RUN_TAG = ""  # optional suffix for the folder name, e.g. "_down2.0"
+OUT_DIR = r"D:\ultralytics\_modelsSummary\MODEL_v26\app\runs"
+RUN_TAG = "_iou_v2"  # optional suffix for the folder name, e.g. "_down2.0"
+OUT_VIDEO = "annotated.mp4"
 EVENTS_JSON = "events.json"
 # Newline-delimited JSON trace of everything that happened, for offline analysis:
 #   import pandas as pd; df = pd.read_json("trace.jsonl", lines=True)
@@ -62,7 +62,7 @@ WINDOW_NAME = "Unattended Luggage   [q] quit   [space] pause   [s] screenshot"
 MODEL_PERSON = r"yolov12x.pt"
 MODEL_LUGGAGE = r"runs_yolo26_overnight_r1213_v6i/y26_scb3_sbb50_cls075/weights/best.pt"
 # One COCO model for BOTH roles (e.g. "yolov26x.pt"); overrides the two paths above.
-SINGLE_MODEL = "yolov12x.pt"
+SINGLE_MODEL = None
 
 PERSON_CLASS_IDS = [0]  # COCO 'person'
 # None = keep every class the luggage model emits (correct for a custom luggage model).
@@ -76,9 +76,9 @@ COCO_TO_CUSTOM = {24: 0, 26: 1, 28: 2}  # backpack->backpack, handbag->bag, suit
 REMAP_COCO_LUGGAGE = True  # applied only when the luggage detector is a COCO model
 
 CONF_PERSON = 0.25
-CONF_LUGGAGE = 0.20
+CONF_LUGGAGE = 0.40
 IOU = 0.45
-IMGSZ = 640
+IMGSZ = 960
 DEVICE = "0"  # "0" GPU, or "cpu"
 
 # Persons are tracked by BoT-SORT (Kalman + appearance ReID) instead of the IoU tracker
@@ -135,6 +135,9 @@ OWNER_REBIND_IOU = 0.55
 # An owner who "returns" faster than this did not return: the person tracker handed their
 # ID to somebody else. Person-heights per second; a brisk walk is ~0.8.
 OWNER_MAX_SPEED_H = 1.2
+# ...but only judge a return that actually moved. Over a one-frame dropout, box jitter
+# divided by 0.03 s reads as tens of heights per second and every owner looks fake.
+OWNER_MAX_JUMP_H = 1.0
 
 PERSON_MATCH_IOU_THR = 0.10
 # Deliberately permissive: the owner must be followed far enough to MEASURE them walking
@@ -774,6 +777,7 @@ def update_ownership(st, persons, now_t, dt):
                       born_t=round(pmap[new_pid].get("first_t", 0.0), 2),
                       iou=round(iou_xyxy(pmap[new_pid]["bbox"], st["owner_bbox"]), 3))
             st["owner_pid"] = new_pid
+            st["owner_swapped"] = False  # a fresh track at the owner's last spot is a real re-ID
             owner_d = dists.get(new_pid)
 
     was_missing = st["owner_missing_s"] > 0.0
@@ -784,13 +788,19 @@ def update_ownership(st, persons, now_t, dt):
         ph = max(MIN_PERSON_H, cand["bbox"][3] - cand["bbox"][1])
         cx0, cy0 = bottom_center(cand["bbox"])
         lx0, ly0 = bottom_center(st["owner_bbox"])
-        speed = math.hypot(cx0 - lx0, cy0 - ly0) / ph / max(st["owner_missing_s"], dt)
-        if speed > OWNER_MAX_SPEED_H:
-            LOG.event("owner_impostor", lid=lid, owner=st["owner_pid"],
-                      hidden_s=round(st["owner_missing_s"], 2), speed_h_s=round(speed, 2),
-                      d_h=round(owner_d, 3),
-                      last_d_h=None if st.get("owner_last_d") is None
-                      else round(st["owner_last_d"], 3))
+        jump = math.hypot(cx0 - lx0, cy0 - ly0) / ph
+        speed = jump / max(st["owner_missing_s"], dt)
+        if jump > OWNER_MAX_JUMP_H and speed > OWNER_MAX_SPEED_H:
+            if not st.get("owner_swapped"):
+                LOG.event("owner_impostor", lid=lid, owner=st["owner_pid"],
+                          hidden_s=round(st["owner_missing_s"], 2), jump_h=round(jump, 3),
+                          speed_h_s=round(speed, 2), d_h=round(owner_d, 3),
+                          last_d_h=None if st.get("owner_last_d") is None
+                          else round(st["owner_last_d"], 3))
+            # the ID now belongs to somebody else: stop trusting it for this episode,
+            # otherwise waiting long enough makes any impostor look plausible
+            st["owner_swapped"] = True
+        if st.get("owner_swapped"):
             owner_d = None
 
     if owner_d is not None:
@@ -804,6 +814,7 @@ def update_ownership(st, persons, now_t, dt):
             st["owner_seen_t"] = now_t
         st["owner_last_d"] = owner_d
         st["owner_unverified"] = False
+        st["owner_swapped"] = False
         near = owner_d <= D_AWAY
     else:  # owner not visible -- occlusion, lost track, or departure (note 3)
         last_d = st.get("owner_last_d")
@@ -1329,6 +1340,7 @@ def run():
                 "owner_seen_t": -1e9,
                 "owner_last_d": None,
                 "owner_unverified": False,
+                "owner_swapped": False,
                 "away_since": None,
                 "unattended_s": 0.0,
                 "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
