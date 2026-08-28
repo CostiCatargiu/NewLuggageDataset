@@ -53,7 +53,7 @@ from ultralytics import YOLO
 # Bumped whenever the tracking or ownership logic changes. Every run prints the file it
 # came from and records it in the log, because with several checkouts of this script around
 # the most expensive mistake is analysing results produced by a copy you did not edit.
-SCRIPT_VERSION = "2026-08-28.id-stability"
+SCRIPT_VERSION = "2026-08-28.evidence"
 
 
 def script_identity():
@@ -107,7 +107,7 @@ COCO_TO_CUSTOM = {24: 0, 26: 1, 28: 2}  # backpack->backpack, handbag->bag, suit
 REMAP_COCO_LUGGAGE = True  # applied only when the luggage detector is a COCO model
 
 CONF_PERSON = 0.25
-CONF_LUGGAGE = 0.40
+CONF_LUGGAGE = 0.20
 IOU = 0.45
 IMGSZ = 640
 DEVICE = "0"  # "0" GPU, or "cpu"
@@ -887,15 +887,20 @@ def _start_away_evidence(st):
     st["away_frames"] = 0
     st["away_seen"] = 0
     st["away_d_max"] = None
+    st["away_observed_s"] = 0.0
 
 
-def _accrue_away_evidence(st, owner_d):
+def _accrue_away_evidence(st, owner_d, dt):
     if st.get("away_anchor") is None:
         _start_away_evidence(st)
     ax, ay = st["away_anchor"]
     bx, by = bottom_center(st["bbox"])
     st["away_drift"] = max(st.get("away_drift", 0.0), math.hypot(bx - ax, by - ay))
     st["away_frames"] = st.get("away_frames", 0) + 1
+    # The clock runs on video time, but the BAG is only checked on the frames it is
+    # actually visible. A countdown that elapsed while the bag was unseen is an inference,
+    # not an observation, and this is the number that says which one you have.
+    st["away_observed_s"] = st.get("away_observed_s", 0.0) + dt
     if owner_d is not None:  # the owner was actually SEEN, not merely assumed gone
         st["away_seen"] = st.get("away_seen", 0) + 1
         st["away_d_max"] = (owner_d if st.get("away_d_max") is None
@@ -906,7 +911,11 @@ def away_evidence(st):
     """Did the bag stay put, and was the owner ever observed while the clock ran?"""
     n = max(1, st.get("away_frames", 0))
     drift = st.get("away_drift", 0.0)
-    return {"bag_drift_px": round(drift, 1),
+    elapsed = st.get("unattended_s", 0.0)
+    seen = st.get("away_observed_s", 0.0)
+    # the accumulator gains one frame on the elapsed time, so 1.0 is the ceiling
+    return {"bag_seen_frac": round(min(1.0, seen / elapsed), 3) if elapsed > 1e-6 else 0.0,
+            "bag_drift_px": round(drift, 1),
             "bag_drift_w": round(drift / max(1.0, st.get("away_w", 1.0)), 2),
             "owner_seen_frac": round(st.get("away_seen", 0) / n, 3),
             "away_frames": int(st.get("away_frames", 0)),
@@ -1063,7 +1072,7 @@ def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
             st["away_since"] = now_t
             _start_away_evidence(st)
         st["unattended_s"] = now_t - st["away_since"]
-        _accrue_away_evidence(st, owner_d)
+        _accrue_away_evidence(st, owner_d, dt)
         st["state"] = ALARM if st["unattended_s"] >= UNATTENDED_SECONDS else UNATTENDED
 
     if st["state"] != prev_state:
@@ -1901,11 +1910,12 @@ def run():
           "  ".join(f"{k}={v}" for k, v in sorted(LOG.counts.items())))
     if events:
         print("  alarm evidence (nothing below changes when an alarm fires -- it grades them):")
-        print("    bag        owner   left    alarm   bag drift   owner seen   max dist")
+        print("    bag        owner   left    alarm   drift  bag seen  owner seen   max dist")
     for e in events:
         print(f"    L{e['luggage_track']:<3} {e['class']:<9} P{str(e['owner_track']):<5} "
               f"{e['left_at_sec']:6.1f}s {e['alarm_at_sec']:6.1f}s "
-              f"{e['bag_drift_w']:8.1f}w {e['owner_seen_frac'] * 100:9.0f}%  "
+              f"{e['bag_drift_w']:5.1f}w {e['bag_seen_frac'] * 100:8.0f}% "
+              f"{e['owner_seen_frac'] * 100:10.0f}%  "
               f"{'   n/a' if e['owner_d_max_h'] is None else '%6.1f h' % e['owner_d_max_h']}")
 
 

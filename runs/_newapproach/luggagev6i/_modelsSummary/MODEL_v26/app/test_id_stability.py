@@ -47,7 +47,7 @@ _spec.loader.exec_module(M)
 # test is an older copy -- with several checkouts of this script around, that is the single
 # most likely reason for a red run.
 _REQUIRED = ["output_video_path", "appearance_of", "appearance_sim", "update_appearance",
-             "recover_with_low_conf", "revive_from_memory", "away_evidence",
+             "recover_with_low_conf", "revive_from_memory", "away_evidence", "SCRIPT_VERSION",
              "OWNER_REBIND_NEWBORN_SLACK", "PERSON_MEMORY_SEC", "LOW_CONF_RECOVERY"]
 _missing = [a for a in _REQUIRED if not hasattr(M, a)]
 if _missing:
@@ -344,9 +344,11 @@ with tempfile.TemporaryDirectory() as tmp:
        % (c.get("low_conf_recovered[person]"), c.get("low_conf_recovered[luggage]")))
     ok(c.get("track_revived[person]", 0) == 1, "the person came back under their own id")
     a = ev["events"][0]
-    ok(a["bag_drift_w"] < 1.0 and a["owner_seen_frac"] > 0.9 and a["owner_d_max_h"] > 1.5,
-       "the alarm is graded as OBSERVED: drift %.2fw, owner seen %.0f%%, reached %s h"
-       % (a["bag_drift_w"], a["owner_seen_frac"] * 100, a["owner_d_max_h"]))
+    ok(a["bag_drift_w"] < 1.0 and a["owner_seen_frac"] > 0.9 and a["owner_d_max_h"] > 1.5
+       and a["bag_seen_frac"] > 0.9,
+       "the alarm is graded as OBSERVED: drift %.2fw, bag seen %.0f%%, owner seen %.0f%%, "
+       "reached %s h" % (a["bag_drift_w"], a["bag_seen_frac"] * 100,
+                         a["owner_seen_frac"] * 100, a["owner_d_max_h"]))
 
     # the same clip, but the detector loses the owner exactly while the clock runs. The
     # alarm is identical; only the evidence separates a departure from a tracking failure.
