@@ -25,15 +25,6 @@ Three things here are where naive versions go wrong:
    the clock. The timer advances only while the bag itself is visible, and a lost owner
    track counts as away only after OWNER_GRACE_SEC.
 
-4. AN IDENTITY MUST SURVIVE A GAP IN THE DETECTIONS. A detector misses an object for a few
-   frames whenever someone walks in front of it, and a tracker that answers by killing the
-   track and giving the object a new number destroys the very thing this script measures:
-   the bag/owner link. Three mechanisms keep the number: weak detections below the
-   reporting threshold get their own association pass (they cannot start a track, but they
-   can keep one alive); every track carries a colour signature that re-attaches its old id
-   when it re-appears; and people, like bags, are remembered after their track dies so a
-   returning person comes back as themselves rather than as a stranger.
-
 Keys: q quit, space pause, s screenshot.
 """
 
@@ -52,10 +43,7 @@ from ultralytics import YOLO
 
 # ================================ I/O ========================================
 VIDEO_IN = r"/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo.mpg"
-# The annotated video is written NEXT TO THE INPUT, named after it, so the result always
-# sits beside the footage it came from instead of in a run folder nobody opens.
-OUT_VIDEO_SUFFIX = "_output"
-OUT_VIDEO_EXT = ".mp4"  # ".mp4" (mp4v) or ".avi" (XVID); the codec follows the extension
+OUT_VIDEO = r"/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmout.mpg"
 # Every artefact of a run lands in OUT_DIR/<video>__p-<person>__l-<luggage>__<stamp><tag>/
 OUT_DIR = r"/home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/_newapproach/luggagev6i/_modelsSummary/MODEL_v26/app/runs"
 RUN_TAG = ""  # optional suffix for the folder name, e.g. "_down2.0"
@@ -110,14 +98,8 @@ PERSON_TTL_SECONDS = 6.0
 # owner with it, and the fresh track would elect whoever happens to stand there next.
 LUGGAGE_TTL_SECONDS = 45.0
 
-# The relink age must never be SHORTER than the TTL. A track that is still alive but no
-# longer matchable is a guaranteed id change the moment the object is detected again.
-PERSON_MAX_RELINK_AGE = PERSON_TTL_SECONDS
-LUGGAGE_MAX_RELINK_AGE = LUGGAGE_TTL_SECONDS
-# The matching gate widens with the time a track has been missing -- after two seconds of
-# occlusion the object is genuinely somewhere else, and a fixed radius rejects it.
-GATE_GROWTH = 0.6  # extra gate radius per second missing
-GATE_MAX_SCALE = 2.5  # ...never more than this multiple of the base radius
+PERSON_MAX_RELINK_AGE = 4.0
+LUGGAGE_MAX_RELINK_AGE = 30.0
 PREDICT_MAX_SEC = 2.0  # never extrapolate a track's motion further than this
 VEL_DECAY_WHEN_MISSED = 0.90  # unmatched tracks stop drifting instead of flying off
 
@@ -127,61 +109,9 @@ LUGGAGE_MEMORY_SEC = 90.0
 LUGGAGE_REVIVE_IOU = 0.30
 LUGGAGE_REVIVE_DIST = 90  # px between ground-contact points
 
-# The same memory for PEOPLE. Losing a person id is worse than losing a bag id: every bag
-# that named them as owner is instantly orphaned and elects whoever stands there next.
-PERSON_MEMORY_SEC = 20.0
-PERSON_REVIVE_IOU = 0.20
-PERSON_REVIVE_DIST = 160  # px between ground-contact points
-REVIVE_DIST_GROWTH = 0.5  # the revive radius grows this much per second out of sight
-# Overlapping the place an object was last seen only proves identity for a moment. After
-# this long, "standing where they stood" is what a DIFFERENT person does, so past it the
-# colour signature has to agree no matter how good the overlap looks.
-REVIVE_TRUST_IOU_SEC = 1.0
-
-# Duplicate-id suppression for people (IoU only: two people may legitimately stand close)
-PERSON_NEW_TRACK_SUPPRESS_IOU = 0.55
-PERSON_NEW_TRACK_SUPPRESS_DIST = 0  # 0 = disabled
-PERSON_NEW_TRACK_SUPPRESS_MAX_AGE = 1.0
-
-# =========================
-# APPEARANCE RE-IDENTIFICATION
-# =========================
-# Geometry alone cannot carry an identity across an occlusion: after a second out of sight
-# the predicted box is wrong and the nearest detection is often somebody else. So every
-# track also carries a colour signature -- an HS histogram of its own pixels, updated
-# slowly -- which survives the gap and is what actually re-attaches the old id.
-APPEARANCE_ENABLED = True
-APP_BINS = (8, 8)  # hue x saturation bins
-APP_EMA = 0.80  # weight kept from the stored template on every update
-APP_SHRINK = 0.12  # shrink the box before sampling, to drop background pixels
-APP_PERSON_BAND = (0.10, 0.60)  # sample the torso only; head and legs change too much
-W_APP = 2.5  # weight of (1 - similarity) in the matching cost
-APP_MIN_SIM_REVIVE = 0.35  # a re-appearing detection must look at least this similar
-APP_MIN_SIM_RELINK = 0.25  # ...to take over a track that has been missing a while
-
-# =========================
-# LOW-CONFIDENCE RECOVERY (second association pass)
-# =========================
-# Most "lost" frames are not missing detections -- the object is still detected, just under
-# the confidence threshold because it is half occluded. Those weak boxes are useless for
-# STARTING a track but perfect for KEEPING one, so they get their own association pass.
-LOW_CONF_RECOVERY = True
-CONF_PERSON_LOW = 0.10
-CONF_LUGGAGE_LOW = 0.15
-LOW_MATCH_IOU_THR = 0.20  # stricter than the high-confidence pass
-LOW_MATCH_DIST_THR = 120
-LOW_RECOVERY_MAX_AGE = 2.0  # seconds; a weak box may not resurrect an ancient track
-LOW_CONF_SMOOTH_SCALE = 0.6  # a weak detection moves the box less than a strong one
-
 # The person tracker may re-create the owner under a new ID after an occlusion.
 OWNER_REBIND_SEC = 3.0  # how long the owner's last box stays valid for re-binding
 OWNER_REBIND_IOU = 0.40
-# If the owner is re-created too far away for IoU to catch, their colour signature is the
-# only thing left. Deliberately conservative: a wrong re-bind silently cancels an alarm.
-OWNER_REBIND_BY_APPEARANCE = True
-OWNER_REBIND_APP_SEC = 5.0  # appearance re-bind is allowed this long after the owner vanished
-OWNER_REBIND_MIN_SIM = 0.55  # and only for a strong colour match...
-OWNER_REBIND_MAX_H = 2.0  # ...within this many person-heights of where the owner last was
 
 PERSON_MATCH_IOU_THR = 0.10
 PERSON_MATCH_DIST_THR = 220
@@ -297,9 +227,6 @@ class EventLog:
 
     def event(self, kind, **fields):
         self.counts[kind] = self.counts.get(kind, 0) + 1
-        if "role" in fields:  # so the end-of-run summary separates people from bags
-            key = "%s[%s]" % (kind, fields["role"])
-            self.counts[key] = self.counts.get(key, 0) + 1
         if self.f is None:
             return
         rec = {"t": round(float(self.t), 3), "frame": int(self.frame), "event": kind}
@@ -314,13 +241,6 @@ class EventLog:
 
 
 LOG = EventLog()  # replaced in run()
-
-
-def output_video_path(video_in):
-    """<input dir>/<input stem><OUT_VIDEO_SUFFIX><OUT_VIDEO_EXT> -- beside the source."""
-    folder = os.path.dirname(os.path.abspath(str(video_in)))
-    stem = os.path.splitext(os.path.basename(str(video_in)))[0]
-    return os.path.join(folder, f"{stem}{OUT_VIDEO_SUFFIX}{OUT_VIDEO_EXT}")
 
 
 def make_run_dir(video, person_weights, luggage_weights):
@@ -412,66 +332,6 @@ def bbox_in_zone(bbox, zones):
 
 
 # -----------------------------
-# Appearance signature (re-identification)
-# -----------------------------
-def _sample_patch(frame, bbox, band=None, shrink=APP_SHRINK):
-    """The pixels that belong to the object: the box, shrunk, optionally a vertical band."""
-    fh, fw = frame.shape[:2]
-    x1, y1, x2, y2 = (float(v) for v in bbox)
-    bw, bh = x2 - x1, y2 - y1
-    if bw <= 4 or bh <= 4:
-        return None
-    x1 += bw * shrink
-    x2 -= bw * shrink
-    if band is None:
-        y1 += bh * shrink
-        y2 -= bh * shrink
-    else:
-        y1, y2 = y1 + bh * band[0], y1 + bh * band[1]
-    xi1, yi1 = int(max(0, min(fw - 1, x1))), int(max(0, min(fh - 1, y1)))
-    xi2, yi2 = int(max(0, min(fw, x2))), int(max(0, min(fh, y2)))
-    if xi2 - xi1 < 3 or yi2 - yi1 < 3:
-        return None
-    return frame[yi1:yi2, xi1:xi2]
-
-
-def appearance_of(frame, bbox, role="luggage"):
-    """L1-normalised hue/saturation histogram of the object. None when it is unusable."""
-    if not APPEARANCE_ENABLED:
-        return None
-    patch = _sample_patch(frame, bbox, APP_PERSON_BAND if role == "person" else None)
-    if patch is None or patch.size == 0:
-        return None
-    hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
-    # dark and washed-out pixels have meaningless hue, so they do not get a vote
-    mask = cv2.inRange(hsv, (0, 40, 40), (180, 255, 255))
-    hist = cv2.calcHist([hsv], [0, 1], mask, list(APP_BINS), [0, 180, 0, 256])
-    total = float(hist.sum())
-    if total < 25.0:  # almost everything was masked out -- no usable colour
-        return None
-    return (hist.flatten() / total).astype(np.float32)
-
-
-def appearance_sim(a, b):
-    """Bhattacharyya coefficient in [0, 1]; 1.0 = identical colour signature."""
-    if a is None or b is None:
-        return None
-    return float(np.sqrt(a * b).sum())
-
-
-def update_appearance(st, app):
-    """Slow EMA: the template must follow lighting, not the frame the object was occluded."""
-    if app is None:
-        return
-    old = st.get("app")
-    st["app"] = app if old is None else (APP_EMA * old + (1.0 - APP_EMA) * app)
-
-
-def _r3(x):
-    return None if x is None else round(float(x), 3)
-
-
-# -----------------------------
 # Detection post-processing
 # -----------------------------
 def nms_dets_xyxy(dets, iou_thr=0.60, class_agnostic=True):
@@ -506,8 +366,7 @@ def hungarian_match(
         match_iou_thr: float,
         match_dist_thr: float,
         class_mismatch_penalty: float = 0.0,
-        use_stable_class_for_penalty: bool = False,
-        app_weight: float = 0.0
+        use_stable_class_for_penalty: bool = False
 ):
     track_ids = list(tracks.keys())
     if len(dets) == 0 or len(track_ids) == 0:
@@ -537,17 +396,8 @@ def hungarian_match(
             pcx, pcy = center_xyxy(pbb)
             dist = ((dcx - pcx) ** 2 + (dcy - pcy) ** 2) ** 0.5
 
-            # geometry gating -- the radius widens with the time the track has been
-            # missing, because an occluded object keeps moving while it is invisible
-            gate = match_dist_thr * min(1.0 + GATE_GROWTH * max(0.0, age), GATE_MAX_SCALE)
-            if not ((iou >= match_iou_thr) or (dist <= gate)):
-                continue
-
-            sim = appearance_sim(d.get("app"), st.get("app")) if app_weight > 0.0 else None
-            # a track that has been out of sight may only be re-taken by a detection that
-            # also LOOKS like it; without this the widened gate steals neighbouring ids
-            if (sim is not None and age > 0.5 and iou < match_iou_thr
-                    and sim < APP_MIN_SIM_RELINK):
+            # geometry gating
+            if not ((iou >= match_iou_thr) or (dist <= match_dist_thr)):
                 continue
 
             penalty = 0.0
@@ -558,8 +408,6 @@ def hungarian_match(
                     penalty = class_mismatch_penalty
 
             cost[di, tj] = (-W_IOU * iou) + (W_DIST * dist) + penalty
-            if sim is not None:
-                cost[di, tj] += app_weight * (1.0 - sim)
 
     row_ind, col_ind = linear_sum_assignment(cost)
 
@@ -586,8 +434,7 @@ def update_tracks_with_matches(
         dt_frame: float, now_t: float,
         smooth_alpha: float, vel_alpha: float,
         update_class: bool = False,
-        num_classes: int = 0,
-        update_app: bool = True
+        num_classes: int = 0
 ):
     # matched updates
     for di, sid in matches:
@@ -633,9 +480,6 @@ def update_tracks_with_matches(
             st["cls_stable"] = int(np.argmax(st["cls_scores"]))
             st["cls_last"] = int(d.get("cls", 0))
 
-        if update_app:
-            update_appearance(st, d.get("app"))
-
         st["last_seen_t"] = now_t
         st["missed_s"] = 0.0
 
@@ -645,51 +489,6 @@ def update_tracks_with_matches(
         st["missed_s"] = st.get("missed_s", 0.0) + dt_frame
         st["vx"] = st.get("vx", 0.0) * VEL_DECAY_WHEN_MISSED
         st["vy"] = st.get("vy", 0.0) * VEL_DECAY_WHEN_MISSED
-
-
-def recover_with_low_conf(dets_lo, tracks, unmatched_ids, now_t, role="person"):
-    """Second association pass over the detections that were too weak to start a track.
-
-    A track that found no strong detection this frame is usually not gone -- it is half
-    occluded and its score fell under the threshold. Re-attaching it to its own weak box
-    is what keeps the id alive across the gap instead of killing it and re-birthing it
-    with a new number (and, for a person, orphaning every bag they owned).
-    """
-    unmatched_ids = set(unmatched_ids)
-    if not LOW_CONF_RECOVERY or not dets_lo or not unmatched_ids:
-        return [], unmatched_ids
-
-    scored = []
-    for di, d in enumerate(dets_lo):
-        dcx, dcy = center_xyxy(d["bbox"])
-        for sid in unmatched_ids:
-            st = tracks[sid]
-            age = now_t - st["last_seen_t"]
-            if age > LOW_RECOVERY_MAX_AGE:
-                continue
-            pbb = predict_bbox(st, age)
-            iou = iou_xyxy(d["bbox"], pbb)
-            pcx, pcy = center_xyxy(pbb)
-            dist = ((dcx - pcx) ** 2 + (dcy - pcy) ** 2) ** 0.5
-            if iou < LOW_MATCH_IOU_THR and dist > LOW_MATCH_DIST_THR:
-                continue
-            sim = appearance_sim(d.get("app"), st.get("app"))
-            if sim is not None and sim < APP_MIN_SIM_RELINK:
-                continue
-            scored.append((iou - dist / 1000.0 + (0.0 if sim is None else 0.5 * sim),
-                           di, sid, iou, sim))
-
-    scored.sort(key=lambda s: s[0], reverse=True)  # greedy: the sets here are tiny
-    matches, used_d, used_t = [], set(), set()
-    for _, di, sid, iou, sim in scored:
-        if di in used_d or sid in used_t:
-            continue
-        matches.append((di, sid))
-        used_d.add(di)
-        used_t.add(sid)
-        LOG.event("low_conf_recovered", role=role, tid=sid,
-                  conf=round(float(dets_lo[di]["conf"]), 3), iou=round(iou, 3), sim=_r3(sim))
-    return matches, unmatched_ids - used_t
 
 
 def prune_tracks_by_ttl(tracks, ttl_seconds: float):
@@ -703,17 +502,14 @@ def prune_tracks_by_ttl(tracks, ttl_seconds: float):
 # -----------------------------
 # Duplicate suppression
 # -----------------------------
-def should_spawn_new_track(det, tracks, now_t,
-                           suppress_iou=NEW_TRACK_SUPPRESS_IOU,
-                           suppress_dist=NEW_TRACK_SUPPRESS_DIST,
-                           max_age=NEW_TRACK_SUPPRESS_MAX_AGE):
+def should_spawn_new_track(det, tracks, now_t):
     """Prevent creating a new ID for a det that matches an existing recent track."""
     dbb = det["bbox"]
     dcx, dcy = center_xyxy(dbb)
 
     for sid, st in tracks.items():
         age = now_t - st["last_seen_t"]
-        if age > max_age:
+        if age > NEW_TRACK_SUPPRESS_MAX_AGE:
             continue
 
         pbb = predict_bbox(st, age)
@@ -721,44 +517,27 @@ def should_spawn_new_track(det, tracks, now_t,
         pcx, pcy = center_xyxy(pbb)
         dist = ((dcx - pcx) ** 2 + (dcy - pcy) ** 2) ** 0.5
 
-        if suppress_iou > 0 and iou >= suppress_iou:
-            return False
-        if suppress_dist > 0 and dist <= suppress_dist:
+        if iou >= NEW_TRACK_SUPPRESS_IOU or dist <= NEW_TRACK_SUPPRESS_DIST:
             return False
     return True
 
 
-def revive_from_memory(det, retired, now_t, memory_sec, revive_iou, revive_dist,
-                       min_sim=APP_MIN_SIM_REVIVE):
-    """Give a re-appearing object its old ID back instead of a fresh identity.
-
-    Position alone is not enough once the gap is more than a moment long, so the search
-    radius grows with the time out of sight and the colour signature has to agree. For a
-    bag that means keeping its owner and its timer; for a person it means every bag that
-    named them is still bound to the right human.
-    """
+def revive_retired(det, retired, now_t):
+    """Give a re-appearing bag its old ID (and owner) back instead of a fresh identity."""
     dbx, dby = bottom_center(det["bbox"])
-    best_id, best_score = None, None
-    for tid, st in retired.items():
-        gap = now_t - st["last_seen_t"]
-        if gap > memory_sec:
+    best_lid, best_score = None, None
+    for lid, st in retired.items():
+        if now_t - st["last_seen_t"] > LUGGAGE_MEMORY_SEC:
             continue
         iou = iou_xyxy(det["bbox"], st["bbox"])
         sx, sy = bottom_center(st["bbox"])
         dist = math.hypot(dbx - sx, dby - sy)
-        max_dist = revive_dist * (1.0 + REVIVE_DIST_GROWTH * gap)
-        if iou < revive_iou and dist > max_dist:
+        if iou < LUGGAGE_REVIVE_IOU and dist > LUGGAGE_REVIVE_DIST:
             continue
-        sim = appearance_sim(det.get("app"), st.get("app"))
-        # a fresh, strongly overlapping box speaks for itself; anything older or looser
-        # needs the colours to agree, or the id goes to whoever took the empty spot
-        if sim is not None and sim < min_sim and (iou < revive_iou
-                                                  or gap > REVIVE_TRUST_IOU_SEC):
-            continue
-        score = iou + (0.0 if sim is None else sim) - dist / 1000.0
+        score = iou - dist / 1000.0
         if best_score is None or score > best_score:
-            best_id, best_score = tid, score
-    return best_id
+            best_lid, best_score = lid, score
+    return best_lid
 
 
 def merge_overlapping_tracks(tracks, now_t, merge_iou=0.70, max_age=0.8):
@@ -847,50 +626,20 @@ def person_heights_away(bag_bbox, persons):
     return out
 
 
-def rebind_owner(st, persons, now_t, taken_pids=frozenset()):
+def rebind_owner(st, persons, now_t):
     """A person track re-created at the owner's last position IS the owner (ID churn)."""
     last = st.get("owner_bbox")
-    seen_gap = now_t - st.get("owner_seen_t", -1e9)
-    if last is None:
+    if last is None or now_t - st.get("owner_seen_t", -1e9) > OWNER_REBIND_SEC:
         return None
-
-    if seen_gap <= OWNER_REBIND_SEC:
-        best_pid, best_iou = None, OWNER_REBIND_IOU
-        for p in persons:
-            if p["tid"] in taken_pids:
-                continue
-            overlap = iou_xyxy(p["bbox"], last)
-            if overlap >= best_iou:
-                best_pid, best_iou = p["tid"], overlap
-        if best_pid is not None:
-            return best_pid
-
-    # Geometry failed: the owner may have been re-created several boxes away after the
-    # crowd cleared. Their colour signature is all that survived, so match on that -- but
-    # only near where they were last seen, and only on a strong match: a wrong re-bind
-    # silently cancels an alarm, which is the one failure this system must not have.
-    if not OWNER_REBIND_BY_APPEARANCE or seen_gap > OWNER_REBIND_APP_SEC:
-        return None
-    ref = st.get("owner_app")
-    if ref is None:
-        return None
-    lx, ly = bottom_center(last)
-    best_pid, best_sim = None, OWNER_REBIND_MIN_SIM
+    best_pid, best_iou = None, OWNER_REBIND_IOU
     for p in persons:
-        if p["tid"] in taken_pids:
-            continue
-        sim = appearance_sim(p.get("app"), ref)
-        if sim is None or sim < best_sim:
-            continue
-        h = max(MIN_PERSON_H, p["bbox"][3] - p["bbox"][1])
-        px, py = bottom_center(p["bbox"])
-        if math.hypot(px - lx, py - ly) > OWNER_REBIND_MAX_H * h:
-            continue  # too far from the owner's last position to be the same walk
-        best_pid, best_sim = p["tid"], sim
+        overlap = iou_xyxy(p["bbox"], last)
+        if overlap >= best_iou:
+            best_pid, best_iou = p["tid"], overlap
     return best_pid
 
 
-def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
+def update_ownership(st, persons, now_t, dt):
     """Elect an owner over a window, then follow only that person. Returns distances."""
     lid = st.get("lid")
     prev_state = st["state"]
@@ -922,12 +671,11 @@ def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
 
     owner_d = dists.get(st["owner_pid"])
     if owner_d is None and st["owner_pid"] is not None:
-        new_pid = rebind_owner(st, persons, now_t, taken_pids)
+        new_pid = rebind_owner(st, persons, now_t)
         if new_pid is not None:
             LOG.event("owner_rebind", lid=lid, old_owner=st["owner_pid"], new_owner=new_pid,
                       gap_s=round(now_t - st["owner_seen_t"], 2),
-                      iou=round(iou_xyxy(pmap[new_pid]["bbox"], st["owner_bbox"]), 3),
-                      sim=_r3(appearance_sim(pmap[new_pid].get("app"), st.get("owner_app"))))
+                      iou=round(iou_xyxy(pmap[new_pid]["bbox"], st["owner_bbox"]), 3))
             st["owner_pid"] = new_pid
             owner_d = dists.get(new_pid)
 
@@ -941,8 +689,6 @@ def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
         if owner is not None:
             st["owner_bbox"] = np.array(owner["bbox"], dtype=float)
             st["owner_seen_t"] = now_t
-            if owner.get("app") is not None:  # the owner's signature, for re-binding later
-                st["owner_app"] = owner["app"]
         near = owner_d <= D_AWAY
     else:  # owner not visible -- occlusion or departure (note 3)
         if not was_missing:
@@ -1121,7 +867,7 @@ def run():
     num_luggage_classes = max(luggage_names) + 1 if luggage_names else 1
 
     run_dir = make_run_dir(VIDEO_IN, person_weights, luggage_weights)
-    out_video = output_video_path(VIDEO_IN)  # beside the input, named after it
+    out_video = os.path.join(run_dir, OUT_VIDEO)
 
     cap = cv2.VideoCapture(VIDEO_IN)
     if not cap.isOpened():
@@ -1142,7 +888,6 @@ def run():
     if label_map is not None:
         print(f"  labels  : {', '.join(f'{k}->{luggage_names[v]}' for k, v in sorted(label_map.items()))}")
     print(f"  run dir : {run_dir}")
-    print(f"  video   : {out_video}")
     print(f"  owner within {D_OWN}h, away beyond {D_AWAY}h, alarm after {UNATTENDED_SECONDS:.0f}s\n")
 
     # the panel gets its own column, so the rendered canvas is wider than the video
@@ -1155,7 +900,7 @@ def run():
 
     writer = None
     if SAVE_OUTPUT:
-        fourcc = cv2.VideoWriter_fourcc(*("XVID" if out_video.lower().endswith(".avi") else "mp4v"))
+        fourcc = cv2.VideoWriter_fourcc(*("mp4v" if out_video.lower().endswith(".mp4") else "XVID"))
         writer = cv2.VideoWriter(out_video, fourcc, video_fps, (canvas_w, canvas_h))
         print(f"[SAVE] {out_video}  ({canvas_w}x{canvas_h})")
 
@@ -1169,7 +914,6 @@ def run():
     next_luggage_id = 1
     luggage_tracks = {}  # LID -> the same + {state, owner_pid, votes, away_since, unattended_s}
     retired_bags = {}  # LID -> state of bags that vanished, kept for LUGGAGE_MEMORY_SEC
-    retired_persons = {}  # PID -> same, so a returning person keeps their id and their bags
 
     alarm_manager = AlarmManager()
     events = []
@@ -1179,7 +923,7 @@ def run():
     LOG.event("run", source=VIDEO_IN, size=[w, h], fps=round(video_fps, 3), frames=total_frames,
               person_model=person_weights, luggage_model=luggage_weights,
               shared_model=shared_model, luggage_classes=luggage_class_ids,
-              run_dir=run_dir, out_video=out_video,
+              run_dir=run_dir,
               label_map=None if label_map is None else {str(k): v for k, v in label_map.items()},
               names={str(k): v for k, v in luggage_names.items()},
               params={"d_own": D_OWN, "d_away": D_AWAY, "ownership_sec": OWNERSHIP_SEC,
@@ -1188,11 +932,6 @@ def run():
                       "luggage_ttl": LUGGAGE_TTL_SECONDS, "luggage_memory": LUGGAGE_MEMORY_SEC,
                       "owner_rebind_sec": OWNER_REBIND_SEC,
                       "conf_person": CONF_PERSON, "conf_luggage": CONF_LUGGAGE, "imgsz": IMGSZ})
-
-    # Detections below the reporting threshold are kept for the recovery pass -- they may
-    # not start a track, but they can keep one alive through a partial occlusion.
-    person_conf_floor = min(CONF_PERSON, CONF_PERSON_LOW) if LOW_CONF_RECOVERY else CONF_PERSON
-    luggage_conf_floor = min(CONF_LUGGAGE, CONF_LUGGAGE_LOW) if LOW_CONF_RECOVERY else CONF_LUGGAGE
 
     frame_count = 0
     now_t = 0.0
@@ -1224,7 +963,7 @@ def run():
             wanted = list(PERSON_CLASS_IDS) + list(luggage_class_ids or [])
             res_p = res_l = model_person.predict(
                 source=frame,
-                conf=min(person_conf_floor, luggage_conf_floor),
+                conf=min(CONF_PERSON, CONF_LUGGAGE),
                 iou=IOU,
                 imgsz=IMGSZ,
                 device=DEVICE,
@@ -1234,7 +973,7 @@ def run():
         else:
             res_p = model_person.predict(
                 source=frame,
-                conf=person_conf_floor,
+                conf=CONF_PERSON,
                 iou=IOU,
                 imgsz=IMGSZ,
                 device=DEVICE,
@@ -1244,7 +983,7 @@ def run():
 
             res_l = model_luggage.predict(
                 source=frame,
-                conf=luggage_conf_floor,
+                conf=CONF_LUGGAGE,
                 iou=IOU,
                 imgsz=IMGSZ,
                 device=DEVICE,
@@ -1262,22 +1001,16 @@ def run():
         # -----------------------------
         # PERSON DETS -> stable person tracks
         # -----------------------------
-        person_dets, person_dets_low = [], []
+        person_dets = []
         if res_p.boxes is not None and len(res_p.boxes) > 0:
             p_xyxy = res_p.boxes.xyxy.detach().cpu().numpy().astype(float)
             p_conf = res_p.boxes.conf.detach().cpu().numpy().astype(float)
             p_cls = res_p.boxes.cls.detach().cpu().numpy().astype(int)
             for bb, cf, cid in zip(p_xyxy, p_conf, p_cls):
-                if int(cid) not in PERSON_CLASS_IDS or cf < person_conf_floor:
-                    continue
-                det = {"bbox": bb, "conf": float(cf), "cls": 0,
-                       "app": appearance_of(frame, bb, "person")}
-                if cf >= CONF_PERSON:
-                    person_dets.append(det)
+                if int(cid) in PERSON_CLASS_IDS and cf >= CONF_PERSON:
+                    person_dets.append({"bbox": bb, "conf": float(cf), "cls": 0})
                     if LOG_DETECTIONS:
                         LOG.event("det", role="person", conf=round(float(cf), 3), bbox=bb)
-                elif LOW_CONF_RECOVERY:
-                    person_dets_low.append(det)  # too weak to start a track, good enough to keep one
 
         p_matches, p_unmatched_det, p_unmatched_tracks = hungarian_match(
             person_dets, person_tracks, now_t,
@@ -1285,62 +1018,19 @@ def run():
             max_relink_age=PERSON_MAX_RELINK_AGE,
             match_iou_thr=PERSON_MATCH_IOU_THR,
             match_dist_thr=PERSON_MATCH_DIST_THR,
-            class_mismatch_penalty=0.0,
-            app_weight=W_APP
+            class_mismatch_penalty=0.0
         )
 
         update_tracks_with_matches(
-            person_dets, person_tracks, p_matches, set(),
+            person_dets, person_tracks, p_matches, p_unmatched_tracks,
             dt_frame=dt, now_t=now_t,
             smooth_alpha=PERSON_SMOOTH_ALPHA, vel_alpha=PERSON_VEL_ALPHA,
-            update_class=False, update_app=True
+            update_class=False
         )
 
-        # second pass over the weak detections, then age whatever is still unmatched
-        p_low, p_unmatched_tracks = recover_with_low_conf(
-            person_dets_low, person_tracks, p_unmatched_tracks, now_t, role="person")
-        update_tracks_with_matches(
-            person_dets_low, person_tracks, p_low, p_unmatched_tracks,
-            dt_frame=dt, now_t=now_t,
-            smooth_alpha=PERSON_SMOOTH_ALPHA * LOW_CONF_SMOOTH_SCALE,
-            vel_alpha=PERSON_VEL_ALPHA * LOW_CONF_SMOOTH_SCALE,
-            update_class=False, update_app=False
-        )
-
-        # create new person tracks -- but only when this really is a new person
+        # create new person tracks
         for di in p_unmatched_det:
             d = person_dets[di]
-
-            # a detection sitting on top of a recent track IS that track; spawning here is
-            # the textbook way to end up with two ids for one human
-            if not should_spawn_new_track(d, person_tracks, now_t,
-                                          PERSON_NEW_TRACK_SUPPRESS_IOU,
-                                          PERSON_NEW_TRACK_SUPPRESS_DIST,
-                                          PERSON_NEW_TRACK_SUPPRESS_MAX_AGE):
-                LOG.event("spawn_suppressed", role="person", conf=round(d["conf"], 3),
-                          bbox=d["bbox"])
-                continue
-
-            # someone who walked back into view keeps the id they had, so every bag that
-            # elected them as owner stays bound to the right person (note 3)
-            old_pid = revive_from_memory(d, retired_persons, now_t, PERSON_MEMORY_SEC,
-                                         PERSON_REVIVE_IOU, PERSON_REVIVE_DIST)
-            if old_pid is not None:
-                st = retired_persons.pop(old_pid)
-                LOG.event("track_revived", role="person", tid=old_pid,
-                          gap_s=round(now_t - st["last_seen_t"], 2),
-                          iou=round(iou_xyxy(d["bbox"], st["bbox"]), 3),
-                          sim=_r3(appearance_sim(d.get("app"), st.get("app"))),
-                          conf=round(d["conf"], 3), bbox=d["bbox"])
-                st["bbox"] = np.array(d["bbox"], dtype=float)
-                st["conf"] = float(d["conf"])
-                st["last_seen_t"] = now_t
-                st["missed_s"] = 0.0
-                st["vx"] = st["vy"] = 0.0
-                update_appearance(st, d.get("app"))
-                person_tracks[old_pid] = st
-                continue
-
             pid = next_person_id
             next_person_id += 1
             cx, cy = center_xyxy(d["bbox"])
@@ -1355,7 +1045,6 @@ def run():
                 "missed_s": 0.0,
                 "vx": 0.0,
                 "vy": 0.0,
-                "app": d.get("app"),
                 "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
             }
 
@@ -1363,11 +1052,6 @@ def run():
             LOG.event("track_lost", role="person", tid=pid,
                       alive_s=round(st["last_seen_t"] - st.get("first_t", st["last_seen_t"]), 2),
                       last_seen_t=round(st["last_seen_t"], 2), bbox=st["bbox"])
-            retired_persons[pid] = st  # remembered, not deleted -- they may come back
-        for pid in [k for k, s in retired_persons.items()
-                    if now_t - s["last_seen_t"] > PERSON_MEMORY_SEC]:
-            LOG.event("track_forgotten", role="person", tid=pid)
-            del retired_persons[pid]
 
         # visible persons list (recent only)
         persons = []
@@ -1376,24 +1060,22 @@ def run():
             if age <= DRAW_RECENT_SECONDS:
                 bb = st["bbox"]
                 cx, cy = center_xyxy(bb)
-                persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy,
-                                "conf": st.get("conf", 0.0), "app": st.get("app")})
+                persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy, "conf": st.get("conf", 0.0)})
             elif DRAW_PREDICTED_WHEN_MISSING and age <= PERSON_MAX_RELINK_AGE:
                 bb = predict_bbox(st, age)
                 cx, cy = center_xyxy(bb)
-                persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy,
-                                "conf": st.get("conf", 0.0), "app": st.get("app"), "pred": True})
+                persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy, "conf": st.get("conf", 0.0), "pred": True})
 
         # -----------------------------
         # LUGGAGE DETS -> stable luggage tracks
         # -----------------------------
-        luggage_dets, luggage_dets_low = [], []
+        luggage_dets = []
         if res_l.boxes is not None and len(res_l.boxes) > 0:
             l_cls = res_l.boxes.cls.detach().cpu().numpy().astype(int)
             l_conf = res_l.boxes.conf.detach().cpu().numpy().astype(float)
             l_xyxy = res_l.boxes.xyxy.detach().cpu().numpy().astype(float)
             for cid, cf, bb in zip(l_cls, l_conf, l_xyxy):
-                if cf < luggage_conf_floor:
+                if cf < CONF_LUGGAGE:
                     continue
                 cid = int(cid)
                 if luggage_class_ids is not None and cid not in luggage_class_ids:
@@ -1402,24 +1084,17 @@ def run():
                     if cid not in label_map:
                         continue
                     cid = label_map[cid]
-                det = {"cls": cid, "conf": float(cf), "bbox": bb,
-                       "app": appearance_of(frame, bb, "luggage")}
-                if cf >= CONF_LUGGAGE:
-                    luggage_dets.append(det)
-                    if LOG_DETECTIONS:
-                        LOG.event("det", role="luggage", cls=cid,
-                                  name=str(luggage_names.get(cid, cid)),
-                                  conf=round(float(cf), 3), bbox=bb)
-                elif LOW_CONF_RECOVERY:
-                    luggage_dets_low.append(det)
+                luggage_dets.append({"cls": cid, "conf": float(cf), "bbox": bb})
+                if LOG_DETECTIONS:
+                    LOG.event("det", role="luggage", cls=cid,
+                              name=str(luggage_names.get(cid, cid)),
+                              conf=round(float(cf), 3), bbox=bb)
 
         # (1) class-agnostic NMS to kill duplicate boxes across classes
         n_raw = len(luggage_dets)
         luggage_dets = nms_dets_xyxy(luggage_dets, iou_thr=LUGGAGE_DET_NMS_IOU, class_agnostic=True)
         if n_raw != len(luggage_dets):
             LOG.event("nms", role="luggage", before=n_raw, after=len(luggage_dets))
-        luggage_dets_low = nms_dets_xyxy(luggage_dets_low, iou_thr=LUGGAGE_DET_NMS_IOU,
-                                         class_agnostic=True)
 
         l_matches, l_unmatched_det, l_unmatched_tracks = hungarian_match(
             luggage_dets, luggage_tracks, now_t,
@@ -1428,27 +1103,14 @@ def run():
             match_iou_thr=LUGGAGE_MATCH_IOU_THR,
             match_dist_thr=LUGGAGE_MATCH_DIST_THR,
             class_mismatch_penalty=CLASS_MISMATCH_PENALTY,
-            use_stable_class_for_penalty=True,
-            app_weight=W_APP
+            use_stable_class_for_penalty=True
         )
 
         update_tracks_with_matches(
-            luggage_dets, luggage_tracks, l_matches, set(),
+            luggage_dets, luggage_tracks, l_matches, l_unmatched_tracks,
             dt_frame=dt, now_t=now_t,
             smooth_alpha=LUGGAGE_SMOOTH_ALPHA, vel_alpha=LUGGAGE_VEL_ALPHA,
-            update_class=True, num_classes=num_luggage_classes, update_app=True
-        )
-
-        # a bag half hidden behind a passer-by is still detected, just weakly -- keeping
-        # its track alive here is what stops the timer from restarting under a new id
-        l_low, l_unmatched_tracks = recover_with_low_conf(
-            luggage_dets_low, luggage_tracks, l_unmatched_tracks, now_t, role="luggage")
-        update_tracks_with_matches(
-            luggage_dets_low, luggage_tracks, l_low, l_unmatched_tracks,
-            dt_frame=dt, now_t=now_t,
-            smooth_alpha=LUGGAGE_SMOOTH_ALPHA * LOW_CONF_SMOOTH_SCALE,
-            vel_alpha=LUGGAGE_VEL_ALPHA * LOW_CONF_SMOOTH_SCALE,
-            update_class=False, update_app=False
+            update_class=True, num_classes=num_luggage_classes
         )
 
         # (2) create new luggage tracks but suppress duplicates
@@ -1462,15 +1124,13 @@ def run():
                 continue
 
             # a bag returning to the same spot keeps its ID, its owner and its timer
-            old_lid = revive_from_memory(d, retired_bags, now_t, LUGGAGE_MEMORY_SEC,
-                                         LUGGAGE_REVIVE_IOU, LUGGAGE_REVIVE_DIST)
+            old_lid = revive_retired(d, retired_bags, now_t)
             if old_lid is not None:
                 st = retired_bags.pop(old_lid)
                 gap = now_t - st["last_seen_t"]  # time out of sight is not observed time
                 LOG.event("track_revived", role="luggage", lid=old_lid, gap_s=round(gap, 2),
                           owner=st["owner_pid"], state=st["state"],
                           iou=round(iou_xyxy(d["bbox"], st["bbox"]), 3),
-                          sim=_r3(appearance_sim(d.get("app"), st.get("app"))),
                           conf=round(d["conf"], 3), bbox=d["bbox"])
                 st["first_t"] += gap
                 if st["away_since"] is not None:
@@ -1480,7 +1140,6 @@ def run():
                 st["last_seen_t"] = now_t
                 st["missed_s"] = 0.0
                 st["vx"] = st["vy"] = 0.0
-                update_appearance(st, d.get("app"))
                 luggage_tracks[old_lid] = st
                 continue
 
@@ -1507,7 +1166,6 @@ def run():
                 "cls_scores": scores,
                 "cls_stable": int(np.argmax(scores)),
                 "cls_last": int(d["cls"]),
-                "app": d.get("app"),
                 # ownership state (note 3)
                 "lid": lid,
                 "first_t": now_t,
@@ -1516,7 +1174,6 @@ def run():
                 "owner_pid": None,
                 "owner_missing_s": 0.0,
                 "owner_bbox": None,
-                "owner_app": None,
                 "owner_seen_t": -1e9,
                 "away_since": None,
                 "unattended_s": 0.0,
@@ -1540,10 +1197,6 @@ def run():
         # -----------------------------
         # Unattended logic + drawing
         # -----------------------------
-        # a person already bound to one bag must not be re-bound as another bag's owner
-        owned_pids = {s["owner_pid"] for s in luggage_tracks.values()
-                      if s.get("owner_pid") is not None}
-
         owner_of = {}  # PID -> [LID, ...], so a person can be annotated as an owner
         for lid, st in luggage_tracks.items():
             if st["owner_pid"] is not None and now_t - st["last_seen_t"] <= DRAW_RECENT_SECONDS:
@@ -1582,8 +1235,7 @@ def run():
                 bb, pred_flag = predict_bbox(st, age), True
 
             # the clock only advances while the BAG itself is visible (note 3)
-            dists = update_ownership(st, persons, now_t, dt,
-                                     owned_pids - {st.get("owner_pid")}) if is_recent else {}
+            dists = update_ownership(st, persons, now_t, dt) if is_recent else {}
             state = st["state"]
             owner = get_person_by_id(persons, st["owner_pid"])
             owner_d = dists.get(st["owner_pid"])
@@ -1683,9 +1335,7 @@ def run():
                   unattended=unattended_now, alarms=alarms_active,
                   person_tracks=len(person_tracks), luggage_tracks=len(luggage_tracks),
                   retired=len(retired_bags), person_dets=len(person_dets),
-                  luggage_dets=len(luggage_dets),
-                  person_dets_low=len(person_dets_low), luggage_dets_low=len(luggage_dets_low),
-                  retired_persons=len(retired_persons), infer_ms=round(infer_ms, 1),
+                  luggage_dets=len(luggage_dets), infer_ms=round(infer_ms, 1),
                   loop_fps=round(fps_smooth or 0.0, 2))
         if alarms_active:
             draw_alarm_border(annotated, flash)
@@ -1738,8 +1388,7 @@ def run():
     cap.release()
     if writer is not None:
         writer.release()
-    if SHOW:  # a headless build has no window subsystem and raises here
-        cv2.destroyAllWindows()
+    cv2.destroyAllWindows()
 
     LOG.mark(now_t, frame_count)
     alarmed_lids = {e["lid"] for e in alarm_manager.history}
@@ -1766,19 +1415,7 @@ def run():
             "events": events,
         }, f, indent=2)
 
-    c = LOG.counts
     print(f"\n  {frame_count} frames, {len(events)} alarm(s) -> {run_dir}")
-    print(f"  video   : {out_video}")
-    print("  id stability: "
-          f"person ids={next_person_id - 1} "
-          f"(revived {c.get('track_revived[person]', 0)}, "
-          f"dup spawns blocked {c.get('spawn_suppressed[person]', 0)}, "
-          f"weak-box saves {c.get('low_conf_recovered[person]', 0)})  |  "
-          f"luggage ids={next_luggage_id - 1} "
-          f"(revived {c.get('track_revived[luggage]', 0)}, "
-          f"dup spawns blocked {c.get('spawn_suppressed[luggage]', 0)}, "
-          f"weak-box saves {c.get('low_conf_recovered[luggage]', 0)})  |  "
-          f"owner re-binds {c.get('owner_rebind', 0)}")
     print(f"  trace log: {LOG_JSONL}  ({LOG.n} records)  " +
           "  ".join(f"{k}={v}" for k, v in sorted(LOG.counts.items())))
     for e in events:
