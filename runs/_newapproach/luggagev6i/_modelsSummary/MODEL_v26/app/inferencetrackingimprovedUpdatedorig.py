@@ -50,6 +50,25 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 from ultralytics import YOLO
 
+# Bumped whenever the tracking or ownership logic changes. Every run prints the file it
+# came from and records it in the log, because with several checkouts of this script around
+# the most expensive mistake is analysing results produced by a copy you did not edit.
+SCRIPT_VERSION = "2026-08-28.id-stability"
+
+
+def script_identity():
+    """Path, size and mtime of the file actually executing, for the banner and the log."""
+    try:
+        path = os.path.abspath(__file__)
+        return {"script": path, "script_bytes": os.path.getsize(path),
+                "script_mtime": time.strftime("%Y-%m-%d %H:%M:%S",
+                                              time.localtime(os.path.getmtime(path))),
+                "version": SCRIPT_VERSION}
+    except (NameError, OSError):
+        return {"script": "<unknown>", "script_bytes": -1,
+                "script_mtime": "?", "version": SCRIPT_VERSION}
+
+
 # ================================ I/O ========================================
 VIDEO_IN = r"/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo.mpg"
 # The annotated video is written NEXT TO THE INPUT, named after it, so the result always
@@ -1227,6 +1246,10 @@ def run():
           f"{'  [shared]' if shared_model else ''}")
     if label_map is not None:
         print(f"  labels  : {', '.join(f'{k}->{luggage_names[v]}' for k, v in sorted(label_map.items()))}")
+    ident = script_identity()
+    print(f"  script  : {ident['script']}")
+    print(f"            v{ident['version']}  {ident['script_bytes']} bytes  "
+          f"modified {ident['script_mtime']}")
     print(f"  run dir : {run_dir}")
     print(f"  video   : {out_video}")
     print(f"  owner within {D_OWN}h, away beyond {D_AWAY}h, alarm after {UNATTENDED_SECONDS:.0f}s\n")
@@ -1265,7 +1288,7 @@ def run():
     LOG.event("run", source=VIDEO_IN, size=[w, h], fps=round(video_fps, 3), frames=total_frames,
               person_model=person_weights, luggage_model=luggage_weights,
               shared_model=shared_model, luggage_classes=luggage_class_ids,
-              run_dir=run_dir, out_video=out_video,
+              run_dir=run_dir, out_video=out_video, **script_identity(),
               label_map=None if label_map is None else {str(k): v for k, v in label_map.items()},
               names={str(k): v for k, v in luggage_names.items()},
               params={"d_own": D_OWN, "d_away": D_AWAY, "ownership_sec": OWNERSHIP_SEC,
@@ -1862,6 +1885,7 @@ def run():
 
     c = LOG.counts
     print(f"\n  {frame_count} frames, {len(events)} alarm(s) -> {run_dir}")
+    print(f"  produced by v{SCRIPT_VERSION}  ({script_identity()['script']})")
     print(f"  video   : {out_video}")
     print("  id stability: "
           f"person ids={next_person_id - 1} "
