@@ -1,0 +1,59 @@
+{
+  "source": "/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo.mpg",
+  "fps": 29.97002997002997,
+  "frames": 1768,
+  "params": {
+    "d_own": 1.5,
+    "d_away": 2.5,
+    "ownership_sec": 2.0,
+    "owner_grace_sec": 2.0,
+    "unattended_seconds": 10.0
+  },
+  "events": [
+    {
+      "luggage_track": 2,
+      "owner_track": 4,
+      "class": "backpack",
+      "first_seen_sec": 0.0,
+      "left_at_sec": 15.28,
+      "alarm_at_sec": 31.53,
+      "alarm_frame": 946,
+      "bag_seen_frac": 0.567,
+      "bag_drift_px": 464.8,
+      "bag_drift_w": 6.35,
+      "owner_seen_frac": 1.0,
+      "away_frames": 276,
+      "owner_d_max_h": 8.185
+    },
+    {
+      "luggage_track": 9,
+      "owner_track": 1,
+      "class": "bag",
+      "first_seen_sec": 13.55,
+      "left_at_sec": 26.06,
+      "alarm_at_sec": 36.07,
+      "alarm_frame": 1082,
+      "bag_seen_frac": 0.073,
+      "bag_drift_px": 57.9,
+      "bag_drift_w": 0.93,
+      "owner_seen_frac": 1.0,
+      "away_frames": 22,
+      "owner_d_max_h": 6.538
+    },
+    {
+      "luggage_track": 1,
+      "owner_track": 6,
+      "class": "trolley",
+      "first_seen_sec": 0.0,
+      "left_at_sec": 26.53,
+      "alarm_at_sec": 36.54,
+      "alarm_frame": 1096,
+      "bag_seen_frac": 0.883,
+      "bag_drift_px": 86.7,
+      "bag_drift_w": 2.32,
+      "owner_seen_frac": 0.0,
+      "away_frames": 265,
+      "owner_d_max_h": null
+    }
+  ]
+}

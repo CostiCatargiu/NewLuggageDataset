@@ -5,8 +5,8 @@ FlashAttention is not available on this device. Using scaled_dot_product_attenti
   luggage : yolov12x.pt  classes [24, 26, 28]  [shared]
   labels  : 24->backpack, 26->bag, 28->trolley
   script  : /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/inferencetrackingimprovedUpdatedorig.py
-            v2026-08-28.id-stability  84514 bytes  modified 2026-08-28 15:06:33
-  run dir : /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/_newapproach/luggagev6i/_modelsSummary/MODEL_v26/app/runs/AVSSS07_MEDIUmo__p-yolov12x__l-yolov12x__20260828-150941
+            v2026-08-28.evidence  85182 bytes  modified 2026-08-28 15:17:41
+  run dir : /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/_newapproach/luggagev6i/_modelsSummary/MODEL_v26/app/runs/AVSSS07_MEDIUmo__p-yolov12x__l-yolov12x__20260828-151920
   video   : /home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo_output.mp4
   owner within 1.5h, away beyond 2.5h, alarm after 10s
 
@@ -23,15 +23,15 @@ FlashAttention is not available on this device. Using scaled_dot_product_attenti
     frame 1400/1768  t=47s  tracked bags=5  alarms=3
     frame 1600/1768  t=53s  tracked bags=4  alarms=3
 
-  1768 frames, 3 alarm(s) -> /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/_newapproach/luggagev6i/_modelsSummary/MODEL_v26/app/runs/AVSSS07_MEDIUmo__p-yolov12x__l-yolov12x__20260828-150941
-  produced by v2026-08-28.id-stability  (/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/inferencetrackingimprovedUpdatedorig.py)
+  1768 frames, 3 alarm(s) -> /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/_newapproach/luggagev6i/_modelsSummary/MODEL_v26/app/runs/AVSSS07_MEDIUmo__p-yolov12x__l-yolov12x__20260828-151920
+  produced by v2026-08-28.evidence  (/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/inferencetrackingimprovedUpdatedorig.py)
   video   : /home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo_output.mp4
   id stability: person ids=12 (revived 5, dup spawns blocked 0, weak-box saves 804)  |  luggage ids=9 (revived 0, dup spawns blocked 134, weak-box saves 437)  |  owner re-binds 0
   trace log: trace.jsonl  (21643 records)  alarm=3  bag_summary=4  det=11307  det[luggage]=4895  det[person]=6412  end=1  frame=1768  low_conf_recovered=1241  low_conf_recovered[luggage]=437  low_conf_recovered[person]=804  nms=327  nms[luggage]=327  owner_back=20  owner_elected=9  owner_lost=24  pair=6688  run=1  spawn_suppressed=134  spawn_suppressed[luggage]=134  state=68  track_forgotten=5  track_forgotten[person]=5  track_lost=12  track_lost[person]=12  track_merged=5  track_merged[luggage]=5  track_new=21  track_new[luggage]=9  track_new[person]=12  track_revived=5  track_revived[person]=5
   alarm evidence (nothing below changes when an alarm fires -- it grades them):
-    bag        owner   left    alarm   bag drift   owner seen   max dist
-    L2   backpack  P4       15.3s   31.5s      6.3w       100%     8.2 h
-    L9   bag       P1       26.1s   36.1s      0.9w       100%     6.5 h
-    L1   trolley   P6       26.5s   36.5s      2.3w         0%     n/a
+    bag        owner   left    alarm   drift  bag seen  owner seen   max dist
+    L2   backpack  P4       15.3s   31.5s   6.3w       57%        100%     8.2 h
+    L9   bag       P1       26.1s   36.1s   0.9w        7%        100%     6.5 h
+    L1   trolley   P6       26.5s   36.5s   2.3w       88%          0%     n/a
 
 Process finished with exit code 0
