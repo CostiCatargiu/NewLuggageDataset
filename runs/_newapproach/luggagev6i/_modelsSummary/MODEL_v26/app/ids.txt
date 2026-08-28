@@ -1,4 +1,6 @@
 /home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/test_id_stability.py
+testing: /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/inferencetrackingimprovedUpdatedorig.py  (83313 bytes, modified 2026-08-28 14:52:05)
+note: these are pinned to their defaults for the tests; your file has CONF_LUGGAGE=0.2
 
 A. basics
   PASS  the annotated video lands beside the input -> /data/vids/AVSSS07_MEDIUmo_output.mp4
@@ -21,34 +23,75 @@ D. re-binding an owner whose track was re-created
   PASS  two equally similar candidates decide nothing
 
 E. end to end: the owner is watched walking away
-  input   : /tmp/tmp111x2qzl/watched.mp4  640x480 @ 25.00 fps, 700 frames
+  input   : /tmp/tmpgjrph727/watched.mp4  640x480 @ 25.00 fps, 700 frames
   person  : fake.pt  classes [0]
   luggage : fake.pt  classes [24, 26, 28]  [shared]
   labels  : 24->backpack, 26->bag, 28->trolley
-  run dir : /tmp/tmp111x2qzl/watched_runs/watched__p-fake__l-fake__20260828-144417
-  video   : /tmp/tmp111x2qzl/watched_output.mp4
+  run dir : /tmp/tmpgjrph727/watched_runs/watched__p-fake__l-fake__20260828-145210
+  video   : /tmp/tmpgjrph727/watched_output.mp4
   owner within 1.5h, away beyond 1.5h, alarm after 3s
 
-[SAVE] /tmp/tmp111x2qzl/watched_output.mp4  (1000x620)
+[SAVE] /tmp/tmpgjrph727/watched_output.mp4  (1000x620)
     frame 200/700  t=8s  tracked bags=1  alarms=0
-  [ALARM] t=   13.1s  L1  owner P1  unattended since 10.1s
+  [ALARM] t=   13.1s  L1  owner P1  unattended since 10.1s   bag drift 0.0w   owner seen 100% of the window
     frame 400/700  t=16s  tracked bags=1  alarms=1
     frame 600/700  t=24s  tracked bags=1  alarms=1
-Traceback (most recent call last):
-  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/test_id_stability.py", line 306, in <module>
-    ok(a["bag_drift_w"] < 1.0 and a["owner_seen_frac"] > 0.9 and a["owner_d_max_h"] > 1.5,
-       ~^^^^^^^^^^^^^^^
-KeyError: 'bag_drift_w'
 
-  700 frames, 1 alarm(s) -> /tmp/tmp111x2qzl/watched_runs/watched__p-fake__l-fake__20260828-144417
-  video   : /tmp/tmp111x2qzl/watched_output.mp4
-  id stability: person ids=1 (revived 1, dup spawns blocked 0, weak-box saves 40)  |  luggage ids=1 (revived 0, dup spawns blocked 0, weak-box saves 0)  |  owner re-binds 0
-  trace log: trace.jsonl  (778 records)  alarm=1  bag_summary=1  end=1  frame=700  low_conf_recovered=40  low_conf_recovered[person]=40  owner_elected=1  pair=27  run=1  state=2  track_lost=1  track_lost[person]=1  track_new=2  track_new[luggage]=1  track_new[person]=1  track_revived=1  track_revived[person]=1
-    L1 (trolley) owner P1  left 10.12s, alarm 13.12s
+  700 frames, 1 alarm(s) -> /tmp/tmpgjrph727/watched_runs/watched__p-fake__l-fake__20260828-145210
+  video   : /tmp/tmpgjrph727/watched_output.mp4
+  id stability: person ids=1 (revived 1, dup spawns blocked 0, weak-box saves 40)  |  luggage ids=1 (revived 0, dup spawns blocked 0, weak-box saves 50)  |  owner re-binds 0
+  trace log: trace.jsonl  (828 records)  alarm=1  bag_summary=1  end=1  frame=700  low_conf_recovered=90  low_conf_recovered[luggage]=50  low_conf_recovered[person]=40  owner_elected=1  pair=27  run=1  state=2  track_lost=1  track_lost[person]=1  track_new=2  track_new[luggage]=1  track_new[person]=1  track_revived=1  track_revived[person]=1
+  alarm evidence (nothing below changes when an alarm fires -- it grades them):
+    bag        owner   left    alarm   bag drift   owner seen   max dist
+    L1   trolley   P1       10.1s   13.1s      0.0w       100%     2.6 h
   PASS  the annotated video was written beside the input
   PASS  one person id and one luggage id survive the whole clip (1 / 1)
   PASS  exactly one alarm, naming the original owner
-  FAIL  weak boxes rescued both roles (40 / None)
+  PASS  weak boxes rescued both roles (40 / 50)
   PASS  the person came back under their own id
+  PASS  the alarm is graded as OBSERVED: drift 0.00w, owner seen 100%, reached 2.554 h
+  input   : /tmp/tmpgjrph727/lost.mp4  640x480 @ 25.00 fps, 700 frames
+  person  : fake.pt  classes [0]
+  luggage : fake.pt  classes [24, 26, 28]  [shared]
+  labels  : 24->backpack, 26->bag, 28->trolley
+  run dir : /tmp/tmpgjrph727/lost_runs/lost__p-fake__l-fake__20260828-145213
+  video   : /tmp/tmpgjrph727/lost_output.mp4
+  owner within 1.5h, away beyond 1.5h, alarm after 3s
 
-Process finished with exit code 1
+[SAVE] /tmp/tmpgjrph727/lost_output.mp4  (1000x620)
+    frame 200/700  t=8s  tracked bags=1  alarms=0
+  [ALARM] t=   13.5s  L1  owner P1  unattended since 10.5s   bag drift 0.0w   owner seen 0% of the window
+    frame 400/700  t=16s  tracked bags=1  alarms=1
+    frame 600/700  t=24s  tracked bags=1  alarms=1
+
+  700 frames, 1 alarm(s) -> /tmp/tmpgjrph727/lost_runs/lost__p-fake__l-fake__20260828-145213
+  video   : /tmp/tmpgjrph727/lost_output.mp4
+  id stability: person ids=1 (revived 0, dup spawns blocked 0, weak-box saves 40)  |  luggage ids=1 (revived 0, dup spawns blocked 0, weak-box saves 50)  |  owner re-binds 0
+  trace log: trace.jsonl  (828 records)  alarm=1  bag_summary=1  end=1  frame=700  low_conf_recovered=90  low_conf_recovered[luggage]=50  low_conf_recovered[person]=40  owner_elected=1  owner_lost=1  pair=27  run=1  state=2  track_lost=1  track_lost[person]=1  track_new=2  track_new[luggage]=1  track_new[person]=1
+  alarm evidence (nothing below changes when an alarm fires -- it grades them):
+    bag        owner   left    alarm   bag drift   owner seen   max dist
+    L1   trolley   P1       10.5s   13.5s      0.0w         0%     n/a
+  PASS  an alarm raised on a LOST owner is marked as such (seen 0%)
+
+F. end to end: the owner never leaves, the detector just loses him
+  input   : /tmp/tmp5wid2hml/stays.mp4  640x480 @ 25.00 fps, 500 frames
+  person  : fake.pt  classes [0]
+  luggage : fake.pt  classes [24, 26, 28]  [shared]
+  labels  : 24->backpack, 26->bag, 28->trolley
+  run dir : /tmp/tmp5wid2hml/stays_runs/stays__p-fake__l-fake__20260828-145216
+  video   : /tmp/tmp5wid2hml/stays_output.mp4
+  owner within 1.5h, away beyond 2.5h, alarm after 10s
+
+[SAVE] /tmp/tmp5wid2hml/stays_output.mp4  (1000x620)
+    frame 200/500  t=8s  tracked bags=1  alarms=0
+    frame 400/500  t=16s  tracked bags=1  alarms=0
+
+  500 frames, 0 alarm(s) -> /tmp/tmp5wid2hml/stays_runs/stays__p-fake__l-fake__20260828-145216
+  video   : /tmp/tmp5wid2hml/stays_output.mp4
+  id stability: person ids=1 (revived 1, dup spawns blocked 0, weak-box saves 0)  |  luggage ids=1 (revived 0, dup spawns blocked 0, weak-box saves 0)  |  owner re-binds 0
+  trace log: trace.jsonl  (532 records)  bag_summary=1  end=1  frame=500  owner_back=1  owner_elected=1  owner_lost=1  pair=20  run=1  state=2  track_lost=1  track_lost[person]=1  track_new=2  track_new[luggage]=1  track_new[person]=1  track_revived=1  track_revived[person]=1
+  PASS  no alarm and no id churn when the owner was there all along (0 alarm(s), 1 id(s))
+
+all checks passed
+
+Process finished with exit code 0
