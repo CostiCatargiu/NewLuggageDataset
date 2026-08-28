@@ -854,6 +854,46 @@ def person_heights_away(bag_bbox, persons):
     return out
 
 
+# --- evidence recorded while a bag is unattended -----------------------------------
+# Two alarms can look identical in the log and be completely different in kind: one where
+# the owner was watched walking away, one where the tracker merely lost them; one where the
+# bag sat still, one where it was carried across the scene. Everything below is pure
+# measurement -- no threshold here changes when an alarm fires -- so alarms can be graded
+# after the fact and any cut-off can be chosen from the data instead of guessed.
+def _start_away_evidence(st):
+    """Anchor the bag where it stood at the moment its owner left."""
+    st["away_anchor"] = bottom_center(st["bbox"])
+    st["away_w"] = max(1.0, float(st["bbox"][2] - st["bbox"][0]))
+    st["away_drift"] = 0.0
+    st["away_frames"] = 0
+    st["away_seen"] = 0
+    st["away_d_max"] = None
+
+
+def _accrue_away_evidence(st, owner_d):
+    if st.get("away_anchor") is None:
+        _start_away_evidence(st)
+    ax, ay = st["away_anchor"]
+    bx, by = bottom_center(st["bbox"])
+    st["away_drift"] = max(st.get("away_drift", 0.0), math.hypot(bx - ax, by - ay))
+    st["away_frames"] = st.get("away_frames", 0) + 1
+    if owner_d is not None:  # the owner was actually SEEN, not merely assumed gone
+        st["away_seen"] = st.get("away_seen", 0) + 1
+        st["away_d_max"] = (owner_d if st.get("away_d_max") is None
+                            else max(st["away_d_max"], owner_d))
+
+
+def away_evidence(st):
+    """Did the bag stay put, and was the owner ever observed while the clock ran?"""
+    n = max(1, st.get("away_frames", 0))
+    drift = st.get("away_drift", 0.0)
+    return {"bag_drift_px": round(drift, 1),
+            "bag_drift_w": round(drift / max(1.0, st.get("away_w", 1.0)), 2),
+            "owner_seen_frac": round(st.get("away_seen", 0) / n, 3),
+            "away_frames": int(st.get("away_frames", 0)),
+            "owner_d_max_h": _r3(st.get("away_d_max"))}
+
+
 def rebind_owner(st, persons, now_t, taken_pids=frozenset()):
     """A person track re-created at the owner's last position IS the owner (ID churn).
 
@@ -998,10 +1038,13 @@ def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
         st["away_since"] = None
         st["unattended_s"] = 0.0
         st["state"] = OWNED
+        st["away_anchor"] = None
     else:
         if st["away_since"] is None:
             st["away_since"] = now_t
+            _start_away_evidence(st)
         st["unattended_s"] = now_t - st["away_since"]
+        _accrue_away_evidence(st, owner_d)
         st["state"] = ALARM if st["unattended_s"] >= UNATTENDED_SECONDS else UNATTENDED
 
     if st["state"] != prev_state:
@@ -1566,6 +1609,7 @@ def run():
                 "owner_seen_t": -1e9,
                 "away_since": None,
                 "unattended_s": 0.0,
+                "away_anchor": None,
                 "trajectory": deque([(int(cx), int(cy), now_t)], maxlen=TRAJECTORY_MAX_POINTS)
             }
 
@@ -1639,6 +1683,7 @@ def run():
 
             if state == ALARM:
                 if alarm_manager.trigger(lid, now_t, {"lid": lid, "owner": st["owner_pid"]}):
+                    evid = away_evidence(st)
                     events.append({
                         "luggage_track": lid,
                         "owner_track": st["owner_pid"],
@@ -1647,14 +1692,17 @@ def run():
                         "left_at_sec": round(st["away_since"], 2),
                         "alarm_at_sec": round(now_t, 2),
                         "alarm_frame": frame_count,
+                        **evid,
                     })
                     print(f"  [ALARM] t={now_t:7.1f}s  L{lid}  owner P{st['owner_pid']}  "
-                          f"unattended since {st['away_since']:.1f}s")
+                          f"unattended since {st['away_since']:.1f}s   "
+                          f"bag drift {evid['bag_drift_w']:.1f}w   "
+                          f"owner seen {evid['owner_seen_frac'] * 100:.0f}% of the window")
                     LOG.event("alarm", lid=lid, owner=st["owner_pid"],
                               name=str(luggage_names.get(int(st["cls_stable"]), st["cls_stable"])),
                               left_at_sec=round(st["away_since"], 2),
                               first_seen_sec=round(st["first_t"], 2),
-                              unattended_s=round(st["unattended_s"], 2), bbox=bb)
+                              unattended_s=round(st["unattended_s"], 2), bbox=bb, **evid)
                 unattended_now += 1
             else:
                 alarm_manager.clear(lid)
@@ -1795,7 +1843,7 @@ def run():
                   first_t=round(st["first_t"], 2), last_seen_t=round(st["last_seen_t"], 2),
                   unattended_s=round(st["unattended_s"], 2),
                   away_since=None if st["away_since"] is None else round(st["away_since"], 2),
-                  alarmed=lid in alarmed_lids)
+                  alarmed=lid in alarmed_lids, **away_evidence(st))
     LOG.event("end", frames=frame_count, alarms=len(events),
               person_ids_used=next_person_id - 1, luggage_ids_used=next_luggage_id - 1,
               event_counts=LOG.counts)
@@ -1827,9 +1875,14 @@ def run():
           f"owner re-binds {c.get('owner_rebind', 0)}")
     print(f"  trace log: {LOG_JSONL}  ({LOG.n} records)  " +
           "  ".join(f"{k}={v}" for k, v in sorted(LOG.counts.items())))
+    if events:
+        print("  alarm evidence (nothing below changes when an alarm fires -- it grades them):")
+        print("    bag        owner   left    alarm   bag drift   owner seen   max dist")
     for e in events:
-        print(f"    L{e['luggage_track']} ({e['class']}) owner P{e['owner_track']}  "
-              f"left {e['left_at_sec']}s, alarm {e['alarm_at_sec']}s")
+        print(f"    L{e['luggage_track']:<3} {e['class']:<9} P{str(e['owner_track']):<5} "
+              f"{e['left_at_sec']:6.1f}s {e['alarm_at_sec']:6.1f}s "
+              f"{e['bag_drift_w']:8.1f}w {e['owner_seen_frac'] * 100:9.0f}%  "
+              f"{'   n/a' if e['owner_d_max_h'] is None else '%6.1f h' % e['owner_d_max_h']}")
 
 
 if __name__ == "__main__":
