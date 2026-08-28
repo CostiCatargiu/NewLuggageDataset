@@ -23,7 +23,16 @@ import types
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TARGET = os.path.join(HERE, "inferencetrackingimprovedUpdatedorig.py")
+# By default the module beside this file. Pass a path to test a different copy:
+#     python test_id_stability.py /somewhere/else/inferencetrackingimprovedUpdatedorig.py
+TARGET = (sys.argv[1] if len(sys.argv) > 1
+          else os.path.join(HERE, "inferencetrackingimprovedUpdatedorig.py"))
+if not os.path.exists(TARGET):
+    sys.exit("no module to test at %s -- pass its path as an argument" % TARGET)
+print("testing: %s  (%d bytes, modified %s)"
+      % (TARGET, os.path.getsize(TARGET),
+         __import__("time").strftime("%Y-%m-%d %H:%M:%S",
+                                     __import__("time").localtime(os.path.getmtime(TARGET)))))
 
 # stub the detector package: importing the real one drags in torch for nothing
 _stub = types.ModuleType("ultralytics")
@@ -33,6 +42,36 @@ sys.modules.setdefault("ultralytics", _stub)
 _spec = importlib.util.spec_from_file_location("_uut", TARGET)
 M = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(M)
+
+# Fail with one clear line instead of a KeyError deep inside a scenario when the file under
+# test is an older copy -- with several checkouts of this script around, that is the single
+# most likely reason for a red run.
+_REQUIRED = ["output_video_path", "appearance_of", "appearance_sim", "update_appearance",
+             "recover_with_low_conf", "revive_from_memory", "away_evidence",
+             "OWNER_REBIND_NEWBORN_SLACK", "PERSON_MEMORY_SEC", "LOW_CONF_RECOVERY"]
+_missing = [a for a in _REQUIRED if not hasattr(M, a)]
+if _missing:
+    sys.exit("this copy of the module predates the tests -- it has no %s.\n"
+             "Point the tests at the current file, or copy the current file over this one."
+             % ", ".join(_missing))
+
+# The suite tests the LOGIC, so it pins every threshold its assertions depend on. Without
+# this, tuning the pipeline for a dataset turns the regression tests red for no reason.
+PINNED = dict(
+    CONF_PERSON=0.25, CONF_LUGGAGE=0.40, CONF_PERSON_LOW=0.10, CONF_LUGGAGE_LOW=0.15,
+    LOW_CONF_RECOVERY=True, APPEARANCE_ENABLED=True,
+    PERSON_TTL_SECONDS=6.0, PERSON_MEMORY_SEC=20.0,
+    OWNER_REBIND_SEC=3.0, OWNER_REBIND_IOU=0.40, OWNER_REBIND_BY_APPEARANCE=True,
+    OWNER_REBIND_MIN_GAP=0.5, OWNER_REBIND_APP_SEC=5.0, OWNER_REBIND_MIN_SIM=0.80,
+    OWNER_REBIND_SIM_MARGIN=0.05, OWNER_REBIND_MAX_H=2.0, OWNER_REBIND_NEWBORN_SLACK=0.5,
+    APP_MIN_SIM_REVIVE=0.35, D_OWN=1.5, OWNERSHIP_SEC=2.0, OWNER_GRACE_SEC=2.0,
+)
+_differs = {k: getattr(M, k) for k, v in PINNED.items() if getattr(M, k) != v}
+for k, v in PINNED.items():
+    setattr(M, k, v)
+if _differs:
+    print("note: these are pinned to their defaults for the tests; your file has %s"
+          % ", ".join("%s=%s" % kv for kv in sorted(_differs.items())))
 
 import cv2  # noqa: E402  (after M, so a missing cv2 blames the module first)
 
@@ -238,6 +277,8 @@ def run_clip(tmp, name, n_frames, boxes_at, script, **overrides):
              ("YOLO", "VIDEO_IN", "OUT_DIR", "SINGLE_MODEL", "SHOW", "SAVE_OUTPUT", "DEVICE",
               "LOG_DETECTIONS", "LOG_PAIRS_EVERY_N", "OWNERSHIP_SEC", "UNATTENDED_SECONDS",
               "D_AWAY")}
+    for k, v in PINNED.items():
+        setattr(M, k, v)
     M.YOLO = make_fake_yolo(script)
     M.VIDEO_IN, M.OUT_DIR, M.SINGLE_MODEL = vid, runs, "fake.pt"
     M.SHOW, M.SAVE_OUTPUT, M.DEVICE = False, True, "cpu"
