@@ -180,8 +180,15 @@ OWNER_REBIND_IOU = 0.40
 # only thing left. Deliberately conservative: a wrong re-bind silently cancels an alarm.
 OWNER_REBIND_BY_APPEARANCE = True
 OWNER_REBIND_APP_SEC = 5.0  # appearance re-bind is allowed this long after the owner vanished
-OWNER_REBIND_MIN_SIM = 0.55  # and only for a strong colour match...
+OWNER_REBIND_MIN_GAP = 0.5  # ...but not before: one dropped frame is not id churn
+OWNER_REBIND_MIN_SIM = 0.80  # and only for a strong colour match...
+OWNER_REBIND_SIM_MARGIN = 0.05  # ...that clearly beats the runner-up...
 OWNER_REBIND_MAX_H = 2.0  # ...within this many person-heights of where the owner last was
+# The decisive constraint. A re-bind exists for ONE situation: the tracker destroyed the
+# owner's track and re-created them under a fresh id. Only a track born after the owner
+# vanished can be that. An id that already existed alongside the owner is somebody else,
+# however similar the colours -- and in a crowd under one light, everybody matches.
+OWNER_REBIND_NEWBORN_SLACK = 0.5  # seconds of tolerance on "born after the owner vanished"
 
 PERSON_MATCH_IOU_THR = 0.10
 PERSON_MATCH_DIST_THR = 220
@@ -848,46 +855,66 @@ def person_heights_away(bag_bbox, persons):
 
 
 def rebind_owner(st, persons, now_t, taken_pids=frozenset()):
-    """A person track re-created at the owner's last position IS the owner (ID churn)."""
+    """A person track re-created at the owner's last position IS the owner (ID churn).
+
+    Returns (pid, how) or (None, None). Deliberately hard to satisfy: a wrong re-bind
+    silently restarts the unattended clock, which turns a real abandonment into silence.
+    """
     last = st.get("owner_bbox")
     seen_gap = now_t - st.get("owner_seen_t", -1e9)
     if last is None:
-        return None
+        return None, None
+
+    born_after = st.get("owner_seen_t", -1e9) - OWNER_REBIND_NEWBORN_SLACK
+
+    def candidate(p):
+        return (p["tid"] not in taken_pids
+                and p.get("first_t", -1e9) >= born_after)  # a re-creation, not a bystander
 
     if seen_gap <= OWNER_REBIND_SEC:
         best_pid, best_iou = None, OWNER_REBIND_IOU
         for p in persons:
-            if p["tid"] in taken_pids:
+            if not candidate(p):
                 continue
             overlap = iou_xyxy(p["bbox"], last)
             if overlap >= best_iou:
                 best_pid, best_iou = p["tid"], overlap
         if best_pid is not None:
-            return best_pid
+            return best_pid, "iou"
 
     # Geometry failed: the owner may have been re-created several boxes away after the
     # crowd cleared. Their colour signature is all that survived, so match on that -- but
     # only near where they were last seen, and only on a strong match: a wrong re-bind
     # silently cancels an alarm, which is the one failure this system must not have.
-    if not OWNER_REBIND_BY_APPEARANCE or seen_gap > OWNER_REBIND_APP_SEC:
-        return None
+    if (not OWNER_REBIND_BY_APPEARANCE
+            or not (OWNER_REBIND_MIN_GAP <= seen_gap <= OWNER_REBIND_APP_SEC)):
+        return None, None
     ref = st.get("owner_app")
     if ref is None:
-        return None
+        return None, None
     lx, ly = bottom_center(last)
-    best_pid, best_sim = None, OWNER_REBIND_MIN_SIM
+    ranked = []
     for p in persons:
-        if p["tid"] in taken_pids:
+        if not candidate(p):
             continue
         sim = appearance_sim(p.get("app"), ref)
-        if sim is None or sim < best_sim:
+        if sim is None:
             continue
         h = max(MIN_PERSON_H, p["bbox"][3] - p["bbox"][1])
         px, py = bottom_center(p["bbox"])
         if math.hypot(px - lx, py - ly) > OWNER_REBIND_MAX_H * h:
             continue  # too far from the owner's last position to be the same walk
-        best_pid, best_sim = p["tid"], sim
-    return best_pid
+        ranked.append((sim, p["tid"]))
+    if not ranked:
+        return None, None
+    ranked.sort(reverse=True)
+    best_sim, best_pid = ranked[0]
+    if best_sim < OWNER_REBIND_MIN_SIM:
+        return None, None
+    # two people who look equally like the owner mean the colours decided nothing
+    if len(ranked) > 1 and best_sim - ranked[1][0] < OWNER_REBIND_SIM_MARGIN:
+        return None, None
+    return best_pid, "appearance"
 
 
 def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
@@ -921,15 +948,20 @@ def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
         return dists
 
     owner_d = dists.get(st["owner_pid"])
-    if owner_d is None and st["owner_pid"] is not None:
-        new_pid = rebind_owner(st, persons, now_t, taken_pids)
+    # "no distance" and "not there" are different: a person too small for MIN_PERSON_H is
+    # on screen but unmeasurable, and re-binding them to a lookalike is how a real
+    # abandonment gets its clock reset by a passer-by
+    owner_visible = st["owner_pid"] in pmap
+    if owner_d is None and st["owner_pid"] is not None and not owner_visible:
+        new_pid, via = rebind_owner(st, persons, now_t, taken_pids)
         if new_pid is not None:
             LOG.event("owner_rebind", lid=lid, old_owner=st["owner_pid"], new_owner=new_pid,
-                      gap_s=round(now_t - st["owner_seen_t"], 2),
+                      via=via, gap_s=round(now_t - st["owner_seen_t"], 2),
                       iou=round(iou_xyxy(pmap[new_pid]["bbox"], st["owner_bbox"]), 3),
                       sim=_r3(appearance_sim(pmap[new_pid].get("app"), st.get("owner_app"))))
             st["owner_pid"] = new_pid
             owner_d = dists.get(new_pid)
+            owner_visible = new_pid in pmap
 
     was_missing = st["owner_missing_s"] > 0.0
     if owner_d is not None:
@@ -944,6 +976,16 @@ def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
             if owner.get("app") is not None:  # the owner's signature, for re-binding later
                 st["owner_app"] = owner["app"]
         near = owner_d <= D_AWAY
+    elif owner_visible:
+        # on screen but too small to give a trustworthy person-height: the normalised
+        # distance would be noise, so hold the previous verdict rather than invent a
+        # departure (or a return) out of a measurement the scene cannot support
+        st["owner_missing_s"] = 0.0
+        owner = pmap.get(st["owner_pid"])
+        if owner is not None:
+            st["owner_bbox"] = np.array(owner["bbox"], dtype=float)
+            st["owner_seen_t"] = now_t
+        near = st.get("last_near", True)
     else:  # owner not visible -- occlusion or departure (note 3)
         if not was_missing:
             LOG.event("owner_lost", lid=lid, owner=st["owner_pid"],
@@ -951,6 +993,7 @@ def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
         st["owner_missing_s"] += dt
         near = st["owner_missing_s"] < OWNER_GRACE_SEC
 
+    st["last_near"] = near
     if near:
         st["away_since"] = None
         st["unattended_s"] = 0.0
@@ -1377,12 +1420,14 @@ def run():
                 bb = st["bbox"]
                 cx, cy = center_xyxy(bb)
                 persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy,
-                                "conf": st.get("conf", 0.0), "app": st.get("app")})
+                                "conf": st.get("conf", 0.0), "app": st.get("app"),
+                                "first_t": st.get("first_t", 0.0)})
             elif DRAW_PREDICTED_WHEN_MISSING and age <= PERSON_MAX_RELINK_AGE:
                 bb = predict_bbox(st, age)
                 cx, cy = center_xyxy(bb)
                 persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy,
-                                "conf": st.get("conf", 0.0), "app": st.get("app"), "pred": True})
+                                "conf": st.get("conf", 0.0), "app": st.get("app"),
+                                "first_t": st.get("first_t", 0.0), "pred": True})
 
         # -----------------------------
         # LUGGAGE DETS -> stable luggage tracks
@@ -1517,6 +1562,7 @@ def run():
                 "owner_missing_s": 0.0,
                 "owner_bbox": None,
                 "owner_app": None,
+                "last_near": True,
                 "owner_seen_t": -1e9,
                 "away_since": None,
                 "unattended_s": 0.0,
