@@ -1,0 +1,54 @@
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/test_id_stability.py
+
+A. basics
+  PASS  the annotated video lands beside the input -> /data/vids/AVSSS07_MEDIUmo_output.mp4
+  PASS  colour signature separates two people (self 1.00, other 0.00)
+  PASS  an unusable signature degrades to None instead of a wrong number
+
+B. an identity survives a gap in the detections
+  PASS  weak boxes keep the id alive through a 1 s partial occlusion (ids [1])
+  PASS  the track is retired, not deleted, after the TTL
+  PASS  the same person re-appearing keeps their id -> [('revived', 1)]
+  PASS  somebody else standing in that exact spot does NOT inherit the id -> [('new', 2)]
+
+D. re-binding an owner whose track was re-created
+  PASS  the owner is re-bound by colour -> P9 via appearance
+  PASS  a person who already owns another bag is never stolen
+  PASS  a bystander id that predates the owner's disappearance is refused
+  PASS  colour re-bind does not fire on a momentary drop (0.4 s)
+  PASS  ...but does once the owner is really gone (1.0 s)
+  PASS  a long-lived look-alike is still refused at that gap
+  PASS  two equally similar candidates decide nothing
+
+E. end to end: the owner is watched walking away
+  input   : /tmp/tmp111x2qzl/watched.mp4  640x480 @ 25.00 fps, 700 frames
+  person  : fake.pt  classes [0]
+  luggage : fake.pt  classes [24, 26, 28]  [shared]
+  labels  : 24->backpack, 26->bag, 28->trolley
+  run dir : /tmp/tmp111x2qzl/watched_runs/watched__p-fake__l-fake__20260828-144417
+  video   : /tmp/tmp111x2qzl/watched_output.mp4
+  owner within 1.5h, away beyond 1.5h, alarm after 3s
+
+[SAVE] /tmp/tmp111x2qzl/watched_output.mp4  (1000x620)
+    frame 200/700  t=8s  tracked bags=1  alarms=0
+  [ALARM] t=   13.1s  L1  owner P1  unattended since 10.1s
+    frame 400/700  t=16s  tracked bags=1  alarms=1
+    frame 600/700  t=24s  tracked bags=1  alarms=1
+Traceback (most recent call last):
+  File "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/test_id_stability.py", line 306, in <module>
+    ok(a["bag_drift_w"] < 1.0 and a["owner_seen_frac"] > 0.9 and a["owner_d_max_h"] > 1.5,
+       ~^^^^^^^^^^^^^^^
+KeyError: 'bag_drift_w'
+
+  700 frames, 1 alarm(s) -> /tmp/tmp111x2qzl/watched_runs/watched__p-fake__l-fake__20260828-144417
+  video   : /tmp/tmp111x2qzl/watched_output.mp4
+  id stability: person ids=1 (revived 1, dup spawns blocked 0, weak-box saves 40)  |  luggage ids=1 (revived 0, dup spawns blocked 0, weak-box saves 0)  |  owner re-binds 0
+  trace log: trace.jsonl  (778 records)  alarm=1  bag_summary=1  end=1  frame=700  low_conf_recovered=40  low_conf_recovered[person]=40  owner_elected=1  pair=27  run=1  state=2  track_lost=1  track_lost[person]=1  track_new=2  track_new[luggage]=1  track_new[person]=1  track_revived=1  track_revived[person]=1
+    L1 (trolley) owner P1  left 10.12s, alarm 13.12s
+  PASS  the annotated video was written beside the input
+  PASS  one person id and one luggage id survive the whole clip (1 / 1)
+  PASS  exactly one alarm, naming the original owner
+  FAIL  weak boxes rescued both roles (40 / None)
+  PASS  the person came back under their own id
+
+Process finished with exit code 1
