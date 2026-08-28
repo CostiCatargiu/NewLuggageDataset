@@ -1,97 +1,37 @@
-/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/test_id_stability.py
-testing: /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/inferencetrackingimprovedUpdatedorig.py  (83313 bytes, modified 2026-08-28 14:52:05)
-note: these are pinned to their defaults for the tests; your file has CONF_LUGGAGE=0.2
-
-A. basics
-  PASS  the annotated video lands beside the input -> /data/vids/AVSSS07_MEDIUmo_output.mp4
-  PASS  colour signature separates two people (self 1.00, other 0.00)
-  PASS  an unusable signature degrades to None instead of a wrong number
-
-B. an identity survives a gap in the detections
-  PASS  weak boxes keep the id alive through a 1 s partial occlusion (ids [1])
-  PASS  the track is retired, not deleted, after the TTL
-  PASS  the same person re-appearing keeps their id -> [('revived', 1)]
-  PASS  somebody else standing in that exact spot does NOT inherit the id -> [('new', 2)]
-
-D. re-binding an owner whose track was re-created
-  PASS  the owner is re-bound by colour -> P9 via appearance
-  PASS  a person who already owns another bag is never stolen
-  PASS  a bystander id that predates the owner's disappearance is refused
-  PASS  colour re-bind does not fire on a momentary drop (0.4 s)
-  PASS  ...but does once the owner is really gone (1.0 s)
-  PASS  a long-lived look-alike is still refused at that gap
-  PASS  two equally similar candidates decide nothing
-
-E. end to end: the owner is watched walking away
-  input   : /tmp/tmpgjrph727/watched.mp4  640x480 @ 25.00 fps, 700 frames
-  person  : fake.pt  classes [0]
-  luggage : fake.pt  classes [24, 26, 28]  [shared]
+/home/constantin/Doctorat/YoloLib/venv/bin/python3 /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/inferencetrackingimprovedUpdatedorig.py
+FlashAttention is not available on this device. Using scaled_dot_product_attention instead.
+  input   : /home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo.mpg  720x576 @ 29.97 fps, 1768 frames
+  person  : yolov12x.pt  classes [0]
+  luggage : yolov12x.pt  classes [24, 26, 28]  [shared]
   labels  : 24->backpack, 26->bag, 28->trolley
-  run dir : /tmp/tmpgjrph727/watched_runs/watched__p-fake__l-fake__20260828-145210
-  video   : /tmp/tmpgjrph727/watched_output.mp4
-  owner within 1.5h, away beyond 1.5h, alarm after 3s
-
-[SAVE] /tmp/tmpgjrph727/watched_output.mp4  (1000x620)
-    frame 200/700  t=8s  tracked bags=1  alarms=0
-  [ALARM] t=   13.1s  L1  owner P1  unattended since 10.1s   bag drift 0.0w   owner seen 100% of the window
-    frame 400/700  t=16s  tracked bags=1  alarms=1
-    frame 600/700  t=24s  tracked bags=1  alarms=1
-
-  700 frames, 1 alarm(s) -> /tmp/tmpgjrph727/watched_runs/watched__p-fake__l-fake__20260828-145210
-  video   : /tmp/tmpgjrph727/watched_output.mp4
-  id stability: person ids=1 (revived 1, dup spawns blocked 0, weak-box saves 40)  |  luggage ids=1 (revived 0, dup spawns blocked 0, weak-box saves 50)  |  owner re-binds 0
-  trace log: trace.jsonl  (828 records)  alarm=1  bag_summary=1  end=1  frame=700  low_conf_recovered=90  low_conf_recovered[luggage]=50  low_conf_recovered[person]=40  owner_elected=1  pair=27  run=1  state=2  track_lost=1  track_lost[person]=1  track_new=2  track_new[luggage]=1  track_new[person]=1  track_revived=1  track_revived[person]=1
-  alarm evidence (nothing below changes when an alarm fires -- it grades them):
-    bag        owner   left    alarm   bag drift   owner seen   max dist
-    L1   trolley   P1       10.1s   13.1s      0.0w       100%     2.6 h
-  PASS  the annotated video was written beside the input
-  PASS  one person id and one luggage id survive the whole clip (1 / 1)
-  PASS  exactly one alarm, naming the original owner
-  PASS  weak boxes rescued both roles (40 / 50)
-  PASS  the person came back under their own id
-  PASS  the alarm is graded as OBSERVED: drift 0.00w, owner seen 100%, reached 2.554 h
-  input   : /tmp/tmpgjrph727/lost.mp4  640x480 @ 25.00 fps, 700 frames
-  person  : fake.pt  classes [0]
-  luggage : fake.pt  classes [24, 26, 28]  [shared]
-  labels  : 24->backpack, 26->bag, 28->trolley
-  run dir : /tmp/tmpgjrph727/lost_runs/lost__p-fake__l-fake__20260828-145213
-  video   : /tmp/tmpgjrph727/lost_output.mp4
-  owner within 1.5h, away beyond 1.5h, alarm after 3s
-
-[SAVE] /tmp/tmpgjrph727/lost_output.mp4  (1000x620)
-    frame 200/700  t=8s  tracked bags=1  alarms=0
-  [ALARM] t=   13.5s  L1  owner P1  unattended since 10.5s   bag drift 0.0w   owner seen 0% of the window
-    frame 400/700  t=16s  tracked bags=1  alarms=1
-    frame 600/700  t=24s  tracked bags=1  alarms=1
-
-  700 frames, 1 alarm(s) -> /tmp/tmpgjrph727/lost_runs/lost__p-fake__l-fake__20260828-145213
-  video   : /tmp/tmpgjrph727/lost_output.mp4
-  id stability: person ids=1 (revived 0, dup spawns blocked 0, weak-box saves 40)  |  luggage ids=1 (revived 0, dup spawns blocked 0, weak-box saves 50)  |  owner re-binds 0
-  trace log: trace.jsonl  (828 records)  alarm=1  bag_summary=1  end=1  frame=700  low_conf_recovered=90  low_conf_recovered[luggage]=50  low_conf_recovered[person]=40  owner_elected=1  owner_lost=1  pair=27  run=1  state=2  track_lost=1  track_lost[person]=1  track_new=2  track_new[luggage]=1  track_new[person]=1
-  alarm evidence (nothing below changes when an alarm fires -- it grades them):
-    bag        owner   left    alarm   bag drift   owner seen   max dist
-    L1   trolley   P1       10.5s   13.5s      0.0w         0%     n/a
-  PASS  an alarm raised on a LOST owner is marked as such (seen 0%)
-
-F. end to end: the owner never leaves, the detector just loses him
-  input   : /tmp/tmp5wid2hml/stays.mp4  640x480 @ 25.00 fps, 500 frames
-  person  : fake.pt  classes [0]
-  luggage : fake.pt  classes [24, 26, 28]  [shared]
-  labels  : 24->backpack, 26->bag, 28->trolley
-  run dir : /tmp/tmp5wid2hml/stays_runs/stays__p-fake__l-fake__20260828-145216
-  video   : /tmp/tmp5wid2hml/stays_output.mp4
+  script  : /home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/inferencetrackingimprovedUpdatedorig.py
+            v2026-08-28.id-stability  84514 bytes  modified 2026-08-28 15:06:33
+  run dir : /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/_newapproach/luggagev6i/_modelsSummary/MODEL_v26/app/runs/AVSSS07_MEDIUmo__p-yolov12x__l-yolov12x__20260828-150941
+  video   : /home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo_output.mp4
   owner within 1.5h, away beyond 2.5h, alarm after 10s
 
-[SAVE] /tmp/tmp5wid2hml/stays_output.mp4  (1000x620)
-    frame 200/500  t=8s  tracked bags=1  alarms=0
-    frame 400/500  t=16s  tracked bags=1  alarms=0
+[SAVE] /home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo_output.mp4  (1080x620)
+    frame 200/1768  t=7s  tracked bags=6  alarms=0
+    frame 400/1768  t=13s  tracked bags=7  alarms=0
+    frame 600/1768  t=20s  tracked bags=7  alarms=0
+    frame 800/1768  t=27s  tracked bags=7  alarms=0
+  [ALARM] t=   31.5s  L2  owner P4  unattended since 15.3s   bag drift 6.3w   owner seen 100% of the window
+    frame 1000/1768  t=33s  tracked bags=7  alarms=1
+  [ALARM] t=   36.1s  L9  owner P1  unattended since 26.1s   bag drift 0.9w   owner seen 100% of the window
+  [ALARM] t=   36.5s  L1  owner P6  unattended since 26.5s   bag drift 2.3w   owner seen 0% of the window
+    frame 1200/1768  t=40s  tracked bags=6  alarms=3
+    frame 1400/1768  t=47s  tracked bags=5  alarms=3
+    frame 1600/1768  t=53s  tracked bags=4  alarms=3
 
-  500 frames, 0 alarm(s) -> /tmp/tmp5wid2hml/stays_runs/stays__p-fake__l-fake__20260828-145216
-  video   : /tmp/tmp5wid2hml/stays_output.mp4
-  id stability: person ids=1 (revived 1, dup spawns blocked 0, weak-box saves 0)  |  luggage ids=1 (revived 0, dup spawns blocked 0, weak-box saves 0)  |  owner re-binds 0
-  trace log: trace.jsonl  (532 records)  bag_summary=1  end=1  frame=500  owner_back=1  owner_elected=1  owner_lost=1  pair=20  run=1  state=2  track_lost=1  track_lost[person]=1  track_new=2  track_new[luggage]=1  track_new[person]=1  track_revived=1  track_revived[person]=1
-  PASS  no alarm and no id churn when the owner was there all along (0 alarm(s), 1 id(s))
-
-all checks passed
+  1768 frames, 3 alarm(s) -> /home/constantin/Doctorat/GitLuggageDataset/NewLuggageDataset/runs/_newapproach/luggagev6i/_modelsSummary/MODEL_v26/app/runs/AVSSS07_MEDIUmo__p-yolov12x__l-yolov12x__20260828-150941
+  produced by v2026-08-28.id-stability  (/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/inferencetrackingimprovedUpdatedorig.py)
+  video   : /home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo_output.mp4
+  id stability: person ids=12 (revived 5, dup spawns blocked 0, weak-box saves 804)  |  luggage ids=9 (revived 0, dup spawns blocked 134, weak-box saves 437)  |  owner re-binds 0
+  trace log: trace.jsonl  (21643 records)  alarm=3  bag_summary=4  det=11307  det[luggage]=4895  det[person]=6412  end=1  frame=1768  low_conf_recovered=1241  low_conf_recovered[luggage]=437  low_conf_recovered[person]=804  nms=327  nms[luggage]=327  owner_back=20  owner_elected=9  owner_lost=24  pair=6688  run=1  spawn_suppressed=134  spawn_suppressed[luggage]=134  state=68  track_forgotten=5  track_forgotten[person]=5  track_lost=12  track_lost[person]=12  track_merged=5  track_merged[luggage]=5  track_new=21  track_new[luggage]=9  track_new[person]=12  track_revived=5  track_revived[person]=5
+  alarm evidence (nothing below changes when an alarm fires -- it grades them):
+    bag        owner   left    alarm   bag drift   owner seen   max dist
+    L2   backpack  P4       15.3s   31.5s      6.3w       100%     8.2 h
+    L9   bag       P1       26.1s   36.1s      0.9w       100%     6.5 h
+    L1   trolley   P6       26.5s   36.5s      2.3w         0%     n/a
 
 Process finished with exit code 0
