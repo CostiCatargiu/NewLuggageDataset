@@ -53,7 +53,7 @@ from ultralytics import YOLO
 # Bumped whenever the tracking or ownership logic changes. Every run prints the file it
 # came from and records it in the log, because with several checkouts of this script around
 # the most expensive mistake is analysing results produced by a copy you did not edit.
-SCRIPT_VERSION = "2026-08-28.replayable"
+SCRIPT_VERSION = "2026-08-28.evidence"
 
 
 def script_identity():
@@ -117,14 +117,6 @@ DEVICE = "0"  # "0" GPU, or "cpu"
 D_OWN = 1.5  # must be this close to be a candidate owner
 D_AWAY = 2.5  # farther than this counts as "away"
 OWNERSHIP_SEC = 2.0  # window used to elect the owner (note 3)
-# The election takes the smallest MEAN distance, which on its own lets one lucky frame beat
-# a person who stood by the bag for a second. Measured on AVSSS07_MEDIUmo: a bag was given
-# to a passer-by seen beside it for ONE frame over the person carrying it, seen for 25.
-OWNERSHIP_MIN_VOTES = 5  # frames a candidate must be near the bag to be electable
-OWNERSHIP_MIN_VOTE_FRAC = 0.5  # ...and at least this share of the best-supported candidate
-# A person the detector never saw clearly should not be made responsible for a bag.
-OWNER_REQUIRE_STRONG = True
-OWNER_STRONG_MAX_AGE = 3.0  # seconds since the candidate's last above-threshold detection
 UNATTENDED_SECONDS = 10.0  # seconds away before the alarm fires
 OWNER_GRACE_SEC = 2.0  # owner track may vanish this long before counting as away
 MIN_PERSON_H = 20.0  # px; below this the height estimate is too noisy to divide by
@@ -169,33 +161,6 @@ REVIVE_TRUST_IOU_SEC = 1.0
 PERSON_NEW_TRACK_SUPPRESS_IOU = 0.55
 PERSON_NEW_TRACK_SUPPRESS_DIST = 0  # 0 = disabled
 PERSON_NEW_TRACK_SUPPRESS_MAX_AGE = 1.0
-
-# =========================
-# MATCHING CASCADE
-# =========================
-# A detection is offered first to the tracks confirmed most recently, and only then to
-# staler ones. In a single Hungarian round a track that has not been seen for seconds --
-# coasting on extrapolated velocity -- can outbid a track matched on every frame, and the
-# two exchange objects. Measured on AVSSS07_MEDIUmo: a bag track unconfirmed for 7.0 s
-# took the abandoned bag away from a track that had held it for 398 consecutive frames,
-# and the same bag then alarmed twice under two identities.
-MATCH_CASCADE = True
-CASCADE_TIERS = (0.25, 1.0, 3.0, 1e9)  # upper bounds, seconds since last confirmation
-
-# Matches worth explaining in the log: an old track winning, or a box teleporting.
-LOG_ASSOC = True  # one record per role per frame: who matched what, and how far it moved
-LOG_ALL_MATCHES = False  # True = one record per assignment (large, but fully replayable)
-MATCH_SUSPECT_AGE = 1.0  # seconds
-MATCH_SUSPECT_JUMP = 100  # px between the track's last box and the detection it took
-
-# A bag track that jumps this far after going quiet is almost certainly a DIFFERENT object.
-# Carrying the old owner across would let a stranger's departure alarm on a bag they never
-# touched, so the identity survives and the ownership does not.
-OWNERSHIP_RESET_MIN_AGE = 1.0  # seconds unconfirmed before a jump counts as suspicious
-OWNERSHIP_RESET_JUMP = 2.0  # multiples of the track's own box diagonal
-
-# Merging two tracks is irreversible, so one frame of overlap must not trigger it.
-MERGE_MIN_FRAMES = 5  # consecutive frames above MERGE_TRACK_IOU
 
 # =========================
 # APPEARANCE RE-IDENTIFICATION
@@ -568,8 +533,7 @@ def hungarian_match(
         match_dist_thr: float,
         class_mismatch_penalty: float = 0.0,
         use_stable_class_for_penalty: bool = False,
-        app_weight: float = 0.0,
-        role: str = ""
+        app_weight: float = 0.0
 ):
     track_ids = list(tracks.keys())
     if len(dets) == 0 or len(track_ids) == 0:
@@ -638,95 +602,9 @@ def hungarian_match(
         used_d.add(di)
         used_t.add(sid)
 
-        # Record the matches that deserve suspicion -- a stale track winning, or a box
-        # jumping -- with the runner-up, so a swap can be read off the log instead of
-        # reconstructed from screenshots.
-        if role:
-            st = tracks[sid]
-            age = now_t - st["last_seen_t"]
-            dcx, dcy = center_xyxy(dets[di]["bbox"])
-            tcx, tcy = center_xyxy(st["bbox"])
-            jump = math.hypot(dcx - tcx, dcy - tcy)
-            if LOG_ALL_MATCHES or age > MATCH_SUSPECT_AGE or jump > MATCH_SUSPECT_JUMP:
-                alt = sorted((float(cost[r, j]), track_ids[j])
-                             for j in range(len(track_ids))
-                             if j != int(c) and cost[r, j] < BIG)
-                LOG.event("match_suspect", role=role, tid=sid, age_s=round(age, 2),
-                          jump_px=round(jump, 1), cost=round(float(cost[r, c]), 3),
-                          runner_up=None if not alt else
-                          {"tid": alt[0][1], "cost": round(alt[0][0], 3)})
-
     unmatched_det = set(range(len(dets))) - used_d
     unmatched_tracks = set(track_ids) - used_t
     return matches, unmatched_det, unmatched_tracks
-
-
-def log_assoc(role, prev, dets_hi, m_hi, dets_lo, m_lo, unmatched_det, tracks, now_t):
-    """The association itself -- the one thing a detection log and a track log cannot show.
-
-    Detections are anonymous in the log and track boxes are smoothed, so without this the
-    only way to tell which detection a track took is to invert the smoothing by hand. One
-    compact record per role per frame makes any frame replayable: every detection, every
-    assignment, which pass made it, where the track came from and how far it jumped.
-    """
-    if not LOG_ASSOC:
-        return
-
-    def compact(ds):
-        return [[round(float((x["bbox"][0] + x["bbox"][2]) / 2), 1),
-                 round(float((x["bbox"][1] + x["bbox"][3]) / 2), 1),
-                 round(float(x["conf"]), 2), int(x.get("cls", 0))] for x in ds]
-
-    def rows(ms, ds, tag):
-        out = []
-        for di, sid in ms:
-            cx, cy = center_xyxy(ds[di]["bbox"])
-            src = prev.get(sid)
-            out.append({"d": di, "t": sid, "p": tag,
-                        "to": [round(cx, 1), round(cy, 1)],
-                        "from": None if src is None else [round(src[0], 1), round(src[1], 1)],
-                        "jump": None if src is None else
-                        round(math.hypot(cx - src[0], cy - src[1]), 1)})
-        return out
-
-    LOG.event("assoc", role=role, dets=compact(dets_hi), dets_weak=compact(dets_lo),
-              m=rows(m_hi, dets_hi, "hi") + rows(m_lo, dets_lo, "low"),
-              spawned_from=sorted(int(i) for i in unmatched_det),
-              coasting=sorted(sid for sid, st in tracks.items()
-                              if st["last_seen_t"] < now_t))
-
-
-def cascade_match(dets, tracks, now_t, role="", **kw):
-    """Hungarian matching in tiers of freshness: recently confirmed tracks pick first.
-
-    Each tier sees only the detections the fresher tiers did not take, so a track that has
-    been coasting can still recover its object -- but never at the expense of a track that
-    is being matched right now.
-    """
-    if not MATCH_CASCADE or not dets or not tracks:
-        return hungarian_match(dets, tracks, now_t, role=role, **kw)
-
-    remaining = list(range(len(dets)))
-    matches, unmatched_tracks = [], set()
-    lo = 0.0
-    for hi in CASCADE_TIERS:
-        tier = {sid: st for sid, st in tracks.items()
-                if lo <= now_t - st["last_seen_t"] < hi}
-        lo = hi
-        if not tier:
-            continue
-        if not remaining:
-            unmatched_tracks |= set(tier)
-            continue
-        sub = [dets[i] for i in remaining]
-        m, _, un_t = hungarian_match(sub, tier, now_t, role=role, **kw)
-        taken = set()
-        for di, sid in m:
-            matches.append((remaining[di], sid))
-            taken.add(di)
-        unmatched_tracks |= un_t
-        remaining = [g for k, g in enumerate(remaining) if k not in taken]
-    return matches, set(remaining), unmatched_tracks
 
 
 def update_tracks_with_matches(
@@ -735,8 +613,7 @@ def update_tracks_with_matches(
         smooth_alpha: float, vel_alpha: float,
         update_class: bool = False,
         num_classes: int = 0,
-        update_app: bool = True,
-        strong: bool = True
+        update_app: bool = True
 ):
     # matched updates
     for di, sid in matches:
@@ -784,8 +661,6 @@ def update_tracks_with_matches(
 
         if update_app:
             update_appearance(st, d.get("app"))
-        if strong:  # last time the detector saw this object clearly, not by inference
-            st["last_strong_t"] = now_t
 
         st["last_seen_t"] = now_t
         st["missed_s"] = 0.0
@@ -933,13 +808,7 @@ def merge_overlapping_tracks(tracks, now_t, merge_iou=0.70, max_age=0.8):
             if now_t - b["last_seen_t"] > max_age:
                 continue
 
-            overlap = iou_xyxy(a["bbox"], b["bbox"])
-            streak_a = a.setdefault("_merge_streak", {})
-            if overlap < merge_iou:
-                streak_a.pop(b_id, None)  # the overlap has to be sustained, not momentary
-                continue
-            streak_a[b_id] = streak_a.get(b_id, 0) + 1
-            if streak_a[b_id] >= MERGE_MIN_FRAMES:
+            if iou_xyxy(a["bbox"], b["bbox"]) >= merge_iou:
                 # keep the OLDER identity -- ownership belongs to the first observation
                 if a.get("first_t", 0.0) <= b.get("first_t", 0.0):
                     keep_id, drop_id = a_id, b_id
@@ -976,14 +845,9 @@ def merge_overlapping_tracks(tracks, now_t, merge_iou=0.70, max_age=0.8):
                     K["trajectory"] = deque(combined[-TRAJECTORY_MAX_POINTS:], maxlen=TRAJECTORY_MAX_POINTS)
 
                 to_delete.add(drop_id)
-                streak_a.pop(b_id, None)
 
     for sid in to_delete:
         del tracks[sid]
-    for st in tracks.values():  # never keep a streak against a track that no longer exists
-        if "_merge_streak" in st:
-            for gone in [k for k in st["_merge_streak"] if k in to_delete]:
-                del st["_merge_streak"][gone]
 
 
 # -----------------------------
@@ -1121,42 +985,6 @@ def rebind_owner(st, persons, now_t, taken_pids=frozenset()):
     return best_pid, "appearance"
 
 
-def reset_ownership_if_jumped(st, det, now_t, lid=None):
-    """A track that went quiet and reappears far away is holding a DIFFERENT object.
-
-    The identity is worth keeping -- that is what stops id churn -- but the ownership is
-    not: carrying the old owner across lets a stranger's departure raise an alarm on a bag
-    they never touched. So the track keeps its number and re-elects an owner from scratch.
-    Returns True when the ownership was torn up.
-    """
-    gap = now_t - st["last_seen_t"]
-    if gap <= OWNERSHIP_RESET_MIN_AGE:
-        return False
-    ocx, ocy = center_xyxy(st["bbox"])
-    ncx, ncy = center_xyxy(det["bbox"])
-    jump = math.hypot(ncx - ocx, ncy - ocy)
-    diag = math.hypot(st["bbox"][2] - st["bbox"][0], st["bbox"][3] - st["bbox"][1])
-    if jump <= OWNERSHIP_RESET_JUMP * max(8.0, diag):
-        return False
-
-    LOG.event("ownership_reset", role="luggage", lid=lid, gap_s=round(gap, 2),
-              jump_px=round(jump, 1), diag_px=round(diag, 1),
-              owner=st.get("owner_pid"), state=st.get("state"))
-    st["owner_pid"] = None
-    st["owner_bbox"] = None
-    st["owner_app"] = None
-    st["owner_missing_s"] = 0.0
-    st["owner_seen_t"] = -1e9
-    st["votes"] = {}
-    st["state"] = PENDING
-    st["first_t"] = now_t  # a fresh election window on the object it now holds
-    st["away_since"] = None
-    st["unattended_s"] = 0.0
-    st["away_anchor"] = None
-    st["last_near"] = True
-    return True
-
-
 def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
     """Elect an owner over a window, then follow only that person. Returns distances."""
     lid = st.get("lid")
@@ -1165,31 +993,16 @@ def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
     dists = person_heights_away(st["bbox"], persons)
 
     if st["owner_pid"] is None and st["state"] == PENDING:
-        for pid, dist_h in dists.items():
-            if dist_h > D_OWN:
-                continue
-            # a person the detector never actually saw clearly cannot be held responsible
-            if OWNER_REQUIRE_STRONG and not pmap[pid].get("strong", True):
-                continue
-            st["votes"].setdefault(pid, []).append(dist_h)
+        for pid, d in dists.items():
+            if d <= D_OWN:
+                st["votes"].setdefault(pid, []).append(d)
         if now_t - st["first_t"] >= OWNERSHIP_SEC:
             means = {p: sum(v) / len(v) for p, v in st["votes"].items()}
             if means:
-                # Nearest, but only among candidates who were actually there for a while.
-                # Without the floor, one frame at 0.5 h beats twenty-five at 0.6 h.
-                best_n = max(len(v) for v in st["votes"].values())
-                floor = max(OWNERSHIP_MIN_VOTES, OWNERSHIP_MIN_VOTE_FRAC * best_n)
-                eligible = {p: m for p, m in means.items() if len(st["votes"][p]) >= floor}
-                if eligible:
-                    owner, rule = min(eligible, key=eligible.get), "nearest-among-supported"
-                else:  # nobody cleared the bar; the most-seen candidate is the best guess
-                    owner = max(st["votes"], key=lambda p: len(st["votes"][p]))
-                    rule = "most-supported"
-                st["owner_pid"] = owner
+                st["owner_pid"] = min(means, key=means.get)
                 st["state"] = OWNED
-                LOG.event("owner_elected", lid=lid, owner=owner, rule=rule,
-                          mean_h=round(means[owner], 3), votes_n=len(st["votes"][owner]),
-                          min_votes=round(floor, 1),
+                LOG.event("owner_elected", lid=lid, owner=st["owner_pid"],
+                          mean_h=round(means[st["owner_pid"]], 3),
                           votes={str(p): [round(m, 3), len(st["votes"][p])] for p, m in means.items()},
                           window_s=OWNERSHIP_SEC)
             else:  # nobody was ever near it -- already unattended when it entered view
@@ -1583,13 +1396,9 @@ def run():
                         LOG.event("det", role="person", conf=round(float(cf), 3), bbox=bb)
                 elif LOW_CONF_RECOVERY:
                     person_dets_low.append(det)  # too weak to start a track, good enough to keep one
-                    if LOG_DETECTIONS:  # the weak pool has to be in the record too, or a
-                        LOG.event("det", role="person", conf=round(float(cf), 3),
-                                  bbox=bb, weak=True)  # frame cannot be replayed later
 
-        p_prev = {sid: center_xyxy(st["bbox"]) for sid, st in person_tracks.items()}
-        p_matches, p_unmatched_det, p_unmatched_tracks = cascade_match(
-            person_dets, person_tracks, now_t, role="person",
+        p_matches, p_unmatched_det, p_unmatched_tracks = hungarian_match(
+            person_dets, person_tracks, now_t,
             require_same_class=False,
             max_relink_age=PERSON_MAX_RELINK_AGE,
             match_iou_thr=PERSON_MATCH_IOU_THR,
@@ -1613,10 +1422,8 @@ def run():
             dt_frame=dt, now_t=now_t,
             smooth_alpha=PERSON_SMOOTH_ALPHA * LOW_CONF_SMOOTH_SCALE,
             vel_alpha=PERSON_VEL_ALPHA * LOW_CONF_SMOOTH_SCALE,
-            update_class=False, update_app=False, strong=False
+            update_class=False, update_app=False
         )
-        log_assoc("person", p_prev, person_dets, p_matches, person_dets_low, p_low,
-                  p_unmatched_det, person_tracks, now_t)
 
         # create new person tracks -- but only when this really is a new person
         for di in p_unmatched_det:
@@ -1689,17 +1496,13 @@ def run():
                 cx, cy = center_xyxy(bb)
                 persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy,
                                 "conf": st.get("conf", 0.0), "app": st.get("app"),
-                                "first_t": st.get("first_t", 0.0),
-                                "strong": now_t - st.get("last_strong_t", -1e9)
-                                <= OWNER_STRONG_MAX_AGE})
+                                "first_t": st.get("first_t", 0.0)})
             elif DRAW_PREDICTED_WHEN_MISSING and age <= PERSON_MAX_RELINK_AGE:
                 bb = predict_bbox(st, age)
                 cx, cy = center_xyxy(bb)
                 persons.append({"tid": pid, "bbox": bb, "cx": cx, "cy": cy,
                                 "conf": st.get("conf", 0.0), "app": st.get("app"),
-                                "first_t": st.get("first_t", 0.0), "pred": True,
-                                "strong": now_t - st.get("last_strong_t", -1e9)
-                                <= OWNER_STRONG_MAX_AGE})
+                                "first_t": st.get("first_t", 0.0), "pred": True})
 
         # -----------------------------
         # LUGGAGE DETS -> stable luggage tracks
@@ -1729,10 +1532,6 @@ def run():
                                   conf=round(float(cf), 3), bbox=bb)
                 elif LOW_CONF_RECOVERY:
                     luggage_dets_low.append(det)
-                    if LOG_DETECTIONS:
-                        LOG.event("det", role="luggage", cls=cid,
-                                  name=str(luggage_names.get(cid, cid)),
-                                  conf=round(float(cf), 3), bbox=bb, weak=True)
 
         # (1) class-agnostic NMS to kill duplicate boxes across classes
         n_raw = len(luggage_dets)
@@ -1742,9 +1541,8 @@ def run():
         luggage_dets_low = nms_dets_xyxy(luggage_dets_low, iou_thr=LUGGAGE_DET_NMS_IOU,
                                          class_agnostic=True)
 
-        l_prev = {sid: center_xyxy(st["bbox"]) for sid, st in luggage_tracks.items()}
-        l_matches, l_unmatched_det, l_unmatched_tracks = cascade_match(
-            luggage_dets, luggage_tracks, now_t, role="luggage",
+        l_matches, l_unmatched_det, l_unmatched_tracks = hungarian_match(
+            luggage_dets, luggage_tracks, now_t,
             require_same_class=False,  # allow cross-class relink
             max_relink_age=LUGGAGE_MAX_RELINK_AGE,
             match_iou_thr=LUGGAGE_MATCH_IOU_THR,
@@ -1753,13 +1551,6 @@ def run():
             use_stable_class_for_penalty=True,
             app_weight=W_APP
         )
-
-        # A track that went quiet and then reappears far away has almost certainly landed
-        # on a different object. Keeping its owner would let a stranger's departure alarm
-        # on a bag they never touched, so the ownership is torn up and re-elected.
-        for di, sid in l_matches:
-            if reset_ownership_if_jumped(luggage_tracks[sid], luggage_dets[di], now_t, sid):
-                alarm_manager.clear(sid)
 
         update_tracks_with_matches(
             luggage_dets, luggage_tracks, l_matches, set(),
@@ -1777,10 +1568,8 @@ def run():
             dt_frame=dt, now_t=now_t,
             smooth_alpha=LUGGAGE_SMOOTH_ALPHA * LOW_CONF_SMOOTH_SCALE,
             vel_alpha=LUGGAGE_VEL_ALPHA * LOW_CONF_SMOOTH_SCALE,
-            update_class=False, update_app=False, strong=False
+            update_class=False, update_app=False
         )
-        log_assoc("luggage", l_prev, luggage_dets, l_matches, luggage_dets_low, l_low,
-                  l_unmatched_det, luggage_tracks, now_t)
 
         # (2) create new luggage tracks but suppress duplicates
         for di in l_unmatched_det:
