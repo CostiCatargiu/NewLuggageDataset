@@ -53,7 +53,7 @@ from ultralytics import YOLO
 # Bumped whenever the tracking or ownership logic changes. Every run prints the file it
 # came from and records it in the log, because with several checkouts of this script around
 # the most expensive mistake is analysing results produced by a copy you did not edit.
-SCRIPT_VERSION = "2026-08-28.replayable"
+SCRIPT_VERSION = "2026-08-28.scale-relative"
 
 
 def script_identity():
@@ -144,7 +144,18 @@ LUGGAGE_MAX_RELINK_AGE = LUGGAGE_TTL_SECONDS
 # The matching gate widens with the time a track has been missing -- after two seconds of
 # occlusion the object is genuinely somewhere else, and a fixed radius rejects it.
 GATE_GROWTH = 0.6  # extra gate radius per second missing
-GATE_MAX_SCALE = 2.5  # ...never more than this multiple of the base radius
+GATE_MAX_SCALE = 1.5  # ...never more than this multiple of the base radius
+
+# EVERY matching radius below is relative to the object, not to the image. A flat 260 px is
+# one step for a person standing near the camera and half the platform for a handbag at the
+# far end, so a fixed radius lets a small bag's track jump to a completely different object
+# and carry its owner and its timer along. Measured on AVSSS07_MEDIUmo: bag tracks with
+# ~40 px boxes wandering 324-514 px across the scene, and 11 ownership resets in one clip.
+MATCH_DIST_DIAG = 3.0  # matching gate, in multiples of the track's own box diagonal
+MATCH_DIST_MIN_PX = 40  # ...with a floor, so a tiny box can still move at all
+LOW_MATCH_DIAG = 2.0  # the weak-box recovery pass is stricter
+SUPPRESS_DIAG = 1.5  # "this detection is already a track" is a near-overlap question
+REVIVE_DIAG = 2.5  # and so is "this is the same object coming back"
 PREDICT_MAX_SEC = 2.0  # never extrapolate a track's motion further than this
 VEL_DECAY_WHEN_MISSED = 0.90  # unmatched tracks stop drifting instead of flying off
 
@@ -454,6 +465,12 @@ def short_name(name):
     return SHORT_NAMES.get(name, name[:3])
 
 
+def scale_gate(bbox, thr_px, diag_mult, min_px):
+    """A search radius that means the same thing near the camera and at the far end."""
+    diag = math.hypot(bbox[2] - bbox[0], bbox[3] - bbox[1])
+    return min(float(thr_px), max(float(min_px), diag_mult * diag))
+
+
 def predict_bbox(st, dt_pred):
     """Constant-velocity prediction in center space."""
     x1, y1, x2, y2 = st["bbox"]
@@ -601,7 +618,8 @@ def hungarian_match(
 
             # geometry gating -- the radius widens with the time the track has been
             # missing, because an occluded object keeps moving while it is invisible
-            gate = match_dist_thr * min(1.0 + GATE_GROWTH * max(0.0, age), GATE_MAX_SCALE)
+            gate = (scale_gate(pbb, match_dist_thr, MATCH_DIST_DIAG, MATCH_DIST_MIN_PX)
+                    * min(1.0 + GATE_GROWTH * max(0.0, age), GATE_MAX_SCALE))
             if not ((iou >= match_iou_thr) or (dist <= gate)):
                 continue
 
@@ -822,7 +840,8 @@ def recover_with_low_conf(dets_lo, tracks, unmatched_ids, now_t, role="person"):
             iou = iou_xyxy(d["bbox"], pbb)
             pcx, pcy = center_xyxy(pbb)
             dist = ((dcx - pcx) ** 2 + (dcy - pcy) ** 2) ** 0.5
-            if iou < LOW_MATCH_IOU_THR and dist > LOW_MATCH_DIST_THR:
+            if iou < LOW_MATCH_IOU_THR and dist > scale_gate(
+                    pbb, LOW_MATCH_DIST_THR, LOW_MATCH_DIAG, MATCH_DIST_MIN_PX):
                 continue
             sim = appearance_sim(d.get("app"), st.get("app"))
             if sim is not None and sim < APP_MIN_SIM_RELINK:
@@ -874,7 +893,8 @@ def should_spawn_new_track(det, tracks, now_t,
 
         if suppress_iou > 0 and iou >= suppress_iou:
             return False
-        if suppress_dist > 0 and dist <= suppress_dist:
+        if suppress_dist > 0 and dist <= scale_gate(
+                pbb, suppress_dist, SUPPRESS_DIAG, MATCH_DIST_MIN_PX):
             return False
     return True
 
@@ -897,7 +917,8 @@ def revive_from_memory(det, retired, now_t, memory_sec, revive_iou, revive_dist,
         iou = iou_xyxy(det["bbox"], st["bbox"])
         sx, sy = bottom_center(st["bbox"])
         dist = math.hypot(dbx - sx, dby - sy)
-        max_dist = revive_dist * (1.0 + REVIVE_DIST_GROWTH * gap)
+        max_dist = (scale_gate(st["bbox"], revive_dist, REVIVE_DIAG, MATCH_DIST_MIN_PX)
+                    * (1.0 + REVIVE_DIST_GROWTH * gap))
         if iou < revive_iou and dist > max_dist:
             continue
         sim = appearance_sim(det.get("app"), st.get("app"))

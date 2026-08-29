@@ -48,6 +48,8 @@ _spec.loader.exec_module(M)
 # most likely reason for a red run.
 _REQUIRED = ["output_video_path", "appearance_of", "appearance_sim", "update_appearance",
              "recover_with_low_conf", "revive_from_memory", "away_evidence", "SCRIPT_VERSION",
+             "cascade_match", "reset_ownership_if_jumped", "OWNERSHIP_MIN_VOTES",
+             "scale_gate", "MATCH_DIST_DIAG",
              "OWNER_REBIND_NEWBORN_SLACK", "PERSON_MEMORY_SEC", "LOW_CONF_RECOVERY"]
 _missing = [a for a in _REQUIRED if not hasattr(M, a)]
 if _missing:
@@ -64,6 +66,11 @@ PINNED = dict(
     OWNER_REBIND_SEC=3.0, OWNER_REBIND_IOU=0.40, OWNER_REBIND_BY_APPEARANCE=True,
     OWNER_REBIND_MIN_GAP=0.5, OWNER_REBIND_APP_SEC=5.0, OWNER_REBIND_MIN_SIM=0.80,
     OWNER_REBIND_SIM_MARGIN=0.05, OWNER_REBIND_MAX_H=2.0, OWNER_REBIND_NEWBORN_SLACK=0.5,
+    MATCH_CASCADE=True, OWNERSHIP_MIN_VOTES=5, OWNERSHIP_MIN_VOTE_FRAC=0.5,
+    OWNER_REQUIRE_STRONG=True, OWNER_STRONG_MAX_AGE=3.0, MERGE_MIN_FRAMES=5,
+    OWNERSHIP_RESET_MIN_AGE=1.0, OWNERSHIP_RESET_JUMP=2.0, D_AWAY=2.5,
+    MATCH_DIST_DIAG=3.0, MATCH_DIST_MIN_PX=40, LOW_MATCH_DIAG=2.0,
+    SUPPRESS_DIAG=1.5, REVIVE_DIAG=2.5, GATE_MAX_SCALE=1.5,
     APP_MIN_SIM_REVIVE=0.35, D_OWN=1.5, OWNERSHIP_SEC=2.0, OWNER_GRACE_SEC=2.0,
 )
 _differs = {k: getattr(M, k) for k, v in PINNED.items() if getattr(M, k) != v}
@@ -189,6 +196,124 @@ impostor = {"bbox": np.array(RED_BOX, float), "conf": 0.9, "cls": 0,
 out = step([impostor], [], tracks2, retired2, t2)
 ok(out and out[0][0] == "new",
    "somebody else standing in that exact spot does NOT inherit the id -> %s" % out)
+
+
+# =============================================================================
+# GROUP C -- the AVSSS07_MEDIUmo track theft, election and merge failures
+# =============================================================================
+print("\nC. a stale track must not take a live track's object")
+
+# Two dark objects on a light floor: their colour signatures are nearly identical, which
+# is exactly the case where geometry has to decide and the cascade has to hold the line.
+SCENE = np.full((576, 720, 3), 200, np.uint8)
+cv2.rectangle(SCENE, (298, 148), (335, 173), (40, 38, 45), -1)   # the abandoned bag
+cv2.rectangle(SCENE, (280, 56), (308, 89), (44, 40, 42), -1)     # a noise blob above it
+cv2.rectangle(SCENE, (557, 146), (574, 181), (42, 41, 47), -1)   # where the stale track sat
+BAG = [298, 148, 335, 173]
+NOISE = [280, 56, 308, 89]
+STALE = [557, 146, 574, 181]
+
+
+def ltrack(bbox, last_seen, first_t=0.0):
+    return {"bbox": np.array(bbox, float), "conf": 0.4, "cls": 2, "cls_stable": 2,
+            "first_t": first_t, "last_seen_t": last_seen, "missed_s": 0.0,
+            "vx": 0.0, "vy": 0.0, "app": M.appearance_of(SCENE, bbox, "luggage")}
+
+
+def ldet(bbox, conf=0.4):
+    return {"bbox": np.array(bbox, float), "conf": conf, "cls": 2,
+            "app": M.appearance_of(SCENE, bbox, "luggage")}
+
+
+NOW = 31.6
+LKW = dict(require_same_class=False, max_relink_age=M.LUGGAGE_MAX_RELINK_AGE,
+           match_iou_thr=M.LUGGAGE_MATCH_IOU_THR, match_dist_thr=M.LUGGAGE_MATCH_DIST_THR,
+           class_mismatch_penalty=M.CLASS_MISMATCH_PENALTY,
+           use_stable_class_for_penalty=True, app_weight=M.W_APP)
+
+# L1 has been matched on the bag every frame; L2 has not been confirmed for 7 s.
+tracks = {1: ltrack(BAG, NOW - 0.03), 2: ltrack(STALE, NOW - 7.04)}
+dets = [ldet(BAG), ldet(NOISE, 0.22)]
+m, un_d, un_t = M.cascade_match(dets, tracks, NOW, role="luggage", **LKW)
+got = dict((sid, di) for di, sid in m)
+ok(got.get(1) == 0, "the continuously-matched track keeps the bag -> L1 took det %s" % got.get(1))
+ok(got.get(2) != 0, "the 7-second-stale track does not take it -> L2 took det %s" % got.get(2))
+
+# the cascade must not starve a stale track of its OWN object when nobody else wants it
+tracks = {2: ltrack(STALE, NOW - 7.04)}
+back = M.appearance_of(SCENE, [575, 150, 592, 185], "luggage")
+m, _, _ = M.cascade_match([{"bbox": np.array([575, 150, 592, 185], float), "conf": 0.4,
+                            "cls": 2, "app": back}], tracks, NOW, role="luggage", **LKW)
+ok(m == [(0, 2)], "a stale track still recovers its own object nearby -> %s" % m)
+
+print("\nC1b. a matching radius must mean the same thing at both ends of the platform")
+# The failure that dominated run 6: 40 px bag boxes wandering 324-514 px across the scene,
+# because a flat 260 px radius is one step for a person and half the hall for a handbag.
+one = {1: ltrack(BAG, NOW - 2.0)}                       # box diagonal ~45 px
+m, un_d, _ = M.cascade_match([ldet(STALE)], one, NOW, role="luggage", **LKW)
+ok(m == [] and un_d == {0},
+   "a 45 px bag cannot claim a detection 249 px away -> %s" % m)
+m, _, _ = M.cascade_match([ldet([300, 152, 337, 177])], one, NOW, role="luggage", **LKW)
+ok(m == [(0, 1)], "...but it still matches its own object after the same gap -> %s" % m)
+tall = {1: {"bbox": np.array([100, 100, 300, 560], float), "conf": .9, "cls": 0,
+            "cls_stable": 0, "first_t": 0., "last_seen_t": NOW - 0.5, "missed_s": 0.,
+            "vx": 0., "vy": 0., "app": None}}
+m, _, _ = M.cascade_match([{"bbox": np.array([230, 100, 430, 560], float), "conf": .9,
+                            "cls": 0, "app": None}], tall, NOW, role="person",
+                          **dict(LKW, match_dist_thr=M.PERSON_MATCH_DIST_THR))
+ok(m == [(0, 1)], "a person-sized box still matches across a 130 px step -> %s" % m)
+
+print("\nC2. ownership is re-elected when a track lands on a different object")
+st = {"bbox": np.array(STALE, float), "last_seen_t": NOW - 7.04, "owner_pid": 4,
+      "state": M.ALARM, "votes": {4: [0.4]}, "first_t": 2.0, "away_since": 15.3,
+      "unattended_s": 16.2, "owner_missing_s": 5.0, "owner_bbox": np.array(STALE, float),
+      "owner_seen_t": 24.4, "away_anchor": (565.0, 181.0)}
+ok(M.reset_ownership_if_jumped(st, ldet(BAG), NOW, 2) is True
+   and st["owner_pid"] is None and st["state"] == M.PENDING and st["away_since"] is None,
+   "a 249 px jump after 7 s quiet tears up the ownership (owner=%s state=%s)"
+   % (st["owner_pid"], st["state"]))
+st2 = {"bbox": np.array(BAG, float), "last_seen_t": NOW - 0.03, "owner_pid": 6,
+       "state": M.OWNED, "votes": {}, "first_t": 0.0, "away_since": None,
+       "unattended_s": 0.0, "owner_missing_s": 0.0, "owner_bbox": None,
+       "owner_seen_t": NOW, "away_anchor": None}
+ok(M.reset_ownership_if_jumped(st2, ldet(BAG), NOW, 1) is False and st2["owner_pid"] == 6,
+   "a track matched where it already was keeps its owner")
+
+print("\nC3. one lucky frame must not win ownership")
+bag = {"lid": 9, "state": M.PENDING, "owner_pid": None, "first_t": 13.55,
+       "bbox": np.array([320, 326, 357, 395], float),
+       "votes": {1: [0.517], 10: [0.623] * 25},
+       "owner_missing_s": 0.0, "away_since": None, "unattended_s": 0.0,
+       "owner_bbox": None, "owner_seen_t": -1e9, "last_near": True}
+M.update_ownership(bag, [], 15.6, 1 / 29.97)
+ok(bag["owner_pid"] == 10,
+   "the bag goes to the person seen beside it 25 times, not the one seen once -> P%s"
+   % bag["owner_pid"])
+
+print("\nC4. a person the detector never saw clearly cannot own a bag")
+bag = {"lid": 5, "state": M.PENDING, "owner_pid": None, "first_t": 0.0,
+       "bbox": np.array([300, 300, 340, 345], float), "votes": {},
+       "owner_missing_s": 0.0, "away_since": None, "unattended_s": 0.0,
+       "owner_bbox": None, "owner_seen_t": -1e9, "last_near": True}
+phantom = {"tid": 1, "bbox": np.array([300, 200, 340, 345], float), "app": None,
+           "first_t": 0.0, "strong": False}
+solid = {"tid": 2, "bbox": np.array([250, 200, 290, 345], float), "app": None,
+         "first_t": 0.0, "strong": True}
+for k in range(70):
+    M.update_ownership(bag, [phantom, solid], k / 29.97, 1 / 29.97)
+ok(bag["owner_pid"] == 2,
+   "the phantom is skipped and the confirmed person is elected -> P%s" % bag["owner_pid"])
+
+print("\nC5. a single frame of overlap must not merge two tracks")
+a, b = ltrack(BAG, NOW), ltrack([300, 150, 337, 175], NOW)
+tt = {1: a, 2: b}
+M.merge_overlapping_tracks(tt, NOW, merge_iou=M.MERGE_TRACK_IOU, max_age=M.MERGE_TRACK_MAX_AGE)
+ok(len(tt) == 2, "still two tracks after one overlapping frame (%d)" % len(tt))
+for _ in range(M.MERGE_MIN_FRAMES):
+    M.merge_overlapping_tracks(tt, NOW, merge_iou=M.MERGE_TRACK_IOU,
+                               max_age=M.MERGE_TRACK_MAX_AGE)
+ok(len(tt) == 1, "merged once the overlap has held for %d frames (%d)"
+   % (M.MERGE_MIN_FRAMES, len(tt)))
 
 
 # =============================================================================
