@@ -1,11 +1,11 @@
 <!-- =======================================================
 🚨 Real-Time Abandoned Luggage Detection (YOLOv12 + Spatio-Temporal)
 ======================================================= -->
-
-<img width="720" height="413" alt="AVSSS07_MEDIUmo_output_gif" src="https://github.com/user-attachments/assets/e13235ef-b18c-4dce-9581-bafa0a2a11c4" />
-<img width="720" height="446" alt="video1o_output_gif" src="https://github.com/user-attachments/assets/2055d337-f103-4d03-8238-9dbe1b9a0dfe" />
-<img width="720" height="413" alt="AVSSS07_EASYo_output_gif" src="https://github.com/user-attachments/assets/0b9a794e-43f8-4bee-aef4-17c6908df486" />
-
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/e13235ef-b18c-4dce-9581-bafa0a2a11c4" width="250" />
+  <img src="https://github.com/user-attachments/assets/2055d337-f103-4d03-8238-9dbe1b9a0dfe" width="250" />
+  <img src="https://github.com/user-attachments/assets/0b9a794e-43f8-4bee-aef4-17c6908df486" width="250" />
+</p>
 
 <div align="center">
 
