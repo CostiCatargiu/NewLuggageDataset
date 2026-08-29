@@ -2,6 +2,9 @@
 🚨 Real-Time Abandoned Luggage Detection (YOLOv12 + Spatio-Temporal)
 ======================================================= -->
 
+<img width="500" height="310" alt="video1outgif" src="https://github.com/user-attachments/assets/f56fd74d-4ea9-40c8-98db-bde17060a0e5" />
+
+
 <div align="center">
 
 # 🚨 Real-Time Abandoned Luggage Detection  
