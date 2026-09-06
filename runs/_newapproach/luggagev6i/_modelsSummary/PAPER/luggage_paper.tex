@@ -1,0 +1,1672 @@
+% =====================================================================
+%  Unattended-luggage detection: dataset, detector study, pipeline
+%  Two-column, IEEE-like layout built on stock `article` so it compiles
+%  anywhere. Swap the preamble for \documentclass{ieeeaccess} on submission.
+% =====================================================================
+\documentclass[10pt,twocolumn,a4paper]{article}
+
+\usepackage[margin=0.72in,columnsep=0.26in]{geometry}
+\usepackage{mathptmx}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{nicefrac}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{balance}
+\usepackage{cite}
+\usepackage{stfloats}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{arrows,positioning,calc,shapes.geometric,fit,backgrounds}
+
+% --- print-safe muted palette for the pipeline figure -------------------
+\definecolor{cTeal}{RGB}{ 61,154,139}
+\definecolor{cTealBg}{RGB}{228,242,239}
+\definecolor{cPurp}{RGB}{106, 79,191}
+\definecolor{cPurpBg}{RGB}{234,230,248}
+\definecolor{cAmb}{RGB}{191,134, 42}
+\definecolor{cAmbBg}{RGB}{250,240,222}
+\definecolor{cCor}{RGB}{200, 84, 57}
+\definecolor{cCorBg}{RGB}{250,231,225}
+\definecolor{cBlu}{RGB}{ 40,105,170}
+\definecolor{cBluBg}{RGB}{226,237,247}
+\definecolor{cGry}{RGB}{110,115,122}
+\definecolor{cGryBg}{RGB}{240,241,243}
+
+\tikzset{
+  blk/.style   ={draw=cGry,fill=cGryBg,rounded corners=2.2pt,inner sep=3.4pt,
+                 align=center,font=\scriptsize,minimum height=8.2mm},
+  teal/.style  ={blk,draw=cTeal,fill=cTealBg},
+  purp/.style  ={blk,draw=cPurp,fill=cPurpBg},
+  amb/.style   ={blk,draw=cAmb, fill=cAmbBg},
+  cor/.style   ={blk,draw=cCor, fill=cCorBg},
+  blu/.style   ={blk,draw=cBlu, fill=cBluBg},
+  fl/.style    ={->,>=stealth,draw=cGry,line width=0.45pt},
+  flb/.style   ={->,>=stealth,draw=cGry,line width=0.45pt,dashed},
+  lbl/.style   ={font=\scriptsize\itshape,text=cGry,align=center},
+}
+
+% ---------------------------------------------------------------------
+% FIGURE SOURCE SWITCH
+%   \figpngfalse  -> figures drawn inline as TikZ (vector; use for submission)
+%   \figpngtrue   -> figures included from fig1.png / fig2.png
+% Regenerate the PNGs with:  make_figs.sh
+% ---------------------------------------------------------------------
+\newif\iffigpng
+\figpngfalse
+
+\captionsetup[table]{font=small,labelfont=bf,skip=4pt}
+\captionsetup[figure]{font=small,labelfont=bf,skip=4pt}
+\titleformat{\section}{\normalfont\large\bfseries}{\Roman{section}.}{0.6em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\Alph{subsection}.}{0.6em}{}
+\renewcommand{\thesection}{\Roman{section}}
+\renewcommand{\thesubsection}{\Alph{subsection}}
+\setlength{\parskip}{0pt}
+\setlength{\textfloatsep}{10pt}
+\newcommand{\ie}{i.e.,\ }
+\newcommand{\eg}{e.g.,\ }
+
+% ---------------------------------------------------------------------
+\begin{document}
+
+\twocolumn[
+\begin{@twocolumnfalse}
+\begin{center}
+{\LARGE\bfseries Small-Object Luggage Detection with YOLOv12 and YOLO26:\\[2pt]
+A New Annotated Benchmark and Detector-Specific\\[2pt]
+Loss and Architecture Improvements\par}
+\vspace{10pt}
+{\large Constantin Catargiu\par}
+\vspace{4pt}
+{\small Faculty of Electronics, Telecommunications and Information Technology,\\
+Gheorghe Asachi Technical University of Ia\c{s}i, 700506 Ia\c{s}i, Romania\\
+\texttt{constantin.catargiu95@gmail.com}\par}
+\vspace{14pt}
+\end{center}
+
+\begin{abstract}
+\noindent\small
+Unattended-luggage detection in public spaces is limited less by event logic than
+by the detector underneath it: in bird's-eye surveillance imagery almost every
+piece of luggage is a small object. Progress on this bottleneck is hard to
+measure because the field's benchmarks are small, unannotated, or no longer
+distributable. We address this on three fronts. First, we introduce
+\textbf{LuggageDataset~v6i}, a fully annotated detection benchmark of
+\textbf{12{,}184 images and 57{,}814 luggage instances} across three classes
+(backpack, bag, trolley), which provides roughly \textbf{21$\times$ the luggage
+annotations} of the largest previously available annotated in-domain set. Second,
+we improve both detectors, each along a loss axis and an architectural axis
+developed for it: a curriculum area-weighted regression loss and a
+level-specialised four-scale head for YOLOv12, and a flattened task-alignment
+exponent with a reallocated three-scale head for YOLO26. Against a measured seed
+noise floor of \textbf{0.428~mAP} and a \textbf{$-$0.55} selection-bias
+regression on repeated maxima, the combined configurations gain
+\textbf{$+$2.38\%} small-object mAP$_{50}$ on YOLO26 at $n{=}3$ seeds and
+\textbf{$+$1.97\%} on YOLOv12, with F1 up $3.07\%$ and $1.92\%$ on small
+objects. These come from a controlled study of \textbf{226 training runs} in
+which every mechanism is verified live at training time and every
+pretrained-weight transfer is measured rather than presumed. Third, we compare
+the two detectors directly by applying each one's winning mechanisms to the
+other on identical data, and find that \emph{nothing transfers in either
+direction}: all four cross-model transfers are nulls on the primary metric, and
+both the depth optimum and the ``vestigial coarse level'' finding invert. We
+trace each failure to an implementation detail the configuration surface hides
+--- the presence of a distributional box loss, the presence of NMS, and whether
+a deepened branch propagates or terminates --- and show that the two axes are
+additionally \textbf{sub-additive}, delivering only $46$--$81\%$ of the sum of
+their separate effects. A diagnostic decomposition explains the ceiling: across all runs
+$\mathrm{AR}_{50}^{small}\!\approx\!0.95$ while $\mathrm{R}_{50}^{small}\!\approx\!0.70$,
+and true proposal failure is only \textbf{2.7--5.5\%}. The correct detections
+exist and are ranked too low, so the binding constraint is \emph{confidence
+ranking}, not proposal generation or anchor assignment---a conclusion we support
+with an anchor-footprint analysis showing that standard task-aligned assignment
+already converts \textbf{60\% of a small object's entire candidate pool} into
+positives, against 1.5\% for a large object. Finally, we describe an
+unattended-luggage pipeline that pairs each luggage track with an owner using
+scale-normalised ground-plane proximity and raises an alarm when the owner
+remains outside a distance threshold beyond a dwell time. We release the dataset,
+the training and evaluation code, and the complete run log.
+\end{abstract}
+
+\vspace{6pt}
+\noindent\small\textbf{Index Terms}---abandoned luggage, unattended object
+detection, small-object detection, video surveillance, YOLO, label assignment,
+benchmark dataset.
+\vspace{16pt}
+\end{@twocolumnfalse}
+]
+
+% =====================================================================
+\section{Introduction}
+% =====================================================================
+
+\noindent
+An item of luggage left unattended in an airport concourse, a railway station, or
+a metro platform is both a security concern and an operational one. Manual
+monitoring does not scale: an operator watching dozens of feeds cannot sustain
+the attention that reliable detection requires, and the literature has pursued
+automation of this task for two decades \cite{pets2006overview}.
+
+The problem is conventionally decomposed into three stages: detect candidate
+luggage, associate each item with an owner, and decide when the separation
+between them constitutes abandonment. The third stage has been standardised since
+the PETS~2006 challenge, which defined luggage as \emph{unattended} once its
+owner passes a distance $b$ from it, and \emph{abandoned} after $t$ consecutive
+seconds without re-attendance \cite{pets2006overview}. Twenty years later the
+majority of published systems still use that rule with only minor edits.
+
+What has \emph{not} been solved is the first stage. In fixed-camera surveillance
+footage the camera is mounted high and looks down, so luggage occupies a small
+fraction of the frame. Vr\v{s}alovi\'{c} et al.\ report that their bird's-eye CCTV
+corpus contains \emph{zero} large objects under the COCO size convention
+\cite{vrsalovic2025sensors}, and that COCO-pretrained detectors collapse to
+1.1--4.2\% mAP@0.5 on such imagery before fine-tuning. Every downstream stage
+inherits this: an ownership rule cannot associate a bag that was never detected,
+and a dwell timer cannot run on a track that does not exist.
+
+Three obstacles have made this bottleneck hard to attack.
+
+\textbf{The benchmarks are inadequate.} PETS~2006 and i-LIDS AVSS~2007 comprise
+seven and three sequences respectively and are no longer reliably distributable.
+ABODA, the de facto modern benchmark, ships \emph{without annotations}, so every
+paper evaluates against labels it produced itself and cross-paper comparison is
+indicative at best. IITP20 is larger but provides no frame-level ground truth and
+has documented semantic labelling errors \cite{vrsalovic2025picom}. The largest
+annotated in-domain set we are aware of contains 2{,}760 luggage annotations
+derived from roughly 300 distinct source images.
+
+\textbf{The evaluation practice is fragmented.} Reported metrics across the
+literature include event-level true/false positives, alarm-time error in seconds,
+frame-level and pixel-level precision/recall, and unqualified ``accuracy''. Alarm
+thresholds range from 5~s to 60~s and IoU thresholds from 0.2 to 0.5. Detection
+area is sometimes silently restricted to a sub-region of the scene.
+
+\textbf{Improvements are reported without a noise floor.} To our knowledge exactly
+one study in this literature reports run-to-run variance \cite{smith2006pets}. In
+a field where recent claimed gains are frequently below one mAP point, an
+unreported variance of comparable magnitude makes many published rankings
+unfalsifiable. One representative modern system reports 85.7\% precision for its
+selected model while its own random-grouping study spans 71--75\% across
+retrainings \cite{zhou2024sao}.
+
+\subsection{Contributions}
+
+\begin{enumerate}[leftmargin=1.2em,itemsep=2pt,topsep=3pt]
+\item \textbf{LuggageDataset~v6i}, a fully annotated luggage-detection benchmark:
+12{,}184 images, 57{,}814 instances, three classes, a fixed 75/15/10 split, and a
+complete statistical characterisation (Section~\ref{sec:dataset}). It provides
+approximately 21$\times$ the luggage annotations of the largest annotated
+in-domain alternative, at finer class granularity.
+
+\item \textbf{A controlled detector study of 226 runs} across YOLOv12 and YOLO26,
+covering fourteen loss and label-assignment mechanisms and a systematic
+architectural sweep, each with its mechanism verified live at training time
+rather than assumed from configuration, and each pretrained-weight transfer
+measured rather than presumed.
+
+\item \textbf{An empirical noise floor of 0.428~mAP} (thirteen seed groups,
+$\mathrm{df}=12$) together with a measured \textbf{selection bias of $-0.55$}
+across seven repeated round maxima. Scored against these, no \emph{loss}
+mechanism clears the floor reliably, whereas the architectural axis does. We
+report the null as a result rather than a failure.
+
+\item \textbf{A decomposition of the two axes.} The loss axis is a precision
+mechanism ($+3.63\%$ precision, $-4.44\%$ small-object recall ceiling) and the
+architecture axis a recall mechanism ($+2.51\%$ recall, recall ceiling intact).
+The two are \emph{sub-additive}, delivering $46$--$81\%$ of the sum of their
+separate effects, which bounds what stacking mechanisms can achieve on this task.
+
+\item \textbf{A bidirectional transfer test.} We apply each detector's winning
+mechanisms to the other on identical data. Neither transfers: the YOLOv12
+mechanism is a null on YOLO26, and the YOLO26 configuration loses $20$ of $24$
+matched-batch comparisons on YOLOv12, with the depth optimum and the
+vestigial-level finding both inverting. Mechanism \emph{signatures} transfer;
+net benefits do not.
+
+\item \textbf{A diagnosis of the small-object bottleneck.} Recall at the operating
+threshold trails achievable recall by roughly 25 percentage points while true
+proposal failure remains at 2.7--5.5\%. An anchor-footprint analysis shows that a
+large object commands 51$\times$ the candidate-anchor supply of a small one, and
+that standard assignment already converts 60\% of a small object's pool into
+positives---so the mechanism family that dominates recent small-object work has
+very little headroom left to exploit.
+
+\item \textbf{An unattended-luggage pipeline} built on the fine-tuned detector,
+using a scale-normalised ownership radius, windowed owner assignment, and an
+occlusion-aware dwell timer.
+\end{enumerate}
+
+The remainder of the paper is organised as follows. Section~\ref{sec:related}
+reviews the literature by methodological era and catalogues the available public
+datasets. Section~\ref{sec:dataset} presents LuggageDataset~v6i.
+Section~\ref{sec:method} describes the detector study and the unattended-luggage
+pipeline. Sections~\ref{sec:results} and \ref{sec:discussion} report and discuss
+results.
+
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+% =====================================================================
+
+\noindent
+We organise two decades of work into five methodological eras, then summarise the
+public datasets and the failure modes that recur throughout.
+
+\subsection{Era 1: Geometry and Tracking (2006)}
+
+The PETS~2006 workshop established both the benchmark and the operational
+definition still in use \cite{pets2006overview}. Seven multi-camera sequences were
+recorded at Victoria Station, London, with Tsai calibration and XML ground truth
+specifying warning and alarm trigger frames. The accompanying rule set defines
+ownership by physical contact, an \emph{unattended} state beyond $b=3$~m, and an
+\emph{abandoned} state after $t=30$~s.
+
+The eight workshop papers explored complementary strategies that later work
+repeatedly rediscovers. Auvinet et al.\ fused four camera views into a ground
+orthoimage by direct homography and detected an object separating from a person as
+a spatio-temporal fork. Mart\'{i}nez-del-Rinc\'{o}n et al.\ introduced double
+background subtraction with a multi-camera unscented Kalman filter, and argued
+explicitly against tracking every individual. Krahnstoever et al.\ separated local
+per-view detection from central ground-plane tracking and achieved two 720$\times$576
+streams at 15~fps on a single core; their sole false alarm---a seated man reading a
+magazine whose arm movements spawned spurious detections---remains one of the most
+instructive results in the corpus. Smith et al.\ applied trans-dimensional RJMCMC
+tracking and are, to our knowledge, the only group of the era to report multi-run
+means \cite{smith2006pets}. Lv et al.\ combined a blob tracker with a boosted
+edgelet human detector and performed event recognition by Bayesian inference over
+trajectories; their ablation on the contextual rule showed that removing drop-off
+filtering floods the system with false alarms. Li et al.\ deployed a
+finite-state-machine system continuously for three months at 176$\times$144
+resolution. Guler and Farrow introduced a per-pixel stationary-object confidence
+image that survives full occlusion by a moving crowd.
+
+\subsection{Era 2: Classical Maturity (2008--2017)}
+
+This period refined the low-level machinery. Liao et al.\ and Chang et al.\
+introduced foreground-mask sampling---intersecting six masks over 30~s---which is
+appearance-free and therefore indifferent to object shape, colour, and viewing
+angle. Beleznai et al.\ used trinocular stereo depth, obtaining recall of 1.00 on
+all six of their sequences and demonstrating that depth removes the shadow and
+illumination failure modes outright. Dahi et al.\ moved background modelling from
+intensities to \emph{edges}, arguing that contours rarely overlap between moving
+objects and that hysteresis thresholding tolerates partial occlusion; they report
+$P=R=F_1=1.0$ on both PETS~2006 and AVSS~2007 over the whole scene at 18--108~fps
+\cite{dahi2017}.
+
+\subsection{Era 3: Deep Learning Arrives (2018--2020)}
+
+Early deep methods bolted a CNN onto an unchanged background-subtraction front
+end. Altunay et al.\ passed dual-foreground proposals to Faster R-CNN. Smeureanu
+and Ionescu used a cascade of two GoogLeNets and, notably, generated
+\emph{scene-specific synthetic training samples} by superimposing template luggage
+onto the estimated background of the target scene---worth approximately
+$+10$~$F_1$ over internet-sourced training data \cite{smeureanu2018}. Dogariu et
+al.\ shared Mask R-CNN features across detection and person re-identification.
+
+\subsection{Era 4: Purpose-Built Architectures (2022--2024)}
+
+Kim et al.\ reframed the task as \emph{hand-luggage} detection, fusing OpenPose
+keypoints with SSD through Gaussian confidence reweighting and replacing metric
+calibration with an owner-width-relative distance rule. Zhou and Xu proposed
+SAO-YOLO, whose feature pyramid moves the detection heads down two octaves and
+truncates the backbone \cite{zhou2024sao}. Their ablation is directly relevant to
+our own architectural results: replacing the stride-32 head with a stride-4 head
+yields $+4.9$~mAP@0.5, a further shift down yields $+2.6$, and the subsequent
+pruning contributes $+0.7$ while removing 5.6~M parameters. The reduction in model
+size is therefore a consequence of shifting the pyramid, not the source of the
+accuracy gain.
+
+\subsection{Era 5: Domain Adaptation and Foundation Models (2025--2026)}
+
+The most actionable recent result is quantified domain shift.
+Vr\v{s}alovi\'{c} et al.\ measured COCO-pretrained YOLOv8 and YOLOv11 variants at
+1.1--4.2\% mAP@0.5 on bird's-eye CCTV, rising to 86.4\% after fine-tuning on
+roughly 470 in-domain images \cite{vrsalovic2025sensors}. Two secondary findings
+matter for detector selection: the \emph{small} variant outperformed every larger
+one on small objects, and DETR trailed the fine-tuned YOLO models by approximately
+40~mAP points at a quarter of the speed. A companion paper audited IITP20, found
+systematic semantic errors---luggage placed in designated storage areas labelled
+as abandoned, and group-separation scenarios treated as abandonment---re-derived
+the ground truth, and replaced the fixed pixel radius with a monocular metric
+depth estimate \cite{vrsalovic2025picom}. Open-vocabulary approaches have been
+evaluated but degrade asymmetrically: Grounding DINO achieves near-perfect $F_1$
+on the \texttt{person} prompt and 30--58\% on \texttt{bag}.
+
+\subsection{Public Datasets}
+
+Table~\ref{tab:datasets} summarises the benchmarks used across this literature.
+The pattern is consistent: the historically standard sets are small and now
+difficult to obtain, the largest modern set lacks frame-level ground truth, and
+the best-annotated in-domain set is small and contains no large objects.
+
+\begin{table*}[t]
+\centering
+\caption{Public datasets used in the unattended-luggage literature.
+$\checkmark$ = public and obtainable; $\triangle$ = public but degraded or hard to
+obtain. ``Events'' indicates frame-level abandonment ground truth.}
+\label{tab:datasets}
+\footnotesize
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}l l r l c l@{}}
+\toprule
+\textbf{Dataset} & \textbf{Content} & \textbf{Size} & \textbf{Annotations} & \textbf{Events} & \textbf{Availability} \\
+\midrule
+PETS 2006 & Railway station, 4 views & 7 seq. & Trigger frames + calibration & yes & $\triangle$ host dead \\
+i-LIDS AVSS 2007 & Metro platform, 1 view & 3 seq. & One event per sequence & yes & $\triangle$ 3 of 8 clips \\
+PETS 2007 & Airport, loitering/theft & 2 scen. & Trigger frames & yes & $\checkmark$ partial \\
+ABODA & Indoor/outdoor/night/light-switch & 11 vid. & \textbf{none} & yes & $\checkmark$ GitHub \\
+IITP20 & 58 videos, 3 difficulty tiers & 58 vid. & Folder-level only & no & $\checkmark$ label errors \\
+CCTV-KD & Airport + walkway, bird's-eye & $\sim$300 img. & 2{,}760 luggage / 6{,}414 person & no & $\checkmark$ GitHub+Roboflow \\
+\midrule
+\textbf{LuggageDataset v6i (ours)} & Fixed-camera public spaces & \textbf{12{,}184 img.} & \textbf{57{,}814 luggage, 3 classes} & no & $\checkmark$ released \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Recurring Failure Modes and Open Gaps}
+
+Four failure modes recur across all five eras. \emph{Crowding} is universal and
+explicitly unsolved. \emph{Long-duration stationary people} generate false alarms
+that motivated dedicated staticness and motion-history cues. \emph{Small objects}
+are the dominant modern bottleneck. \emph{Owner misidentification} is named as the
+missing piece by three independent groups.
+
+The gaps most relevant to this work are the absence of a large properly annotated
+public benchmark---described in recent work as the field's single biggest
+gap---and the absence of a standardised evaluation protocol. Our dataset addresses
+the former directly; our reporting of a measured noise floor is a partial response
+to the latter.
+
+% =====================================================================
+\section{The LuggageDataset v6i Benchmark}
+\label{sec:dataset}
+% =====================================================================
+
+\subsection{Composition}
+
+LuggageDataset~v6i contains \textbf{12{,}184 images} and \textbf{57{,}814
+annotated luggage instances} in three classes: \texttt{backpack}, \texttt{bag},
+and \texttt{trolley}. The data is partitioned into fixed training, validation, and
+test splits of 9{,}138 / 1{,}827 / 1{,}219 images (Table~\ref{tab:splits}). Every
+image is labelled; there are no background-only images and no missing label files.
+
+\begin{table}[t]
+\centering
+\caption{Split composition. Instance share differs slightly from image share
+because scene density varies across splits.}
+\label{tab:splits}
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{Split} & \textbf{Images} & \textbf{\%} & \textbf{Instances} & \textbf{\%} & \textbf{Boxes/img} \\
+\midrule
+Train & 9{,}138 & 75.0 & 41{,}823 & 72.3 & 4.58 \\
+Valid & 1{,}827 & 15.0 & 9{,}819  & 17.0 & 5.37 \\
+Test  & 1{,}219 & 10.0 & 6{,}172  & 10.7 & 5.06 \\
+\midrule
+Total & 12{,}184 & 100 & 57{,}814 & 100 & 4.75 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Class frequencies are stable across splits: \texttt{trolley} accounts for 50.7\%
+of training instances, \texttt{backpack} 27.1\%, and \texttt{bag} 22.2\%, with all
+three within 1.9 percentage points across the three splits. The dominant image
+resolution is $640\times360$ (7{,}350 of 9{,}138 training images, 80.4\%),
+reflecting fixed-camera surveillance framing rather than a photographic mixture.
+
+\subsection{This Is a Small-Object Benchmark}
+
+The mean annotated box measures $39\times55$~px in a 640-px frame, occupying
+0.53\% of the image area. Table~\ref{tab:sizes} reports the size distribution
+under two max-side conventions.
+
+\begin{table}[t]
+\centering
+\caption{Object-size distribution by maximum bounding-box side. The two
+conventions partition the same boxes differently; any claim of the form ``this
+dataset is $N$\% small objects'' is meaningless without the threshold attached.}
+\label{tab:sizes}
+\small
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+\textbf{Convention} & \textbf{Split} & \textbf{Small} & \textbf{Medium} & \textbf{Large} \\
+\midrule
+\multirow{3}{*}{$<$48 / 48--96 / $>$96 px}
+ & Train & \textbf{60.0\%} & 28.7\% & 11.3\% \\
+ & Valid & \textbf{62.2\%} & 30.1\% & 7.7\% \\
+ & Test  & \textbf{60.2\%} & 30.0\% & 9.8\% \\
+\midrule
+\multirow{3}{*}{$<$32 / 32--64 / $>$64 px}
+ & Train & 35.8\% & 39.2\% & 25.0\% \\
+ & Valid & 37.4\% & 41.1\% & 21.6\% \\
+ & Test  & 35.2\% & 40.7\% & 24.1\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Under the 48/96~px convention, 60.0\% of training instances are small. The choice
+of \emph{maximum side} rather than area is deliberate: it is the side length, not
+the area, that determines how many stride-8 feature cells a box spans, and
+therefore how many anchors the label assigner can allocate to it---a quantity that
+becomes central in Section~\ref{sec:method}.
+
+Unlike the closest comparable public set, v6i is not devoid of large objects:
+4{,}741 training instances (11.3\%) exceed 96~px on their longest side. This
+matters because a benchmark with no large objects cannot measure whether a
+small-object mechanism achieves its gains by sacrificing large ones---a trade-off
+we observe repeatedly in Section~\ref{sec:results}.
+
+\subsection{Boxes Are Tall, and the Classes Differ Sharply}
+
+Across all splits, \textbf{70.6\%} of boxes are taller than wide
+($h/w>1.25$), with a mean aspect ratio of 1.55 and only 6.0\% wide boxes. The
+per-class breakdown in Table~\ref{tab:shape} shows that this aggregate conceals a
+large difference between classes.
+
+\begin{table}[t]
+\centering
+\caption{Per-class shape and size structure (training split).
+\texttt{bag} is the outlier on both axes.}
+\label{tab:shape}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{Class} & \textbf{$n$} & \textbf{$h/w$} & \textbf{Wide} & \textbf{Square} & \textbf{Tall} \\
+\midrule
+backpack & 11{,}338 & 1.47 & 1.2\% & 23.8\% & \textbf{74.9\%} \\
+bag      & 9{,}268  & \textbf{1.33} & \textbf{13.2\%} & \textbf{36.0\%} & 50.8\% \\
+trolley  & 21{,}217 & \textbf{1.68} & 5.5\% & 17.6\% & \textbf{76.9\%} \\
+\midrule
+\multicolumn{6}{@{}l@{}}{\textit{Size share within class (48/96 px convention)}}\\
+backpack & & & 57.6\% s & 29.4\% m & 13.0\% l \\
+bag      & & & \textbf{61.1\% s} & \textbf{22.3\% m} & \textbf{16.6\% l} \\
+trolley  & & & 60.7\% s & 31.1\% m & 8.2\% l \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\texttt{trolley} is visually canonical: 76.9\% tall, mean ratio 1.68.
+\texttt{bag}, by contrast, holds \textbf{48.5\% of every wide box in the dataset}
+while representing only 22.2\% of instances, and is the only class whose three
+shape bins are anywhere near balanced. It is also the only class with a depleted
+size middle---simultaneously the highest large share (16.6\%) and the lowest
+medium share (22.3\%).
+
+This heterogeneity is not incidental. \texttt{bag} is the weakest class by a wide
+margin (AP$_{50\text{--}95}$ 0.4666 against \texttt{trolley}'s 0.6185, a 15.2-point
+gap), and Section~\ref{sec:results} shows that this gap is attributable neither to
+class frequency nor to assignment geometry nor to proposal failure. The category
+is semantically loose---handbags, duffel bags, shopping bags, plastic bags---and
+the residual gap is consistent with that looseness rather than with any
+optimisation deficiency.
+
+\subsection{Annotation Quality}
+
+Automated label validation reports no out-of-range coordinates and no missing
+label files. Two caveats are recorded for completeness. Two training images carry
+labels that mix segmentation and detection rows and are rejected by the data
+loader. Three duplicate labels are removed at load time (two in training, one in
+validation), which is why the validation split yields 9{,}818 rather than 9{,}819
+loaded instances.
+
+\subsection{A Documented Split Drift}
+
+Class proportions agree across splits to within 1.9 points and shape
+distributions to within 0.8 points. One drift is material and we state it
+explicitly: \textbf{the validation split under-represents large objects and
+contains systematically smaller boxes than the test split}
+(Table~\ref{tab:drift}).
+
+\begin{table}[t]
+\centering
+\caption{Validation-split drift. Any threshold or hyperparameter tuned on
+validation is tuned on a distribution with smaller objects than test.}
+\label{tab:drift}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Quantity} & \textbf{Train} & \textbf{Valid} & \textbf{Test} & \textbf{V vs T} \\
+\midrule
+Large share (48/96) & 11.3\% & \textbf{7.7\%} & 9.8\% & $-$2.1 pt \\
+Large count         & 4{,}741 & \textbf{758} & 603 & --- \\
+Mean W $\times$ H (px) & 39$\times$55 & \textbf{35$\times$49} & 40$\times$56 & $-$23\% area \\
+Boxes per image     & 4.58 & 5.37 & 5.06 & $+$6\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Validation boxes are approximately 23\% smaller in area than test boxes. Two
+consequences follow. First, confidence thresholds tuned on validation are tuned
+on a slightly harder, smaller-object distribution; we verify in
+Section~\ref{sec:results} that the tuned operating point transfers to test intact,
+but the drift bounds how far such tuning should be trusted. Second, any
+large-object claim derived from validation alone rests on 758 instances against a
+measured seed-to-seed spread of 2.11 points in the large bucket---we therefore
+report all large-object results on test only.
+
+\subsection{Comparison with Existing Benchmarks}
+
+Against CCTV-KD, the largest annotated in-domain alternative
+\cite{vrsalovic2025sensors}, v6i provides approximately \textbf{21$\times$ the
+luggage annotations} (57{,}814 vs 2{,}760) from roughly \textbf{40$\times$ the
+distinct source images} ($12{,}184$ vs $\sim$300 before augmentation), at three
+class labels rather than one. Two differences favour CCTV-KD and we note them
+plainly: it provides \texttt{person} annotations, which v6i does not, and its
+scenes are considerably denser (approximately 20 annotated objects per image
+against our 4.75). The absence of a person class means the ownership stage of our
+pipeline must source person detections from a separate model, with the
+domain-shift consequences discussed in Section~\ref{sec:method}.
+
+Neither dataset contains abandonment events; both are detection benchmarks. v6i
+is therefore complementary to ABODA and IITP20 rather than a replacement: it is
+intended to train and evaluate the detector on which an event-level system is
+built.
+
+% =====================================================================
+\section{Method}
+\label{sec:method}
+
+\begin{figure*}[t]
+\centering
+\iffigpng
+\includegraphics[width=\linewidth]{fig1.png}
+\else
+\begin{tikzpicture}[x=1cm,y=1cm]
+
+%% ================= (a) pipeline =========================================
+\node[font=\footnotesize\bfseries,anchor=west] at (0,2.05) {(a)~~Per-frame pipeline};
+
+\node[blk,minimum width=11mm,anchor=west] (fr) at (0.10,1.10) {Video\\frame};
+\node[teal,minimum width=25mm,anchor=west] (dl) at (1.62,1.46) {Luggage detector \textemdash{} YOLO26\\\textit{fine-tuned, 3 classes}};
+\node[purp,minimum width=25mm,anchor=west] (dp) at (1.62,0.74) {Person detector \textemdash{} YOLO26-x\\\textit{COCO, not fine-tuned}};
+\node[blk,minimum width=19mm,anchor=west] (tr) at (4.95,1.10) {BoT-SORT $\times2$\\separate ID spaces};
+\node[blu,minimum width=21mm,anchor=west] (op) at (7.55,1.10) {Owner pairing\\$\bar d$ over first $T_o$};
+\node[amb,minimum width=19mm,anchor=west] (sm) at (10.40,1.10) {State machine\\dwell timer $\tau$};
+\node[cor,minimum width=13mm,anchor=west] (al) at (13.05,1.10) {Alarm};
+
+\draw[fl] (fr.east) -- ++(0.18,0) |- (dl.west);
+\draw[fl] (fr.east) -- ++(0.18,0) |- (dp.west);
+\draw[fl] (dl.east) -- ++(0.28,0) |- (tr.west);
+\draw[fl] (dp.east) -- ++(0.28,0) |- (tr.west);
+\draw[fl] (tr.east) -- (op.west);
+\draw[fl] (op.east) -- (sm.west);
+\draw[fl] (sm.east) -- (al.west);
+\node[lbl,anchor=north] at (8.60,0.62) {radii in person heights, so they scale with depth};
+
+%% ================= (b) worked example ===================================
+\node[font=\footnotesize\bfseries,anchor=west] at (0,-0.15) {(b)~~Worked example \textemdash{} one luggage track, $r_o\!=\!1.5h$, $r_a\!=\!2.5h$, $T_a\!=\!30$\,s};
+
+\def\sc#1#2#3#4#5#6{%
+  \begin{scope}[shift={(#1,-2.30)}]
+    \draw[draw=cGry!40,fill=cGryBg,rounded corners=2pt] (-1.52,-1.02) rectangle (1.52,1.02);
+    \ifnum#6>0
+      \draw[draw=cCor,dashed,line width=0.4pt] (-0.60,0) circle (0.78);
+      \draw[draw=cTeal,dotted,line width=0.5pt] (-0.60,0) circle (0.45);
+    \fi
+    \ifnum#6>0 \draw[draw=cGry,line width=0.4pt,dashed] (-0.60,0) -- (#2,0); \fi
+    \fill[#5] (-0.675,-0.075) rectangle (-0.525,0.075);
+    \fill[cPurp] (#2,0) circle (0.085);
+    \node[font=\tiny,text=cGry,anchor=south] at (0.0,1.06) {#3};
+    \node[font=\tiny,text=cGry,anchor=north] at (0.0,-1.06) {#4};
+  \end{scope}}
+
+\sc{1.62}{-0.60}{$t=0$\,s \textemdash{} carried}{$d=0$ \textemdash{} no track yet}{cTeal}{0}
+\sc{5.02}{-0.54}{$t=3$\,s \textemdash{} dropped}{$d=0.2h$ \textemdash{} owner window $T_o$}{cTeal}{1}
+\sc{8.42}{0.01}{$t=8$\,s \textemdash{} owner walks}{$d=1.9h$ \textemdash{} drifting}{cTeal}{1}
+\sc{11.82}{0.49}{$t=14$\,s \textemdash{} beyond $r_a$}{$d=3.4h$ \textemdash{} $\tau$ running}{cAmb}{1}
+\sc{15.22}{1.03}{$t=38$\,s \textemdash{} alarm}{$d=5.1h$ \textemdash{} $\tau\ge T_a$}{cCor}{1}
+
+
+%% ================= (c) timeline =========================================
+\node[font=\footnotesize\bfseries,anchor=west] at (0,-4.05) {(c)~~State and dwell timer $\tau$ on a common time axis};
+
+\fill[cTealBg,draw=cTeal,line width=0.3pt] (0.10,-4.92) rectangle (2.59,-4.56);
+\fill[cAmbBg!55,draw=cAmb,line width=0.3pt] (2.59,-4.92) rectangle (3.42,-4.56);
+\fill[cAmbBg,draw=cAmb,line width=0.3pt] (3.42,-4.92) rectangle (5.08,-4.56);
+\fill[cGryBg,draw=cGry,line width=0.3pt] (5.08,-4.92) rectangle (5.91,-4.56);
+\fill[cAmbBg,draw=cAmb,line width=0.3pt] (5.91,-4.92) rectangle (15.87,-4.56);
+\fill[cCorBg,draw=cCor,line width=0.3pt] (15.87,-4.92) rectangle (16.70,-4.56);
+
+\node[font=\tiny,text=cTeal] at (1.35,-4.74) {attended};
+\node[font=\tiny,text=cAmb]  at (10.60,-4.74) {unattended \textemdash{} $\tau$ accumulating};
+
+\foreach \x/\t in {0.10/0\,s, 2.59/6\,s, 3.42/8\,s, 15.87/38\,s}{
+  \draw[draw=cGry!60,line width=0.3pt] (\x,-4.92) -- (\x,-5.06);
+  \node[font=\tiny,text=cGry,anchor=north] at (\x,-5.06) {\t};}
+
+\draw[draw=cGry!60,line width=0.3pt] (5.50,-4.92) -- (5.50,-5.30);
+\node[font=\tiny,text=cGry,anchor=north] at (5.50,-5.30) {occluded 12\textendash14\,s, $\tau$ holds};
+\node[font=\tiny,text=cAmb,anchor=north] at (3.00,-5.42) {drifting};
+\draw[draw=cAmb!60,line width=0.3pt] (3.00,-4.92) -- (3.00,-5.42);
+\node[font=\tiny,text=cCor,anchor=north west] at (15.95,-5.30) {alarm};
+\draw[draw=cCor!60,line width=0.3pt] (16.28,-4.92) -- (16.28,-5.30);
+
+\foreach \x in {1.62,5.02,8.42,11.82,15.22}
+  \draw[draw=cGry!30,line width=0.3pt,dotted] (\x,-3.60) -- (\x,-4.56);
+
+%% ================= guards ==============================================
+\node[lbl,anchor=north west,align=left,text width=79mm] at (0.10,-5.85)
+ {\textbf{Guard 1.} The owner is the person minimising \emph{mean} distance over the
+  bag's first $T_o$ seconds \textemdash{} not the nearest person in any single frame.};
+\node[lbl,anchor=north west,align=left,text width=79mm] at (8.90,-5.85)
+ {\textbf{Guard 2.} $\tau$ advances only while the bag track is alive, so the
+  occlusion at $t\!=\!12$--$14$\,s is not counted as a departure.};
+
+\end{tikzpicture}
+\fi
+\caption{The unattended-luggage pipeline and a worked example.
+(a)~Two detectors run in parallel on every frame and are tracked independently,
+so luggage and person identities never share an ID space. Only the luggage
+detector is fine-tuned on our data; the person detector is a COCO model, which is
+the weakest link in the chain (Section~\ref{sec:method}).
+(b)~Top-down snapshots of a single track. The dotted inner circle is the
+ownership radius $r_o$ and the dashed outer circle the alarm radius $r_a$, both
+expressed in person heights $h$ so they scale with depth; the square is the bag
+and the disc its assigned owner. The bag changes colour as the state advances.
+(c)~The same episode on a time axis. The owner crosses $r_o$ at $6$\,s and $r_a$
+at $8$\,s, at which point the dwell timer $\tau$ starts; it holds through the
+occlusion at $12$--$14$\,s and reaches $T_a$ at $38$\,s.}
+\label{fig:pipeline}
+\end{figure*}
+
+% =====================================================================
+\subsection{Overview and Design Principle}
+\label{sec:method:overview}
+
+We modify two detectors along two orthogonal axes. The \emph{loss axis} changes
+how ground truth is assigned to anchors and how each assignment is weighted; the
+\emph{architecture axis} changes which feature levels exist and how much capacity
+each receives. Every modification obeys one rule: \textbf{at initialisation the
+modified network must reproduce the pretrained baseline exactly}. Architectural
+blocks are appended as residual branches with a zero-initialised gate, and loss
+modifications reduce to the stock objective at their default parameter values.
+This makes every comparison a controlled one---the pretrained weights transfer
+without loss, and any difference in the final metric is attributable to the
+mechanism rather than to a different initialisation.
+
+The two detectors receive \emph{different} treatments, and this is a result
+rather than an oversight. Superficially their objectives are the same: both use
+BCE classification, CIoU box regression, a task-aligned assigner with
+$\alpha=0.5$ and $\beta=6$, and identical loss gains
+($\mathrm{box}=7.5$, $\mathrm{cls}=0.5$, $\mathrm{dfl}=1.5$). Underneath they
+differ in three respects that Table~\ref{tab:implsdiff} sets out and
+Section~\ref{sec:disc:why} shows to be decisive: YOLOv12 regresses boxes as a
+$16$-bin distribution and removes duplicates with NMS, whereas YOLO26 regresses
+offsets directly ($\mathrm{reg\_max}=1$, with the third loss term becoming an
+image-normalised $\ell_1$), runs \emph{two} assigners --- one-to-many and
+one-to-one --- under a schedule that shifts weight from the former to the latter
+across training, and emits a single prediction per object without NMS. As
+Section~\ref{sec:results} shows, the mechanism that works on one does not work on
+the other, in either direction.
+
+% ---------------------------------------------------------------------
+\subsection{Small-Object--Aware Loss and Assignment}
+\label{sec:method:loss}
+
+\subsubsection{Curriculum Area Weighting (YOLOv12)}
+
+\emph{The problem.} After assignment, the regression loss sums over positives
+with each weighted by its target score. Two things then work against small
+objects at once. First, a large box collects far more positives than a small one
+--- $9.79$ against $7.73$ on this dataset, from a candidate pool $51\times$
+larger --- so it contributes more terms to the sum. Second, and more importantly,
+the IoU term of a large box is smoothly informative: a few pixels of error
+change its IoU very little, so its gradient is stable and well-scaled. For a
+$12\times18$\,px bag the same few pixels can move IoU by tens of points. The
+optimiser sees a loud, noisy signal from small objects and a quiet, reliable one
+from large objects, and it does what any optimiser does --- it fits the reliable
+signal first and treats the small objects as noise to be averaged out.
+
+\emph{The intervention.} We restore the balance by weighting each positive by
+the \emph{inverse linear scale} of its box, and we do so on a schedule rather
+than permanently. Early in training, when the representation is still forming and
+the small objects would otherwise never get a foothold, the weighting is
+area-dominant; by the end it has decayed back to the standard score weighting,
+so the final epochs optimise the objective the model is actually evaluated on.
+This is the dynamic curriculum weighting introduced in our earlier work on
+weapon detection \cite{catargiu2026weapon}. For each positive assignment $j$,
+
+\begin{equation}
+w_j^{(t)} = \alpha(t)\,\hat{a}_j + \bigl(1-\alpha(t)\bigr)\,s_j ,
+\label{eq:swa}
+\end{equation}
+
+\noindent where $s_j$ is the summed target score of positive $j$ and $\hat a_j$
+is a normalised, boosted inverse-scale term. Writing $A_j$ for the assigned box
+area \emph{in feature units} at the level to which the anchor belongs, i.e.\
+after division by that level's stride $\sigma_j$,
+
+\begin{equation}
+a_j = A_j^{-1/2},
+\qquad
+\hat a_j = \frac{a_j}{\max_{k \in \mathcal{P}} a_k}\; \cdot \; b_j ,
+\label{eq:invarea}
+\end{equation}
+
+\noindent with $\mathcal{P}$ the set of positives in the batch. The exponent
+$-\tfrac12$ makes the term scale with linear object size rather than with area;
+a pure inverse-area weighting ($a_j = A_j^{-1}$) was also implemented and was
+inferior on this dataset. The factor $b_j$ is a threshold boost applied after
+normalisation,
+
+\begin{equation}
+b_j =
+\begin{cases}
+\rho, & \sqrt{A_j}\,\sigma_j < p_{\text{small}} \\
+1, & \text{otherwise,}
+\end{cases}
+\label{eq:boost}
+\end{equation}
+
+\noindent which multiplies the weight of any positive whose box is smaller than
+$p_{\text{small}}$ pixels on a side. The mixing coefficient follows a linear
+curriculum over the $T$ training epochs, clipped to a fixed interval,
+
+\begin{equation}
+\alpha(t) = \mathrm{clip}\left(
+\alpha_{\text{s}} \left(1 - t/T\right) + \alpha_{\text{e}}\, t/T,
+\;\alpha_{\min},\; \alpha_{\max} \right),
+\label{eq:curriculum}
+\end{equation}
+
+\noindent so optimisation begins scale-dominant, favouring small objects while
+the representation is still forming, and ends score-balanced. The weight
+$w_j^{(t)}$ multiplies the CIoU and DFL terms; the classification term is
+untouched. With $\alpha_{\text{s}} = \alpha_{\text{e}} = 0$ the expression
+reduces exactly to the stock per-positive weight $s_j$, which is the identity
+property required in Section~\ref{sec:method:overview}. A grid search on the
+validation split over $\alpha_{\text{s}} \in [0.6,0.9]$, $\alpha_{\text{e}} \in
+[0.3,0.4]$, $p_{\text{small}} \in [36,48]$\,px and $\rho \in [1.0,2.5]$ selected
+$\alpha_{\text{s}} = 0.7$, $\alpha_{\text{e}} = 0.3$, $p_{\text{small}} = 48$\,px
+and $\rho = 2.0$; the full intervals are in Table~\ref{tab:search}.
+
+Two design choices deserve comment. The exponent is $-\tfrac12$ rather than $-1$
+because pure inverse-\emph{area} weighting is too aggressive on this data: with
+boxes spanning three orders of magnitude in area, $A^{-1}$ makes the smallest
+instances dominate the batch entirely and destabilises training, whereas
+$A^{-1/2}$ scales with linear size and keeps the ratio bounded. Both were
+implemented and the square root was better. The threshold boost of
+Equation~\eqref{eq:boost} is then a blunt instrument layered on top: the
+continuous term already up-weights small objects, but it does so smoothly, and
+$48$\,px is the point below which this dataset's instances stop being resolvable
+at stride $8$ at all. Doubling their weight is a statement that those specific
+instances matter operationally, not a claim that the continuous weighting was
+mis-shaped.
+
+\subsubsection{Task-Alignment Exponents (YOLO26)}
+
+The Task-Aligned Assigner scores each (ground truth, anchor) pair by
+
+\begin{equation}
+m_{ij} = s_{ij}^{\,\alpha}\;\cdot\;u_{ij}^{\,\beta},
+\label{eq:align}
+\end{equation}
+
+\noindent where $s_{ij}$ is the predicted class score for the ground-truth
+class and $u_{ij}$ the IoU. Both detectors construct their assigners with
+$\alpha = 0.5$ and $\beta = 6$; these are fixed constants in the reference
+implementation and are not exposed as tunable hyperparameters. We exposed both
+and swept them.
+
+The metric enters the objective at three distinct points, and it is essential to
+separate them. First, \emph{selection}: the $k$ anchors with the largest
+$m_{ij}$ inside each ground-truth box become positives. Second, \emph{tie-break}
+in the one-to-one branch, where $k=1$. Third, \emph{target magnitude}: the
+classification target of a positive is not $1$ but
+
+\begin{equation}
+\hat{t}_{ij}
+= \frac{m_{ij}\;\max_{j' \in \mathcal{P}_i} u_{ij'}}
+       {\max_{j' \in \mathcal{P}_i} m_{ij'} + \epsilon},
+\label{eq:normalign}
+\end{equation}
+
+\noindent so a well-aligned anchor is asked for a higher confidence than a
+poorly aligned one. Equation~\eqref{eq:normalign} carries a consequence we use
+in Section~\ref{sec:discussion}: when a ground truth has exactly one positive
+--- which is the case in YOLO26's one-to-one branch --- the ratio is identically
+$1$ and the target collapses to $\max u$, so $\alpha$ and $\beta$ \emph{provably
+cannot} change the target magnitude on that branch. They can only change
+\emph{which} anchor receives it.
+
+\emph{Our modification is a single exponent}, $\beta: 6 \rightarrow 1$, selected from
+nine values spanning $[0,6]$ (Table~\ref{tab:search}). The
+reason it should matter is a statement about how IoU behaves at different
+scales. Consider two anchors on a large object whose IoUs are $0.80$ and $0.70$.
+Raised to the sixth power these become $0.262$ and $0.118$ --- the assigner
+treats the first as more than twice as good, and it is right to, because on a
+large box a $0.10$ IoU gap is a real and stable difference in localisation.
+Now consider the same gap on a $12\times18$\,px bag. There, one pixel of
+displacement moves IoU by several points, so a $0.80$ versus $0.70$ split
+between two neighbouring anchors is mostly sampling noise --- yet $\beta=6$
+still amplifies it into a factor of $2.2$ in the alignment metric, and
+Equation~\eqref{eq:normalign} then propagates that amplified difference into the
+classification target the model is asked to reproduce.
+
+Setting $\beta=1$ makes the metric linear in IoU. The ranking is preserved ---
+better-localised anchors still win --- but the \emph{margins} are compressed, so
+the assigner stops manufacturing confident distinctions between anchors that are
+in truth equally good. The prediction is therefore specific: reducing $\beta$
+should help most where IoU is noisiest, which is exactly the small-object regime,
+and should be roughly neutral elsewhere. Section~\ref{sec:results} reports that
+it does help on small objects ($+1.70\%$) while costing mAP$_{50\text{-}95}$
+($-0.88\%$), the metric that rewards precisely the fine localisation distinctions
+$\beta=6$ was amplifying.
+
+\subsubsection{Anchor Supply and Why the Effect Is Bounded}
+
+Both mechanisms above act on assignments that already exist. Whether they
+\emph{can} act is a question about anchor supply. For a box of size $w \times h$
+at feature stride $s$, the number of anchor centres falling inside it is
+
+\begin{equation}
+n(s) = \left[ \lfloor x_2/s - 1/2 \rfloor - \lceil x_1/s - 1/2 \rceil + 1 \right]_+
+\;\cdot\;
+\left[ \lfloor y_2/s - 1/2 \rfloor - \lceil y_1/s - 1/2 \rceil + 1 \right]_+ ,
+\label{eq:footprint}
+\end{equation}
+
+\noindent summed over the levels of the pyramid. Measured over the training
+labels, a small luggage instance commands $12.90$ anchor centres in total
+($9.82$ at stride $8$, $2.46$ at $16$, $0.62$ at $32$) against a selection
+budget of $k=10$, while a large instance commands $657.67$ --- a supply ratio of
+$51\times$. Standard assignment converts $7.73$ of the small object's $12.90$
+candidates into positives, i.e.\ $60\%$ of its entire pool.
+
+The budget is therefore close to \emph{slack}. Of small ground truths,
+$38$--$42\%$ hold fewer than $k$ centres at evaluation geometry, and once mosaic
+augmentation halves the effective scale --- which it does for $60$ of the $70$
+training epochs --- that figure rises to approximately $70\%$. For those
+instances every candidate is already a positive, the ranking cannot change the
+assignment, and the selection role of Equation~\eqref{eq:align} is inert; only
+its target-magnitude role acts. Adding a stride-$4$ level multiplies the finest
+level's count by four and raises the small object's pool to roughly $52$
+centres, which makes $k$ binding again. This is the diagnostic that motivates
+the architectural axis, and Section~\ref{sec:results} reports that its central
+prediction was refuted on one detector and only weakly supported on the other.
+
+The same table motivates the level reallocation of
+Section~\ref{sec:method:arch}. At stride $32$ a small object draws $0.01$
+positives per ground truth and a medium object $0.00$, against pools of $0.62$
+and $2.71$: the few candidates that exist carry an alignment metric near zero
+and fail the positivity test regardless of budget. Large objects draw $7.96$ of
+their $9.79$ positives ($81\%$) from stride $16$, not stride $32$. The coarsest
+detection level is thus doing very little work on this dataset.
+
+% ---------------------------------------------------------------------
+\subsection{Architectural Modifications}
+\label{sec:method:arch}
+
+\input{fig_arch}
+
+Figure~\ref{fig:arch} shows the two resulting graphs. They share one change ---
+a stride-4 detection level --- and differ in everything built around it, which
+is what makes the comparison in Section~\ref{sec:results:transfer} possible.
+
+All blocks below are channel- and resolution-preserving, and each is applied as
+
+\begin{equation}
+y = x + \gamma \odot \mathcal{F}(x), \qquad \gamma \big|_{t=0} = 0,
+\label{eq:gate}
+\end{equation}
+
+\noindent with $\gamma$ a learnable per-channel gate. At epoch $0$ the block is
+the identity, so the pretrained detector is reproduced exactly and the transfer
+is lossless.
+
+\subsubsection{Content-Aware Upsampling}
+
+The top-down path is rebuilt with DySample \cite{dysample2023} in place of
+nearest-neighbour interpolation. Rather than replicating each feature, it
+predicts per-location sampling offsets and gathers by bilinear interpolation,
+\begin{equation}
+y_p = x\bigl(p/\rho + \Delta_p\bigr), \qquad
+\Delta_p = \sigma\bigl(\mathcal{S}(x)\bigr) \odot \mathcal{O}(x) + p_0 ,
+\label{eq:dysample}
+\end{equation}
+where $\rho$ is the scale factor, $\mathcal{O}$ the offset convolution and
+$\mathcal{S}$ the optional dynamic-scope branch. The offset convolution is
+near-zero initialised, so upsampling starts equivalent to the static case. This
+matters most on the path feeding the finest level, where nearest-neighbour
+upsampling blurs precisely the detail small luggage depends on.
+
+\subsubsection{A Stride-4 Detection Level}
+
+Both detectors receive a P2 branch at stride $4$: the finest existing pyramid
+level is upsampled onto the stride-4 backbone feature and fused, adding a
+detection head at $160\times160$.
+
+This is the one change that addresses the supply problem of
+Equation~\eqref{eq:footprint} directly rather than working around it. Every loss
+mechanism in Section~\ref{sec:method:loss} redistributes weight among
+assignments that already exist; none of them can create a positive where no
+anchor centre falls. A stride-4 level does exactly that, quadrupling the finest
+level's contribution and taking a small object's pool from $12.90$ centres to
+roughly $52$. It is also the only change that improves the \emph{resolution} at
+which a small object is represented, rather than the emphasis it receives.
+
+The cost is asymmetric and worth stating precisely, because it shaped the
+experimental design. The branch adds only $0.09$M parameters --- trivial --- but
+roughly $315$\,MB of activation memory at batch $48$, since activation cost
+scales with spatial area and a stride-4 map is sixteen times larger than a
+stride-16 one. Anchors rise from $8{,}400$ to $34{,}000$. This is why
+architectural runs were executed at a reduced batch size and why a matched-batch
+control is reported alongside them (Section~\ref{sec:results:batch}): the
+modification cannot be evaluated at the baseline's batch size on any GPU we had
+access to, so the confound has to be measured rather than avoided.
+
+\subsubsection{Level-Specific Refinement (YOLOv12)}
+
+On YOLOv12 the P2 branch is \emph{appended}: rows 9--20 of the stock graph are
+left untouched and the new head is built from row 14 (Fig.~\ref{fig:arch}a).
+This choice is deliberate. It keeps the pretrained neck weights aligned by name,
+so the transfer is exact and the only randomly initialised parameters are the
+new branch, and it means the four-level model is the three-level model plus
+something, which makes the ablation interpretable.
+
+Each detection level then receives one gated block, matched to what that level
+actually sees. At the stride-4 level we attach \textbf{ZGGlobalContext2}, which
+forms a global descriptor from both average and maximum pooling and broadcasts
+it back additively:
+\begin{equation}
+\mathcal{F}(x) = \mathrm{MLP}\left( \left[\; \overline{x} \;;\; \max\nolimits_{H,W} x \;\right] \right),
+\label{eq:gctx}
+\end{equation}
+with $\overline{x}$ the spatial mean. The average branch supplies scene context;
+the maximum branch preserves the single most salient activation, which is the
+cue a small, rare instance produces and which averaging removes. At strides $8$,
+$16$ and $32$ we attach \textbf{ZGDSConv}, a zero-gated dynamic snake
+convolution \cite{qi2023dscnet}: two one-dimensional deformable branches, one
+snaking along each axis, whose taps accumulate offsets outward from the centre,
+\begin{equation}
+\delta_\tau = \sum_{\iota=1}^{\tau} \tanh\bigl(\mathcal{O}_\iota(x)\bigr),
+\qquad \tau = 1,\dots,\tfrac{k-1}{2},
+\label{eq:snake}
+\end{equation}
+so the sampling path follows elongated structure rather than a fixed grid. The
+offset convolutions are zero-initialised, placing all taps on the regular grid
+at epoch $0$.
+
+The split is the point. Global context is attached where the \emph{small}
+objects are, because a small object occupies too few pixels to be identified
+from its own appearance --- a $12$-pixel dark blob is a bag, a shadow or a bin
+depending on what surrounds it, and the max-pool branch preserves the single
+salient activation that averaging would erase. The directional kernel is
+attached where the \emph{medium and large} objects are, because that is where
+shape is legible and worth tracing: LuggageDataset~v6i boxes are $70.6\%$ tall
+and only $6.0\%$ wide (Section~\ref{sec:dataset}), so a trolley is a strongly
+oriented structure that a square receptive field samples inefficiently. Applying
+either block at every level was also tested and was worse than the split.
+
+\subsubsection{Level Reallocation (YOLO26)}
+
+On YOLO26 we test the complementary hypothesis suggested by the positives
+cross-tab in Section~\ref{sec:method:loss}: that the coarsest level is
+\emph{vestigial} on this data and its capacity is better spent elsewhere. We
+therefore remove the stride-32 \emph{detection} branch while retaining the
+stride-32 backbone, and detect from $\{4,8,16\}$ only.
+
+The distinction between deleting the \emph{detection branch} and deleting the
+\emph{level} is essential, and Fig.~\ref{fig:arch}b draws it explicitly. Rows
+$7$--$10$ of the backbone stay: stride-32 features are still computed and still
+injected at the top of the top-down path, so every finer level keeps receiving
+the scene-wide context that a $32\times$ downsampled representation provides.
+What is removed is only the branch that turns those features into predictions,
+together with the bottom-up rows that fed it. The claim under test is therefore
+not ``stride-32 features are useless'' but the much narrower ``stride-32
+\emph{anchors} are not earning their keep'' --- which is what the positives
+cross-tab asserts and what a budget-based fix cannot address, since the
+candidates that exist there carry an alignment metric of approximately zero.
+
+Deletion frees $27.7\%$ of the parameters ($9.68$M $\rightarrow$ $6.99$M), and
+the freed capacity is returned to the two finest levels by raising their block
+repeats from $2$ to $4$. This is a reallocation rather than a reduction: the
+model becomes smaller overall while becoming deeper at strides $4$ and $8$,
+where $92\%$ of this dataset's instances live. A repeat count of $6$ was also
+evaluated and was inferior on every metric, so the depth axis is reported with a
+bracketed optimum rather than as a monotone trend.
+
+One further contrast with the YOLOv12 variant matters for
+Section~\ref{sec:results:transfer}. Here the P2 branch is \emph{inserted into}
+the PAN rather than appended: the bottom-up path is rebuilt to run $19
+\rightarrow 22 \rightarrow 25$, so stride-4 features propagate upward and inform
+the coarser predictions instead of only being read out at the head. The two
+detectors consequently differ in three independent respects --- appended versus
+inserted P2, retained versus removed stride 32, and refinement blocks versus
+depth --- and the transfer experiment asks which, if any, of those choices
+survive a change of detector.
+
+% ---------------------------------------------------------------------
+\subsection{Experimental Protocol}
+\label{sec:method:protocol}
+
+\subsubsection{Verification} Every run asserts its own configuration at
+training time. The mechanism is read back from the live loss object rather than
+from the configuration file, the fraction of parameters transferred from the
+pretrained checkpoint is measured and the run aborts below a threshold, and all
+mechanisms not under test are passed explicitly in their off state rather than
+inherited from defaults. This last point is not pedantic: the shipped defaults
+in our fork are \emph{not} neutral, and an implicitly configured run silently
+carries area weighting.
+
+\subsubsection{Noise Floor} Because the effects under study are small, we
+estimate run-to-run variability directly. Pooling thirteen groups of runs that
+differ only by random seed gives, on YOLO26, a standard deviation of $0.428$
+points of $\mathrm{mAP}_{50}^{\text{small}}$ ($\mathrm{df}=12$). The relevant
+standard error depends on what is compared:
+\begin{equation}
+\mathrm{SE} = \sigma\sqrt{1 + \tfrac1n}\;\;\text{(run vs. $n$-seed mean)},
+\qquad
+\mathrm{SE} = \sigma\sqrt{2}\;\;\text{(run vs. run)} .
+\label{eq:se}
+\end{equation}
+We report a difference as an effect at $\ge 3\,\mathrm{SE}$, as suggestive at
+$\ge 2\,\mathrm{SE}$, and as null below that. A null is reported as a result.
+
+\subsubsection{Selection Bias} Repeating a configuration that was selected for
+being the maximum of a round gave a mean regression of $-0.55$ points across
+seven such repeats, with no repeat exceeding its original draw. Single-draw
+maxima are therefore not tabulated as headline results, and every configuration
+we report as a finding carries $n \ge 2$.
+
+\section{Results}
+\label{sec:results}
+
+All models were trained for $70$ epochs at $640\times640$ from the official
+pretrained checkpoints, with mosaic disabled for the final $10$ epochs.
+Evaluation uses the full test split ($1{,}219$ images, $6{,}172$ instances) with
+the size thresholds defined in Section~\ref{sec:dataset}. Experiments ran on an
+NVIDIA RTX~4090 (24\,GB), Intel Core~i9-13900KF, 64\,GB DDR5, CUDA~12.1,
+Python~3.10, PyTorch~2.1.
+
+\subsection{Hyperparameter Search}
+\label{sec:results:search}
+
+Every parameter introduced in Section~\ref{sec:method} was swept before being
+fixed. Table~\ref{tab:search} gives the intervals, the number of distinct values
+evaluated and the selected setting. Selection was made on
+mAP$_{50}^{\text{small}}$ on the validation split; the test split was not
+consulted during the search.
+
+\begin{table}[t]
+\centering
+\caption{Search intervals for every introduced parameter. $n$ is the number of
+distinct values trained, not the number of runs --- several values were repeated
+across seeds and across graphs.}
+\label{tab:search}
+\small
+\begin{tabular}{@{}llrl@{}}
+\toprule
+Parameter & Interval & $n$ & Selected \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Loss --- curriculum weighting (YOLOv12)}}\\
+$\alpha_{\text{s}}$ (start)      & $[0.6,\,0.9]$ & 4 & $0.7$ \\
+$\alpha_{\text{e}}$ (end)        & $[0.3,\,0.4]$ & 2 & $0.3$ \\
+area exponent                    & $\{A^{-1},A^{-1/2}\}$ & 2 & $A^{-1/2}$ \\
+$p_{\text{small}}$ (px)          & $[36,\,48]$ & 3 & $48$ \\
+$\rho$ (boost)                   & $[1.0,\,2.5]$ & 4 & $2.0$ \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Loss --- task alignment (YOLO26)}}\\
+$\beta$                          & $[0,\,6]$ & 9 & $1.0$ \\
+$\alpha$                         & $[0.25,\,1.0]$ & 4 & $0.5$ (stock) \\
+$\beta$ split (sel / tgt)        & $[1,\,6]$ & 5 & not adopted \\
+$\beta_{\text{small}}$           & $[1.5,\,3.0]$ & 3 & not adopted \\
+$k$ (topk)                       & $\{7,10\}$ & 2 & stock \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Architecture}}\\
+P2 block repeats                 & $\{2,4,6\}$ & 3 & $4$ \\
+P3 block repeats                 & $\{2,4,6\}$ & 3 & $4$ \\
+snake kernel $k$                 & $\{5,9\}$ & 2 & $9$ \\
+detection levels                 & $\{3,4\}$ & 2 & per detector \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three outcomes of the search are themselves results. First, the $\beta$ surface
+is \emph{flat} over $[0,3]$: nine values were trained and the spread across them
+is smaller than the noise floor, so the $+1.70\%$ reported for $\beta=1$ should
+be read as ``any value well below the stock $6$'' rather than as a tuned optimum.
+Setting $\beta=0$ --- removing IoU from the alignment metric entirely --- cost
+nothing measurable, which is the observation that motivates the supply analysis
+of Section~\ref{sec:method:loss}. Second, the two elaborations of $\beta$ we
+implemented (splitting it into separate selection and target exponents, and
+making it size-conditional) were both nulls and are not adopted. Third, the
+depth axis has a \emph{bracketed} optimum: $6$ repeats is below $4$ on every
+metric, so $4$ is a measured peak rather than the end of a monotone trend.
+
+\subsection{The Two Axes, Isolated and Combined}
+
+Table~\ref{tab:decomp} reports the $2\times2$ design for both detectors: the
+baseline, each axis alone, and the two combined. On YOLO26 every cell is at
+batch $48$; on YOLOv12 the loss cell is at batch $54$ and the architectural
+cells at batch $32$, for the memory reason given in
+Section~\ref{sec:method:arch}, and a matched-batch control is reported in
+Section~\ref{sec:results:batch}.
+
+\begin{table}[t]
+\centering
+\caption{The two axes on both detectors. Values are percentage change over the
+respective baseline on the test split; $n$ is the number of random seeds. All
+YOLO26 cells ran at batch $48$ and need no correction. YOLOv12 architectural
+cells ran at batch $32$ against a batch-$54$ baseline and are reported
+\emph{after} the correction of Section~\ref{sec:results:batch}; the uncorrected
+figures are $+2.22$, $+2.44$, $+2.20$, $+1.62$ and $+2.71$, $+2.12$, $+1.53$,
+$+1.83$ respectively.}
+\label{tab:decomp}
+\small
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+& & $n$ & mAP$_{50}^{\text{sm}}$ & mAP$_{50}$ & mAP$_{50\text{-}95}$ & F1 \\
+\midrule
+\multicolumn{7}{@{}l}{\textbf{YOLO26s} \; baseline $77.62$ / $80.40$ / $55.30$ / $75.84$}\\
+& Loss ($\beta{=}1$)      & 2 & $+1.70$ & $+1.58$ & $-0.88$ & $+2.08$ \\
+& Arch (P234-rich)        & 1 & $+1.41$ & $+1.57$ & $+1.45$ & $+1.85$ \\
+& \textbf{Both}           & 3 & $\mathbf{+2.38}$ & $\mathbf{+2.14}$ & $-0.25$ & $\mathbf{+3.16}$ \\
+\midrule
+\multicolumn{7}{@{}l}{\textbf{YOLOv12s} \; baseline $76.65$ / $79.75$ / $54.77$ / $76.05$}\\
+& Loss (curriculum)       & 1 & $+0.95$ & $+1.19$ & $\mathbf{+1.58}$ & $+0.85$ \\
+& Arch (ls\_shift)        & 1 & $+1.48$ & $+1.62$ & $+1.67$ & $+0.77$ \\
+& \textbf{Both}           & 1 & $\mathbf{+1.97}$ & $+1.30$ & $+0.99$ & $+0.98$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The best configuration on YOLO26 reaches $79.47 \pm 0.46$ small-object
+mAP$_{50}$ against a baseline of $77.62 \pm 0.28$, a gain of $2.38\%$ at $n=3$,
+which is $4.3\,\mathrm{SE}$ by Equation~\eqref{eq:se}. On YOLOv12 the best
+configuration reaches $78.73$ against $76.65$, or $+1.97\%$ after the
+batch correction.
+
+Two caveats apply to the YOLOv12 half of this table. Every cell is a single
+draw, so with a run-to-run standard error of $0.61$ points none of the
+individual differences is resolvable on its own; and after correction the six
+strongest YOLOv12 configurations span only $+1.13$ to $+1.55$ points of
+small-object mAP$_{50}$, a range narrower than one standard error. We therefore
+rank YOLOv12 configurations by the \emph{breadth} of their improvement rather
+than by the headline value. On that criterion two configurations improve eight
+of nine reported metrics with a worst-case regression below $0.35$ points ---
+curriculum weighting alone, and the \texttt{ls\_shift} architecture alone ---
+whereas every combination built on the latter improves at most seven and
+regresses by up to $1.73$.
+
+\subsection{Where the Gains Land, by Object Size}
+\label{sec:results:persize}
+
+\input{tab_persize}
+
+Table~\ref{tab:persize} resolves each axis by object size, which is where the
+two detectors stop resembling each other. Three patterns are worth naming.
+
+\emph{The gains are concentrated on small objects and are paid for elsewhere.}
+On both detectors the combined configuration improves small-object mAP$_{50}$
+(YOLO26 $+2.38\%$, YOLOv12 $+1.97\%$) and small-object F1 ($+3.07\%$,
+$+1.92\%$), while medium objects are flat to negative and mAP$_{50\text{-}95}$
+falls at every size except small. Since $92\%$ of this dataset's instances are
+small or medium, that is the right trade to make --- but the headline number is
+not a uniform improvement and should not be reported as one.
+
+\emph{The two detectors buy the same small-object gain with opposite
+currencies.} On YOLO26 the improvement comes from precision ($+5.07\%$) with
+recall nearly flat ($+1.24\%$); on YOLOv12 it comes from recall ($+5.69\%$)
+while precision \emph{falls} ($-1.90\%$). The F1 gains are therefore similar
+while the underlying behaviour is inverted --- the same headline metric, reached
+by opposite routes. This is the per-size evidence for the precision/recall
+asymmetry attributed in Section~\ref{sec:disc:why} to one-to-one versus
+NMS-based assignment.
+
+\emph{The architecture column shows the large-object cost directly.} YOLO26's
+architectural cell loses $6.4\%$ of large-object mAP$_{50\text{-}95}$ ($58.90
+\rightarrow 55.14$) --- the price of deleting the stride-32 detection branch ---
+whereas YOLOv12's architectural cell, which \emph{keeps} stride 32, gains
+$3.5\%$ on the same metric.
+
+\subsubsection*{Why these are fixed configurations rather than per-cell maxima}
+
+Each column of Table~\ref{tab:persize} is a single configuration evaluated at
+all three sizes. It is not the best run per cell, and for most cells it is not
+the campaign maximum: on large-object mAP$_{50}$, for instance, some run in the
+YOLO26 campaign reaches $85.55$ against our configuration's $80.35$. We report
+the fixed configuration deliberately, for two reasons.
+
+First, a per-cell maximum describes a model that does not exist. One cannot
+deploy the configuration that happens to lead on large objects together with the
+one that leads on small objects; a table assembled that way would report an
+unattainable system.
+
+Second, and more importantly, those maxima are largely noise. Selecting the
+maximum of $N$ draws from a distribution with standard deviation $\sigma$ yields,
+from sampling alone, an expected excess of approximately
+$\sigma\sqrt{2\ln N}$ above the mean. With $N=174$ YOLO26 runs and the measured
+$\sigma = 2.258$ on mAP$_{50}^{\text{large}}$ --- the noisiest metric in the
+study --- that is $7.25$ points. The $5.20$-point gap between our configuration
+and the campaign maximum is therefore \emph{smaller} than what pure noise would
+be expected to produce, and the corresponding maximum is a single unrepeated
+draw. The same calculation on mAP$_{50}^{\text{small}}$, where
+$\sigma = 0.428$, gives an expected noise maximum of $1.37$ points against an
+observed gap of $0.32$. Reporting per-cell maxima would amount to tabulating the
+selection bias we measured in Section~\ref{sec:method:protocol}.
+
+\subsection{The Two Mechanisms Have Opposite Signatures}
+
+The axes do not improve the same thing. On YOLO26 the loss mechanism is a
+\emph{precision} mechanism: $+3.63\%$ precision, but $-0.88\%$
+mAP$_{50\text{-}95}$ and $-4.44\%$ on the small-object recall ceiling
+$\mathrm{AR}_{50\text{-}95}^{\text{small}}$. The architectural mechanism is a
+\emph{recall} mechanism: $+2.51\%$ recall and $+1.45\%$ mAP$_{50\text{-}95}$
+with the recall ceiling intact ($-0.31\%$). Combining them retains the
+precision gain and inherits the recall cost.
+
+This trade is near-universal on YOLO26 and \emph{absent} on YOLOv12, which is
+itself informative. Of the $83$ YOLO26 configurations that improved small-object
+mAP$_{50}$ by more than one standard error, $79$ ($95\%$) also reduced
+$\mathrm{AR}_{50\text{-}95}^{\text{small}}$. Of the $38$ such configurations on
+YOLOv12, only $14$ ($37\%$) did; the majority, including the best architectural
+configuration, improved precision and the recall ceiling together.
+
+The difference tracks the assignment machinery rather than the data, since both
+detectors were trained on identical images. YOLO26's end-to-end formulation
+selects a single positive per ground truth in its one-to-one branch, so a
+sharper alignment metric necessarily discards candidates; YOLOv12's one-to-many
+assignment retains them. We therefore report the precision--recall exchange as a
+property of one-to-one assignment, not as a general law of small-object
+detection. The distinction matters operationally: for an unattended-luggage
+alarm a missed bag is a missed alarm, so a detector whose gains come at the cost
+of the recall ceiling is worth less than its headline metric suggests.
+
+\subsection{The Axes Are Substantially Redundant}
+
+Writing the effect of each axis alone as $\Delta_A$ and $\Delta_L$ and the
+combined effect as $\Delta_{AL}$, the interaction is
+$\iota = \Delta_{AL} - (\Delta_A + \Delta_L)$. On YOLO26,
+$\Delta_A = +1.10$, $\Delta_L = +1.32$, $\Delta_{AL} = +1.85$ points, so
+$\iota = -0.57$: the combination delivers $76\%$ of the sum of its parts. The
+same computation on YOLOv12's native combinations gives $46$--$81\%$. Measured
+against the architecture alone, adding a loss mechanism on YOLOv12 yields
+$+0.39$, $-0.09$ and $-0.22$ points of small-object mAP$_{50}$ for curriculum
+weighting, WIoU and level-balanced assignment respectively --- that is, no
+reliable gain at all. The two axes compete for the same errors.
+
+\subsection{Neither Detector's Mechanisms Transfer to the Other}
+\label{sec:results:transfer}
+
+We tested transfer in both directions and on both axes, always on the same
+dataset and at matched batch size. Table~\ref{tab:transfer} gives all four cells.
+
+\begin{table}[t]
+\centering
+\caption{The transfer design. Each mechanism is evaluated on the detector it was
+developed for and on the other one. $\Delta$ is percentage change in
+mAP$_{50}^{\text{small}}$ over that detector's own baseline; the run-to-run
+standard error is $0.61$ points, so $|\Delta| < 0.8\%$ is not resolvable.}
+\label{tab:transfer}
+\small
+\begin{tabular}{@{}llrr@{}}
+\toprule
+Axis & Mechanism & own & other \\
+\midrule
+Loss & curriculum weighting \; (v12) & $+0.95$ & \textit{null} \\
+Loss & alignment exponent $\beta{=}1$ \; (v26) & $+1.70$ & \textit{$+0.32$} \\
+Arch & global-context blocks \; (v12) & $+1.48$ & \textit{$+0.66$} \\
+Arch & drop stride 32 $+$ depth 4 \; (v26) & $+1.41$ & \textit{$+0.56$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The result is uniform: \textbf{every one of the four cross-model transfers is a
+null on the primary metric.} The resolvability threshold is $0.79\%$ of the
+baseline, and no ``other'' cell reaches it, while every ``own'' cell clears it
+by a factor of at least $1.2$. This is not a case of mechanisms that help a
+little less on the other detector; it is four mechanisms that stop working.
+
+Two of them additionally do damage that the small-object metric hides. The
+YOLO26 level reallocation costs YOLOv12 $6.1$ points of large-object
+mAP$_{50}$ and $9.6$ at strict IoU, and $\beta=1$ costs YOLOv12 $0.9$ points of
+mAP$_{50\text{-}95}$ and $2.6$ of the small-object recall ceiling. Taken across
+all metrics rather than one, the YOLO26 configuration loses $20$ of $24$
+matched-batch comparisons against YOLOv12's native configurations. The
+YOLOv12 global-context block, evaluated on YOLO26 in two placements, scored
+$+0.51$ and $+0.01$ --- in both cases \emph{below} the shared P2$+$DySample
+change it was added to, so it did not merely fail to help, it displaced
+something that did.
+
+The four comparisons the YOLO26 configuration does win are exactly those its
+mechanism predicts --- large-object AP for the exponent change, recall and the
+recall ceiling for the level reallocation. The mechanism \emph{signatures}
+therefore transfer faithfully while the net benefits do not, which is what
+Section~\ref{sec:disc:why} sets out to explain.
+
+Two findings invert outright. Removing the stride-32 detection branch is free to
+beneficial on YOLO26 but costs $6.1$ points of large-object mAP$_{50}$ on
+YOLOv12, whose stride-32 head is still carrying large luggage. And the depth
+optimum reverses: repeats of $4$ beat $2$ by $+0.62$ on YOLO26 and lose by
+$-0.46$ on YOLOv12.
+
+\subsection{A Batch-Size Control}
+\label{sec:results:batch}
+
+Because the stride-4 head does not fit at the baseline batch size, architectural
+runs use a smaller batch and therefore more optimisation steps. We quantify this
+directly with a matched-batch control, and with a second estimate at a different
+loss setting. The two estimates are $+0.57$ and $-0.13$ points of small-object
+mAP$_{50}$, both within one standard error of zero, bounding the batch effect
+below $\approx 0.6$ points. Applying the correction, YOLOv12's architectural
+gain falls from $+1.69$ to $+1.13$ points --- roughly a third of the apparent
+gain was step count. All YOLOv12 architectural figures in this paper are
+reported after this correction; YOLO26 requires none, as every cell of its
+$2\times2$ ran at batch $48$.
+
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Why Each Mechanism Helped Only Its Own Detector}
+\label{sec:disc:why}
+
+Section~\ref{sec:results:transfer} established that the transfer fails in both
+directions. A failure to transfer is only interesting if it can be explained, so
+we give the mechanism for each of the four cases. All four trace back to three
+differences between the two reference implementations, which we state precisely
+because they are not visible in the training configuration --- both models accept
+an identical set of keys and report identical loss names.
+
+\begin{table}[t]
+\centering
+\caption{The three implementation differences that explain the transfer
+failures. Both detectors share $\mathrm{box}{=}7.5$, $\mathrm{cls}{=}0.5$,
+$\mathrm{dfl}{=}1.5$, BCE classification, CIoU, and a task-aligned assigner with
+$\alpha{=}0.5$, $\beta{=}6$.}
+\label{tab:implsdiff}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+& \textbf{YOLOv12} & \textbf{YOLO26} \\
+\midrule
+Box distribution   & DFL, $\mathrm{reg\_max}{=}16$ & none, $\mathrm{reg\_max}{=}1$ \\
+Third loss term    & DFL over bins & $\ell_1$ on ltrb\,/\,imgsz \\
+Assignment         & one-to-many, $k{=}10$ & \emph{two} branches: \\
+                   & \; $+$ NMS at inference & \; o2m $k{=}10$, o2o $k{=}7,k_2{=}1$ \\
+Branch weighting   & --- & $0.8 \rightarrow 0.1$ (o2m), \\
+                   &     & $0.2 \rightarrow 0.9$ (o2o) \\
+Duplicate removal  & NMS & argmax, no NMS \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:implsdiff} lists them. Two points deserve emphasis. First, YOLO26
+does not simply drop the third loss term when $\mathrm{reg\_max}{=}1$: it
+substitutes an $\ell_1$ loss on left-top-right-bottom distances normalised by
+image size, so the term still exists but has a completely different gradient
+structure --- constant-magnitude and absolute-scale, rather than distributional
+and anchor-relative. Second, YOLO26's two assignment branches are combined with a
+\emph{scheduled} weighting: the one-to-many branch starts at $0.8$ and decays
+linearly to $0.1$ across training while the one-to-one branch rises from $0.2$ to
+$0.9$, so by the final epochs the model is optimised almost entirely through
+one-to-one assignment. Any mechanism acting on assignment therefore acts on a
+moving target on YOLO26 and on a static one on YOLOv12.
+
+\subsubsection{Curriculum area weighting is a null on YOLO26 because the term it
+leans on has been replaced}
+
+On YOLOv12 the per-positive weight $w_j^{(t)}$ of Equation~\eqref{eq:swa}
+multiplies two regression terms: CIoU and the DFL. The DFL is where fine
+localisation is learned --- it supervises a $16$-bin distribution per box edge,
+in units of feature cells measured from the anchor --- and it carries the
+$\mathrm{dfl}=1.5$ gain against CIoU's effective contribution. Crucially, DFL is
+\emph{anchor-relative and scale-free}: a small box and a large box both produce
+targets inside the same bin range, so re-weighting by object scale genuinely
+redistributes gradient between them.
+
+YOLO26 sets $\mathrm{reg\_max}=1$ and substitutes an $\ell_1$ loss on
+left-top-right-bottom distances \emph{normalised by image size}. The weight still
+multiplies it, so the mechanism is not disabled --- but it is now acting on a
+term with the opposite scale behaviour. The $\ell_1$ gradient has constant
+magnitude regardless of box size, and the quantity being regressed is an absolute
+fraction of the image rather than a distance in anchor units. A weighting scheme
+whose entire premise is that small objects are under-represented in a
+scale-relative loss has little to redistribute in a scale-absolute one.
+
+This is the cleanest example of the paper's general point. The intervention was
+tuned against a $16$-bin distributional loss and transplanted onto a direct
+$\ell_1$ regression, and nothing in the configuration surface signals the
+substitution: the key is still called \texttt{dfl}, the gain is still $1.5$, and
+the logged loss name changes from \texttt{dfl\_loss} to \texttt{l1\_loss} in a
+single line of the reference implementation.
+
+\subsubsection{The alignment exponent matters more on YOLO26 because nothing
+downstream can correct it}
+
+On YOLOv12 a small object receives roughly $7.7$ positives. At inference, NMS
+selects among their predictions by confidence. If the alignment metric ranked
+those anchors badly --- which is what an over-sharp $\beta$ does at small scales,
+per Section~\ref{sec:method:loss} --- the error is an error in the \emph{targets}
+of several anchors that will subsequently be pooled. NMS launders a noisy
+ranking: the surviving detection is effectively an ensemble decision over the
+positive set.
+
+YOLO26's one-to-one branch selects exactly \emph{one} winner per ground truth,
+by $\arg\max$ over the same alignment metric ($k=7$ candidates reduced to
+$k_2=1$), and there is no NMS afterwards to revise it. The exponent is therefore
+no longer shaping a soft ranking among redundant positives; it is making a
+single, final, unappealable choice. When IoU is noisy --- precisely the
+small-object regime --- $\beta=6$ amplifies that noise into the selection of the
+one anchor that will represent the object.
+
+The branch schedule sharpens this further. Because the one-to-one weight rises
+from $0.2$ to $0.9$ over training, the regime in which $\beta$ makes
+unappealable choices is also the regime that dominates the final epochs, when the
+model's decision boundary is actually being set. On YOLOv12 no such branch
+exists and no such schedule runs; $\beta$ shapes a soft ranking from first epoch
+to last.
+
+This predicts both observations: $\beta$ should matter more on YOLO26
+($+1.70\%$ versus $+0.25$--$0.94\%$), and the precision/recall exchange should be
+a YOLO26 phenomenon, since discarding the runners-up is exactly what one-to-one
+assignment does and what NMS-based assignment does not. Both hold --- the trade
+appears in $95\%$ of qualifying YOLO26 configurations and only $37\%$ of
+YOLOv12 ones.
+
+\subsubsection{Removing the coarsest level is affordable on YOLO26 and
+expensive on YOLOv12}
+
+This is the largest asymmetry in the study:
+
+\begin{center}\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+$-$ stride-32 detection branch & mAP$_{50}^{\text{large}}$ & mAP$_{50\text{-}95}^{\text{large}}$ \\
+\midrule
+YOLO26 \;\;p234        & $+0.49$ & $-2.87$ \\
+YOLO26 \;\;p234rich    & $+1.69$ & $-1.92$ \\
+YOLOv12 \;p234         & $-4.09$ & $-10.84$ \\
+YOLOv12 \;p234rich     & $-6.09$ & $-9.59$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+YOLOv12 loses roughly \emph{ten points} of strict-IoU large-object AP and four
+to six points even at IoU $0.5$; YOLO26 loses two to three points at strict IoU
+and \emph{gains} at IoU $0.5$. Both models were retrained from scratch on the
+reduced graph, so this is not a fine-tuning artefact --- stride 16 had every
+opportunity to absorb the large objects, and on YOLOv12 it could not.
+
+The leading explanation is again the DFL. A YOLOv12 anchor expresses each box
+edge as a distribution over $16$ bins measured in feature cells, so a stride-16
+anchor can represent an extent of at most $16 \times 16 = 256$ pixels from the
+anchor point; the same anchor at stride $32$ reaches $512$. Removing the
+stride-32 head forces the largest instances onto anchors whose regression range
+may not reach their boundaries, and a clipped distribution degrades gracefully
+at IoU $0.5$ but sharply at IoU $0.75$ and above --- which is the observed
+pattern. YOLO26, regressing offsets directly with no binning, has no equivalent
+range limit. We report this as the hypothesis most consistent with the data
+rather than as an established result: confirming it requires AP resolved by box
+size within the large bucket, which our evaluation protocol does not currently
+produce.
+
+We also note what this costs our own reasoning. The reallocation was motivated
+by a positives cross-tab showing that stride 32 receives $0.01$ positives per
+small ground truth and $1.68$ of a large object's $9.79$. That diagnostic was
+measured on YOLOv12 --- and YOLOv12 is the model where the removal proved
+expensive. \textbf{Assignment supply and inference contribution are not the same
+quantity}, and we mistook one for the other. A level can be nearly idle at
+training time and still be where the model places its most confident large-box
+predictions.
+
+\subsubsection{The level-specific blocks are a null on YOLO26 because their
+payoff route does not exist}
+
+The remaining cell of the transfer design is the YOLOv12 architectural
+mechanism applied to YOLO26. The gated global-context block was ported to the
+YOLO26 fork and evaluated twice, on the stock graph and on the P2/DySample
+graph:
+
+\begin{center}\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+YOLO26 $+$ global-context block & mAP$_{50}^{\text{small}}$ & mAP$_{50}$ \\
+\midrule
+on the stock three-level graph  & $+0.51$ & $-0.08$ \\
+on the P2/DySample graph        & $+0.01$ & $-0.23$ \\
+\midrule
+\emph{for reference}: P2$+$DySample alone & $+0.76$ & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Both are nulls at a run-to-run standard error of $0.61$, and both are
+\emph{below} the shared architectural change they were added to. On YOLOv12 the
+same block is part of the configuration that improves eight of nine metrics.
+
+The explanation follows the one-to-one/NMS distinction already established. A
+global-context block improves the \emph{classification confidence} of a location
+whose appearance alone is ambiguous --- a twelve-pixel dark blob that is a bag,
+a bin or a shadow depending on its surroundings. On YOLOv12 that improvement has
+a route to the output: the object holds roughly $7.7$ positives, all of them
+score-ranked, and NMS keeps the highest. Sharpening those scores changes which
+box survives and how confidently it is emitted, which is exactly what
+mAP$_{50}$ integrates over.
+
+YOLO26 does not rank-then-select. Its one-to-one branch commits to a single
+anchor by $\arg\max$ over the alignment metric \emph{during assignment}, and
+that metric is computed from the detached predicted score --- so a better
+per-location classifier changes which anchor is chosen, but there is no
+downstream selection stage in which improved confidence separates a good
+detection from a redundant one. The block is not harmful; it simply has nowhere
+to pay off. We note that the directional snake-convolution block was not
+evaluated in isolation on YOLO26, so this conclusion is established for the
+global-context component only.
+
+\subsubsection{Depth helps where it propagates and not where it terminates}
+
+The fine-level depth optimum is $4$ blocks on YOLO26 and $2$ on YOLOv12. The
+graphs explain the difference. On YOLO26 the P2 branch is inserted into the PAN,
+so the deepened row $19$ feeds row $22$, which feeds row $25$: additional
+capacity there refines features consumed by \emph{two further predictions} as
+well as its own. On YOLOv12 the P2 branch is appended and its head is a leaf ---
+row $23$ is read only by its refinement block and the detection head. Depth
+added to a terminal branch buys one prediction; depth added to an upstream
+branch buys three. This also explains why the effect is small in both cases and
+why $6$ blocks over-fit on YOLO26: the benefit is real but second-order.
+
+\subsection{What This Means for Small-Object Detection Research}
+
+The four explanations share a shape. In each case the mechanism was not wrong
+about the problem --- small objects really are under-weighted, IoU really is
+noisier at small scales, the coarsest level really does receive few positives.
+The mechanism was wrong about the \emph{detector}, because each intervention
+depends on an implementation detail that the configuration surface hides: the
+presence of a DFL, the presence of NMS, the topology of the branch it deepens.
+
+The practical consequence is uncomfortable for the field's reporting norms. A
+small-object mechanism validated on one detector should not be expected to carry
+to another, even one from the same family, trained on the same images, at the
+same resolution. Our two detectors differ by one release generation and share a
+configuration format, and yet nothing transferred. Papers that propose a
+mechanism on a single backbone and describe it as a general contribution are
+making a claim their experiments do not support, and the cost of checking is one
+additional detector.
+
+\subsection{Limitations}
+
+The YOLOv12 half of the study is $n=1$ per configuration; only YOLO26 carries
+seeded intervals, and only for the configurations named in
+Table~\ref{tab:decomp}. The batch-size confound on the architectural axis is
+bounded but not eliminated, and its two estimates disagree in sign. The DFL
+range hypothesis of Section~\ref{sec:disc:why} is consistent with the data but
+untested. All results are on a single dataset; the trade between small-object
+precision and the small-object recall ceiling may be a property of
+bird's-eye-view luggage imagery rather than of small objects generally. Finally,
+the unattended-luggage application that motivates the benchmark is specified in
+Fig.~\ref{fig:pipeline} but not evaluated here, since LuggageDataset~v6i
+contains images rather than tracked video.
+
+% =====================================================================
+\begin{thebibliography}{99}
+\small
+\bibitem{pets2006overview}
+D.~Thirde, L.~Li, and J.~Ferryman, ``Overview of the PETS2006 challenge,'' in
+\emph{Proc. 9th IEEE Int. Workshop Performance Evaluation of Tracking and
+Surveillance (PETS)}, 2006, pp.~47--50.
+
+\bibitem{smith2006pets}
+K.~Smith, P.~Quelhas, and D.~Gatica-Perez, ``Detecting abandoned luggage items in
+a public space,'' in \emph{Proc. PETS}, 2006, pp.~75--82.
+
+\bibitem{dahi2017}
+I.~Dahi et al., ``An edge-based method for effective abandoned luggage detection
+in complex surveillance videos,'' \emph{Comput. Vis. Image Understanding},
+vol.~158, pp.~141--151, 2017.
+
+\bibitem{smeureanu2018}
+S.~Smeureanu and R.~T.~Ionescu, ``Real-time deep learning method for abandoned
+luggage detection in video,'' in \emph{Proc. EUSIPCO}, 2018, pp.~1775--1779.
+
+\bibitem{zhou2024sao}
+L.~Zhou and J.~Xu, ``Enhanced abandoned object detection through adaptive
+dual-background modeling and SAO-YOLO integration,'' \emph{Sensors}, vol.~24,
+no.~20, art.~6572, 2024.
+
+\bibitem{vrsalovic2025sensors}
+R.~Vr\v{s}alovi\'{c}, J.~Lerga, and M.~Iva\v{s}i\'{c}-Kos, ``Abandoned luggage
+detection in surveillance videos using fine-tuned object detectors,''
+\emph{Sensors}, vol.~25, no.~9, art.~2872, 2025.
+
+\bibitem{vrsalovic2025picom}
+R.~Vr\v{s}alovi\'{c} et al., ``YOLOv11-based algorithm for abandoned luggage
+detection with dynamic radius estimation,'' in \emph{Proc. IEEE PICom}, 2025.
+
+\bibitem{catargiu2026weapon}
+C.~Catargiu and I.~B.~Ciocoiu, ``Real-time weapon detection using enhanced
+YOLO12 models and a custom dataset,'' \emph{IEEE Access}, vol.~14, 2026,
+doi:~10.1109/ACCESS.2026.3721157.
+
+\bibitem{dysample2023}
+W.~Liu, H.~Lu, H.~Fu, and Z.~Cao, ``Learning to upsample by learning to sample,''
+in \emph{Proc. IEEE/CVF Int. Conf. Comput. Vis. (ICCV)}, 2023, pp.~6027--6037.
+
+\bibitem{qi2023dscnet}
+Y.~Qi et al., ``Dynamic snake convolution based on topological geometric
+constraints for tubular structure segmentation,'' in \emph{Proc. IEEE/CVF Int.
+Conf. Comput. Vis. (ICCV)}, 2023, pp.~6070--6079.
+
+\bibitem{tood2021}
+C.~Feng, Y.~Zhong, Y.~Gao, M.~R.~Scott, and W.~Huang, ``TOOD: Task-aligned
+one-stage object detection,'' in \emph{Proc. IEEE/CVF Int. Conf. Comput. Vis.
+(ICCV)}, 2021, pp.~3490--3499.
+
+\bibitem{cao2019gcnet}
+Y.~Cao, J.~Xu, S.~Lin, F.~Wei, and H.~Hu, ``GCNet: Non-local networks meet
+squeeze-excitation networks and beyond,'' in \emph{Proc. IEEE/CVF Int. Conf.
+Comput. Vis. Workshops (ICCVW)}, 2019.
+\end{thebibliography}
+
+\balance
+\end{document}

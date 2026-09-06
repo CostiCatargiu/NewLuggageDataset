@@ -1,0 +1,55 @@
+HEADLINE RUN PATHS — the four cells of the 2x2, both detectors
+==============================================================
+Base path on the training box (confirmed from the "source:" lines in
+DIAGNOSTICS/confusion_collected/*/REPORT.txt):
+
+    ROOT = /home/constantin/Doctorat/YoloLib/runs/detect
+
+Each run directory contains:  args.yaml  results.csv  weights/best.pt
+                              + the runner's own params json
+
+
+YOLO26s
+-------
+ cell   run                        path
+ BASE   y26_base_rep               $ROOT/runs_yolo26_sbb_overnight_v6i/y26_base_rep
+        y26_identity_s1            $ROOT/runs_yolo26_round16_v6i/y26_identity_s1
+        y26_identity_s2            $ROOT/runs_yolo26_round17_v6i/y26_identity_s2
+
+ LOSS   y26_b1                     $ROOT/runs_yolo26_round21_v6i/y26_b1
+        y26_b1_s1                  $ROOT/runs_yolo26_round23_v6i/y26_b1_s1
+
+ ARCH   y26_p2dys_p234rich         $ROOT/runs_yolo26_p2_grid_v6i/y26_p2dys_p234rich
+
+ BOTH   y26_p234rich_b1            $ROOT/runs_yolo26_p234_depth_v6i/y26_p234rich_b1
+        y26_p234rich_b1_s1         $ROOT/runs_yolo26_p234_depth_v6i/y26_p234rich_b1_s1
+        y26_p234rich_b1_s2         $ROOT/runs_yolo26_p234_final_v6i/y26_p234rich_b1_s2
+
+
+YOLOv12s
+--------
+ cell   run                        path
+ BASE   yolov12s_default           $ROOT/runs_newl_luggagev6i/yolov12s_default      (batch 54)
+ CTRL   v12_stock_b32              $ROOT/runs_v12_p234rich_transfer_v6i/v12_stock_b32  (batch 32)
+
+ LOSS   yolov12s_sqrt0703          $ROOT/runs_newl_luggagev6i/yolov12s_sqrt0703     (batch 54)
+
+ ARCH   arch_ls_shift              $ROOT/runs_arch_v6i/arch_ls_shift                (batch 32)
+
+ BOTH   ls_shift_sqrt              $ROOT/runs_arch_refine_v6i/ls_shift_sqrt         (batch 32)
+
+
+NOTE ON THE v26 BASELINE. The three identity seeds live in three DIFFERENT
+project dirs because they were run in different rounds. They are the same
+configuration; the paper averages them.
+
+NOTE ON v12 BATCH. The baseline and the loss cell ran at batch 54; the two
+architectural cells at batch 32. v12_stock_b32 is the matched-batch control
+used for the correction in Section V-F. Check args.yaml, not the script
+constants — the arch results JSONs record an EMPTY run_meta.
+
+QUICK INSPECTION
+    python run_v12_p234rich_transfer_v6i.py --refs      # prints these paths,
+                                                        # checks they exist, and
+                                                        # diffs their args.yaml
+    V12_RUNS_ROOT=$ROOT python run_v12_p234rich_transfer_v6i.py --refs
