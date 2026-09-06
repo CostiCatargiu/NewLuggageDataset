@@ -1,0 +1,29 @@
+{
+  "source": "/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_EASYo.mpg",
+  "fps": 29.97002997002997,
+  "frames": 1647,
+  "params": {
+    "d_own": 1.5,
+    "d_away": 2.5,
+    "ownership_sec": 2.0,
+    "owner_grace_sec": 2.0,
+    "unattended_seconds": 10.0
+  },
+  "events": [
+    {
+      "luggage_track": 1,
+      "owner_track": 2,
+      "class": "trolley",
+      "first_seen_sec": 0.0,
+      "left_at_sec": 22.49,
+      "alarm_at_sec": 32.5,
+      "alarm_frame": 975,
+      "bag_seen_frac": 1.0,
+      "bag_drift_px": 1.5,
+      "bag_drift_w": 0.02,
+      "owner_seen_frac": 0.0,
+      "away_frames": 301,
+      "owner_d_max_h": null
+    }
+  ]
+}

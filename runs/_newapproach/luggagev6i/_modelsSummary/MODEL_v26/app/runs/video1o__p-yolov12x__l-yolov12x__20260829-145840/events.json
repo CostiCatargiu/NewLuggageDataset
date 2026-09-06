@@ -1,0 +1,29 @@
+{
+  "source": "/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/video1o.avi",
+  "fps": 29.97,
+  "frames": 1189,
+  "params": {
+    "d_own": 1.5,
+    "d_away": 2.5,
+    "ownership_sec": 2.0,
+    "owner_grace_sec": 2.0,
+    "unattended_seconds": 10.0
+  },
+  "events": [
+    {
+      "luggage_track": 1,
+      "owner_track": 1,
+      "class": "bag",
+      "first_seen_sec": 0.47,
+      "left_at_sec": 17.95,
+      "alarm_at_sec": 27.96,
+      "alarm_frame": 839,
+      "bag_seen_frac": 1.0,
+      "bag_drift_px": 16.4,
+      "bag_drift_w": 0.35,
+      "owner_seen_frac": 0.0,
+      "away_frames": 301,
+      "owner_d_max_h": null
+    }
+  ]
+}
