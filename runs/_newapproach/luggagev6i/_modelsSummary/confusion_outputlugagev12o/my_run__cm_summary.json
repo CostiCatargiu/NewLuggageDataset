@@ -1,0 +1,195 @@
+{
+  "predictions_json": "/home/constantin/Doctorat/YoloLib/YoloModels/YoloV12/runs/detect/val2/predictions.json",
+  "coco_ann_json": "/home/constantin/Doctorat/LuggageDataset.v6i.yolov12/annotations_coco_test.json",
+  "iou_thresh": 0.5,
+  "conf_thresh": "auto",
+  "small_thresh": 48,
+  "large_thresh": 128,
+  "class_names": [
+    "backpack",
+    "bag",
+    "trolley"
+  ],
+  "sizes": {
+    "all": {
+      "TP": 4646,
+      "FP": 904,
+      "FN": 1255,
+      "cls_err": 271,
+      "precision": 0.7981446486857928,
+      "recall": 0.7527543745949449,
+      "conf_thresh_used": {
+        "1": 0.3758,
+        "2": 0.29634,
+        "3": 0.39163
+      },
+      "matrix": [
+        [
+          1200,
+          86,
+          24,
+          338
+        ],
+        [
+          52,
+          857,
+          37,
+          384
+        ],
+        [
+          23,
+          49,
+          2589,
+          533
+        ],
+        [
+          264,
+          294,
+          346,
+          0
+        ]
+      ],
+      "labels": [
+        "backpack",
+        "bag",
+        "trolley",
+        "background"
+      ]
+    },
+    "small": {
+      "TP": 3318,
+      "FP": 849,
+      "FN": 1033,
+      "cls_err": 178,
+      "precision": 0.7636363636363637,
+      "recall": 0.732612055641422,
+      "conf_thresh_used": {
+        "1": 0.3758,
+        "2": 0.29634,
+        "3": 0.39163
+      },
+      "matrix": [
+        [
+          795,
+          52,
+          21,
+          271
+        ],
+        [
+          35,
+          592,
+          24,
+          306
+        ],
+        [
+          16,
+          30,
+          1931,
+          456
+        ],
+        [
+          250,
+          261,
+          338,
+          0
+        ]
+      ],
+      "labels": [
+        "backpack",
+        "bag",
+        "trolley",
+        "background"
+      ]
+    },
+    "medium": {
+      "TP": 1159,
+      "FP": 175,
+      "FN": 188,
+      "cls_err": 62,
+      "precision": 0.8302292263610315,
+      "recall": 0.8225691980127751,
+      "conf_thresh_used": {
+        "1": 0.3758,
+        "2": 0.29634,
+        "3": 0.39163
+      },
+      "matrix": [
+        [
+          349,
+          18,
+          4,
+          58
+        ],
+        [
+          12,
+          177,
+          9,
+          59
+        ],
+        [
+          5,
+          14,
+          633,
+          71
+        ],
+        [
+          38,
+          49,
+          88,
+          0
+        ]
+      ],
+      "labels": [
+        "backpack",
+        "bag",
+        "trolley",
+        "background"
+      ]
+    },
+    "large": {
+      "TP": 169,
+      "FP": 37,
+      "FN": 32,
+      "cls_err": 33,
+      "precision": 0.7071129707112971,
+      "recall": 0.7222222222222222,
+      "conf_thresh_used": {
+        "1": 0.3758,
+        "2": 0.29634,
+        "3": 0.39163
+      },
+      "matrix": [
+        [
+          55,
+          17,
+          0,
+          8
+        ],
+        [
+          5,
+          88,
+          4,
+          19
+        ],
+        [
+          2,
+          5,
+          26,
+          5
+        ],
+        [
+          15,
+          17,
+          5,
+          0
+        ]
+      ],
+      "labels": [
+        "backpack",
+        "bag",
+        "trolley",
+        "background"
+      ]
+    }
+  }
+}
