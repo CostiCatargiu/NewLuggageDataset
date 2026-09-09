@@ -1,0 +1,42 @@
+\begin{table*}[t]
+\centering
+\caption{Per-size effect of each axis on the test split, for both detectors.
+\textbf{L} is the loss axis alone, \textbf{A} the architecture axis alone, and
+\textbf{A$+$L} both combined; $\Delta$ is the percentage change of A$+$L over that
+detector's baseline. YOLO26 cells are means over $3$, $2$, $1$ and $3$ seeds
+respectively; YOLOv12 cells are single runs, and its A and A$+$L columns are
+batch-corrected per Section~\ref{sec:results:batch}. F1 is computed from the
+per-size precision and recall in the same row. \textbf{Each column is one fixed
+configuration evaluated at all three sizes, not the best run per cell};
+bold marks the best of the four columns within a row, not a campaign maximum.}
+\label{tab:persize}
+\small
+\begin{tabular}{@{}ll rrrr r@{\hspace{4mm}} rrrr r@{}}
+\toprule
+& & \multicolumn{5}{c}{\textbf{YOLO26s}} & \multicolumn{5}{c}{\textbf{YOLOv12s}} \\
+\cmidrule(lr){3-7}\cmidrule(lr){8-12}
+& Metric & Base & L & A & A$+$L & $\Delta$ & Base & L & A & A$+$L & $\Delta$ \\
+\midrule
+\multicolumn{12}{@{}l}{\textbf{Small} ($<48$\,px side)}\\
+& mAP$_{50}$ & 77.62 & 78.94 & 78.72 & \textbf{79.47} & $+2.38$ & 76.65 & 77.37 & 77.78 & \textbf{78.16} & $+1.97$ \\
+& mAP$_{50\text{-}95}$ & 51.09 & 50.85 & \textbf{52.08} & 51.45 & $+0.71$ & 49.98 & 50.63 & \textbf{50.67} & 50.67 & $+1.38$ \\
+& Precision & 75.64 & 78.16 & 78.16 & \textbf{79.48} & $+5.07$ & 76.71 & \textbf{78.01} & 76.57 & 75.25 & $-1.90$ \\
+& Recall & 71.56 & 71.83 & 72.33 & \textbf{72.44} & $+1.24$ & 70.33 & 70.33 & 72.00 & \textbf{74.33} & $+5.69$ \\
+& F1 & 73.54 & 74.86 & 75.14 & \textbf{75.80} & $+3.07$ & 73.38 & 73.97 & 74.21 & \textbf{74.79} & $+1.92$ \\
+\addlinespace
+\multicolumn{12}{@{}l}{\textbf{Medium} ($48$--$96$\,px)}\\
+& mAP$_{50}$ & 86.61 & 87.16 & \textbf{87.80} & 87.18 & $+0.66$ & 86.59 & \textbf{87.01} & 86.69 & 85.61 & $-1.13$ \\
+& mAP$_{50\text{-}95}$ & 66.10 & 64.54 & \textbf{67.09} & 64.49 & $-2.44$ & 65.07 & \textbf{65.61} & 65.15 & 64.09 & $-1.52$ \\
+& Precision & 89.56 & 88.75 & \textbf{90.69} & 89.89 & $+0.38$ & 88.18 & 87.69 & 87.84 & \textbf{88.78} & $+0.69$ \\
+& Recall & 78.67 & \textbf{81.33} & 79.33 & 81.11 & $+3.11$ & 80.67 & 80.67 & \textbf{81.33} & 79.00 & $-2.07$ \\
+& F1 & 83.76 & 84.88 & 84.63 & \textbf{85.28} & $+1.81$ & 84.25 & 84.03 & \textbf{84.46} & 83.61 & $-0.77$ \\
+\addlinespace
+\multicolumn{12}{@{}l}{\textbf{Large} ($>96$\,px)}\\
+& mAP$_{50}$ & 80.65 & \textbf{83.57} & 80.75 & 81.86 & $+1.50$ & 81.87 & 82.12 & \textbf{84.82} & 82.10 & $+0.29$ \\
+& mAP$_{50\text{-}95}$ & 58.90 & \textbf{59.05} & 55.14 & 55.24 & $-6.21$ & 57.73 & \textbf{59.99} & 59.74 & 59.07 & $+2.33$ \\
+& Precision & 78.03 & \textbf{83.91} & 74.52 & 81.91 & $+4.98$ & 83.66 & 82.91 & \textbf{87.60} & 83.04 & $-0.74$ \\
+& Recall & 76.67 & \textbf{80.50} & 76.00 & 76.11 & $-0.72$ & 74.67 & \textbf{78.67} & 76.00 & 75.67 & $+1.34$ \\
+& F1 & 77.34 & \textbf{82.17} & 75.25 & 78.91 & $+2.02$ & 78.91 & 80.73 & \textbf{81.39} & 79.18 & $+0.35$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
