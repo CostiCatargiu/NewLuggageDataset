@@ -1,0 +1,39 @@
+\begin{table*}[t]
+\centering
+\caption{Per-class, per-size performance on the test split: baseline versus the
+recommended configuration, both models, means of three seeds. Size buckets are
+the COCO area convention. \texttt{bag} is the weakest class at every size on
+both detectors and the ordering \texttt{trolley} $>$ \texttt{backpack} $>$
+\texttt{bag} holds in all eighteen cells.}
+\label{tab:perclasssize}
+\small
+\begin{tabular}{@{}ll rrr rrr@{}}
+\toprule
+& & \multicolumn{3}{c}{AP$_{50}$} & \multicolumn{3}{c}{AP$_{50\text{-}95}$} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+Class & Size & Base & A$+$L & $\Delta$ & Base & A$+$L & $\Delta$ \\
+\midrule
+\multicolumn{8}{@{}l}{\textbf{YOLO26s} \; --- \; p2dys-p234rich $+$ $\beta{=}1$}\\
+\textit{backpack} & small & 78.82 & 81.10 & $+2.28$ & 51.11 & 53.91 & $+2.79$ \\
+ & medium & 89.69 & 91.99 & $+2.30$ & 67.88 & 69.75 & $+1.87$ \\
+ & large & 82.93 & 86.53 & $+3.60$ & 56.49 & 58.56 & $+2.06$ \\
+\textit{bag} & small & 67.78 & 70.46 & $+2.68$ & 42.78 & 44.60 & $+1.82$ \\
+ & medium & 76.85 & 79.64 & $+2.79$ & 54.88 & 55.77 & $+0.90$ \\
+ & large & 85.74 & 85.50 & $-0.25$ & 68.87 & 66.36 & $-2.51$ \\
+\textit{trolley} & small & 85.47 & 88.86 & $+3.39$ & 58.09 & 60.24 & $+2.15$ \\
+ & medium & 93.16 & 93.99 & $+0.84$ & 73.98 & 72.83 & $-1.14$ \\
+ & large & 76.77 & 70.48 & $-6.29$ & 56.00 & 58.26 & $+2.26$ \\
+\midrule
+\multicolumn{8}{@{}l}{\textbf{YOLOv12s} \; --- \; \texttt{ls\_shift} $+$ curriculum weighting}\\
+\textit{backpack} & small & 77.71 & 80.48 & $+2.76$ & 50.49 & 52.87 & $+2.38$ \\
+ & medium & 90.99 & 92.53 & $+1.54$ & 66.99 & 68.65 & $+1.66$ \\
+ & large & 85.28 & 82.09 & $-3.18$ & 58.70 & 57.92 & $-0.78$ \\
+\textit{bag} & small & 67.45 & 70.83 & $+3.37$ & 41.75 & 43.36 & $+1.61$ \\
+ & medium & 77.30 & 75.79 & $-1.51$ & 54.72 & 53.19 & $-1.53$ \\
+ & large & 81.33 & 86.58 & $+5.25$ & 66.41 & 66.79 & $+0.38$ \\
+\textit{trolley} & small & 87.64 & 88.22 & $+0.58$ & 57.68 & 58.74 & $+1.06$ \\
+ & medium & 94.88 & 94.07 & $-0.81$ & 73.58 & 72.10 & $-1.48$ \\
+ & large & 81.93 & 79.67 & $-2.26$ & 48.08 & 55.16 & $+7.08$ \\
+\bottomrule
+\end{tabular}
+\end{table*}

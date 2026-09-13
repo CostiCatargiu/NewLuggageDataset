@@ -76,27 +76,32 @@
 \begin{tikzpicture}[x=1cm,y=1cm]
 
 %% ================= (a) pipeline =========================================
-\node[font=\footnotesize\bfseries,anchor=west] at (0,2.05) {(a)~~Per-frame pipeline};
+% Node widths are measured, not guessed: at \scriptsize the two detector
+% boxes are 3.26 cm wide, so they must start far enough left of the tracker
+% box that (dl.east) stays to the LEFT of (tr.west) -- otherwise the
+% "-- ++(0.28,0) |- (tr.west)" connector doubles back on itself and draws a
+% hook over the tracker box. Slots below are laid out with a 0.55 cm gap.
+\node[font=\footnotesize\bfseries,anchor=west] at (0,2.22) {(a)~~Per-frame pipeline};
 
-\node[blk,minimum width=11mm,anchor=west] (fr) at (0.10,1.10) {Video\\frame};
-\node[teal,minimum width=25mm,anchor=west] (dl) at (1.62,1.46) {Luggage detector \textemdash{} YOLO26\\\textit{fine-tuned, 3 classes}};
-\node[purp,minimum width=25mm,anchor=west] (dp) at (1.62,0.74) {Person detector \textemdash{} YOLO26-x\\\textit{COCO, not fine-tuned}};
-\node[blk,minimum width=19mm,anchor=west] (tr) at (4.95,1.10) {BoT-SORT $\times2$\\separate ID spaces};
-\node[blu,minimum width=21mm,anchor=west] (op) at (7.55,1.10) {Owner pairing\\$\bar d$ over first $T_o$};
-\node[amb,minimum width=19mm,anchor=west] (sm) at (10.40,1.10) {State machine\\dwell timer $\tau$};
-\node[cor,minimum width=13mm,anchor=west] (al) at (13.05,1.10) {Alarm};
+\node[blk,minimum width=11mm,anchor=west]  (fr) at (0.10,1.10) {Video\\frame};
+\node[teal,minimum width=33mm,anchor=west] (dl) at (1.75,1.58) {Luggage detector \textemdash{} YOLO26\\\textit{fine-tuned, 3 classes}};
+\node[purp,minimum width=33mm,anchor=west] (dp) at (1.75,0.62) {Person detector \textemdash{} YOLO26-x\\\textit{COCO, not fine-tuned}};
+\node[blk,minimum width=23mm,anchor=west]  (tr) at (5.60,1.10) {BoT-SORT $\times2$\\separate ID spaces};
+\node[blu,minimum width=23mm,anchor=west]  (op) at (8.45,1.10) {Owner pairing\\$\bar d$ over first $T_o$};
+\node[amb,minimum width=23mm,anchor=west]  (sm) at (11.30,1.10) {State machine\\dwell timer $\tau$};
+\node[cor,minimum width=14mm,anchor=west]  (al) at (14.15,1.10) {Alarm};
 
-\draw[fl] (fr.east) -- ++(0.18,0) |- (dl.west);
-\draw[fl] (fr.east) -- ++(0.18,0) |- (dp.west);
-\draw[fl] (dl.east) -- ++(0.28,0) |- (tr.west);
-\draw[fl] (dp.east) -- ++(0.28,0) |- (tr.west);
+\draw[fl] (fr.east) -- ++(0.22,0) |- (dl.west);
+\draw[fl] (fr.east) -- ++(0.22,0) |- (dp.west);
+\draw[fl] (dl.east) -- ++(0.27,0) |- (tr.west);
+\draw[fl] (dp.east) -- ++(0.27,0) |- (tr.west);
 \draw[fl] (tr.east) -- (op.west);
 \draw[fl] (op.east) -- (sm.west);
 \draw[fl] (sm.east) -- (al.west);
-\node[lbl,anchor=north] at (8.60,0.62) {radii in person heights, so they scale with depth};
 
 %% ================= (b) worked example ===================================
 \node[font=\footnotesize\bfseries,anchor=west] at (0,-0.15) {(b)~~Worked example \textemdash{} one luggage track, $r_o\!=\!1.5h$, $r_a\!=\!2.5h$, $T_a\!=\!30$\,s};
+\node[lbl,anchor=east] at (16.70,-0.15) {radii in person heights $h$, so they scale with depth};
 
 \def\sc#1#2#3#4#5#6{%
   \begin{scope}[shift={(#1,-2.30)}]
@@ -120,37 +125,44 @@
 
 
 %% ================= (c) timeline =========================================
-\node[font=\footnotesize\bfseries,anchor=west] at (0,-4.05) {(c)~~State and dwell timer $\tau$ on a common time axis};
+% Time axis: x = 0.10 + 0.415*t, so 0 s -> 0.10, 6 -> 2.59, 8 -> 3.42,
+% 12 -> 5.08, 14 -> 5.91, 38 -> 15.87, 40 -> 16.70.
+% The bar is 0.50 cm tall (was 0.36) so the two inline labels sit clear of
+% the rules, and ALL labels below it live on exactly two levels: timestamps
+% at -5.16, segment names at -5.56. The vertical droplines that used to run
+% down from the (b) snapshots are gone: the snapshots are evenly spaced but
+% time is not, so those lines landed nowhere near their own timestamps.
+\node[font=\footnotesize\bfseries,anchor=west] at (0,-4.05) {(c)~~State and dwell timer $\tau$ on a true time axis};
+\node[lbl,anchor=east] at (16.70,-4.05) {the (b) snapshots are evenly spaced; here time is to scale};
 
-\fill[cTealBg,draw=cTeal,line width=0.3pt] (0.10,-4.92) rectangle (2.59,-4.56);
-\fill[cAmbBg!55,draw=cAmb,line width=0.3pt] (2.59,-4.92) rectangle (3.42,-4.56);
-\fill[cAmbBg,draw=cAmb,line width=0.3pt] (3.42,-4.92) rectangle (5.08,-4.56);
-\fill[cGryBg,draw=cGry,line width=0.3pt] (5.08,-4.92) rectangle (5.91,-4.56);
-\fill[cAmbBg,draw=cAmb,line width=0.3pt] (5.91,-4.92) rectangle (15.87,-4.56);
-\fill[cCorBg,draw=cCor,line width=0.3pt] (15.87,-4.92) rectangle (16.70,-4.56);
+\fill[cTealBg,draw=cTeal,line width=0.3pt]  (0.10,-5.00) rectangle (2.59,-4.50);
+\fill[cAmbBg!55,draw=cAmb,line width=0.3pt] (2.59,-5.00) rectangle (3.42,-4.50);
+\fill[cAmbBg,draw=cAmb,line width=0.3pt]    (3.42,-5.00) rectangle (5.08,-4.50);
+\fill[cGryBg,draw=cGry,line width=0.3pt]    (5.08,-5.00) rectangle (5.91,-4.50);
+\fill[cAmbBg,draw=cAmb,line width=0.3pt]    (5.91,-5.00) rectangle (15.87,-4.50);
+\fill[cCorBg,draw=cCor,line width=0.3pt]    (15.87,-5.00) rectangle (16.70,-4.50);
 
-\node[font=\tiny,text=cTeal] at (1.35,-4.74) {attended};
-\node[font=\tiny,text=cAmb]  at (10.60,-4.74) {unattended \textemdash{} $\tau$ accumulating};
+\node[font=\tiny,text=cTeal] at (1.35,-4.75) {attended};
+\node[font=\tiny,text=cAmb]  at (10.89,-4.75) {unattended \textemdash{} $\tau$ accumulating};
 
-\foreach \x/\t in {0.10/0\,s, 2.59/6\,s, 3.42/8\,s, 15.87/38\,s}{
-  \draw[draw=cGry!60,line width=0.3pt] (\x,-4.92) -- (\x,-5.06);
-  \node[font=\tiny,text=cGry,anchor=north] at (\x,-5.06) {\t};}
+% level 1 -- timestamps, every event on one line
+\foreach \x/\t in {0.10/0\,s, 2.59/6\,s, 3.42/8\,s, 5.08/12\,s, 5.91/14\,s, 15.87/38\,s}{
+  \draw[draw=cGry!60,line width=0.3pt] (\x,-5.00) -- (\x,-5.14);
+  \node[font=\tiny,text=cGry,anchor=north] at (\x,-5.14) {\t};}
 
-\draw[draw=cGry!60,line width=0.3pt] (5.50,-4.92) -- (5.50,-5.30);
-\node[font=\tiny,text=cGry,anchor=north] at (5.50,-5.30) {occluded 12\textendash14\,s, $\tau$ holds};
-\node[font=\tiny,text=cAmb,anchor=north] at (3.00,-5.42) {drifting};
-\draw[draw=cAmb!60,line width=0.3pt] (3.00,-4.92) -- (3.00,-5.42);
-\node[font=\tiny,text=cCor,anchor=north west] at (15.95,-5.30) {alarm};
-\draw[draw=cCor!60,line width=0.3pt] (16.28,-4.92) -- (16.28,-5.30);
-
-\foreach \x in {1.62,5.02,8.42,11.82,15.22}
-  \draw[draw=cGry!30,line width=0.3pt,dotted] (\x,-3.60) -- (\x,-4.56);
+% level 2 -- names of the segments too narrow to label inline
+\draw[draw=cAmb!60,line width=0.3pt] (3.005,-5.00) -- (3.005,-5.54);
+\node[font=\tiny,text=cAmb,anchor=north] at (3.005,-5.56) {drifting};
+\draw[draw=cGry!60,line width=0.3pt] (5.495,-5.00) -- (5.495,-5.54);
+\node[font=\tiny,text=cGry,anchor=north] at (5.495,-5.56) {occluded \textemdash{} $\tau$ holds};
+\draw[draw=cCor!60,line width=0.3pt] (16.285,-5.00) -- (16.285,-5.54);
+\node[font=\tiny,text=cCor,anchor=north] at (16.285,-5.56) {alarm};
 
 %% ================= guards ==============================================
-\node[lbl,anchor=north west,align=left,text width=79mm] at (0.10,-5.85)
+\node[lbl,anchor=north west,align=left,text width=79mm] at (0.10,-6.05)
  {\textbf{Guard 1.} The owner is the person minimising \emph{mean} distance over the
   bag's first $T_o$ seconds \textemdash{} not the nearest person in any single frame.};
-\node[lbl,anchor=north west,align=left,text width=79mm] at (8.90,-5.85)
+\node[lbl,anchor=north west,align=left,text width=79mm] at (8.90,-6.05)
  {\textbf{Guard 2.} $\tau$ advances only while the bag track is alive, so the
   occlusion at $t\!=\!12$--$14$\,s is not counted as a departure.};
 

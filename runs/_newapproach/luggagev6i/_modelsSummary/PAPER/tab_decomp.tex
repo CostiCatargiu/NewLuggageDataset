@@ -1,0 +1,32 @@
+\begin{table}[t]
+\centering
+\caption{The two axes on both detectors. Every cell is the mean of three seeds,
+$\pm$ one standard deviation. $\Delta$ is the percentage change of A$+$L over
+that detector's baseline.}
+\label{tab:decomp}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lcccc r@{}}
+\toprule
+Metric & Base & Loss & Arch & \textbf{A$+$L} & $\Delta$ \\
+\midrule
+\multicolumn{6}{@{}l}{\textbf{YOLO26s}}\\
+mAP$_{50}^{\text{small}}$ & 77.26\,\tiny{$\pm$0.23} & 78.61\,\tiny{$\pm$0.46} & 79.83\,\tiny{$\pm$0.16} & \textbf{79.91}\,\tiny{$\pm$0.42} & $+3.44$ \\
+mAP$_{50}$ & 80.25\,\tiny{$\pm$0.29} & 81.45\,\tiny{$\pm$0.30} & 82.37\,\tiny{$\pm$0.21} & \textbf{83.01}\,\tiny{$\pm$0.39} & $+3.45$ \\
+mAP$_{50\text{-}95}$ & 54.90\,\tiny{$\pm$0.18} & 54.71\,\tiny{$\pm$0.19} & 56.61\,\tiny{$\pm$0.23} & \textbf{56.43}\,\tiny{$\pm$0.18} & $+2.79$ \\
+Precision & 81.28\,\tiny{$\pm$0.32} & 82.21\,\tiny{$\pm$0.11} & 83.26\,\tiny{$\pm$0.25} & \textbf{84.00}\,\tiny{$\pm$0.31} & $+3.35$ \\
+Recall & 72.79\,\tiny{$\pm$0.19} & 74.01\,\tiny{$\pm$0.11} & 75.98\,\tiny{$\pm$0.31} & \textbf{75.89}\,\tiny{$\pm$0.31} & $+4.25$ \\
+F1 & 76.80\,\tiny{$\pm$0.25} & 77.89\,\tiny{$\pm$0.11} & 79.46\,\tiny{$\pm$0.28} & \textbf{79.74}\,\tiny{$\pm$0.24} & $+3.82$ \\
+AR$_{50\text{-}95}^{\text{small}}$ & 71.20\,\tiny{$\pm$0.23} & 70.16\,\tiny{$\pm$0.27} & 70.30\,\tiny{$\pm$0.19} & \textbf{69.75}\,\tiny{$\pm$0.16} & $-2.03$ \\
+\midrule
+\multicolumn{6}{@{}l}{\textbf{YOLOv12s}}\\
+mAP$_{50}^{\text{small}}$ & 77.65\,\tiny{$\pm$0.15} & 77.93\,\tiny{$\pm$0.26} & 78.79\,\tiny{$\pm$0.27} & \textbf{79.87}\,\tiny{$\pm$0.29} & $+2.85$ \\
+mAP$_{50}$ & 80.72\,\tiny{$\pm$0.20} & 81.21\,\tiny{$\pm$0.12} & 82.12\,\tiny{$\pm$0.25} & \textbf{82.60}\,\tiny{$\pm$0.21} & $+2.32$ \\
+mAP$_{50\text{-}95}$ & 54.75\,\tiny{$\pm$0.15} & 54.55\,\tiny{$\pm$0.05} & 56.42\,\tiny{$\pm$0.07} & \textbf{56.09}\,\tiny{$\pm$0.21} & $+2.44$ \\
+Precision & 80.60\,\tiny{$\pm$0.30} & 81.96\,\tiny{$\pm$0.41} & 83.12\,\tiny{$\pm$0.17} & \textbf{83.00}\,\tiny{$\pm$0.29} & $+2.97$ \\
+Recall & 72.23\,\tiny{$\pm$0.42} & 73.78\,\tiny{$\pm$0.19} & 74.11\,\tiny{$\pm$0.37} & \textbf{74.94}\,\tiny{$\pm$0.39} & $+3.76$ \\
+F1 & 76.18\,\tiny{$\pm$0.27} & 77.66\,\tiny{$\pm$0.08} & 78.36\,\tiny{$\pm$0.28} & \textbf{78.76}\,\tiny{$\pm$0.35} & $+3.39$ \\
+AR$_{50\text{-}95}^{\text{small}}$ & 67.04\,\tiny{$\pm$0.31} & 65.62\,\tiny{$\pm$0.11} & 68.70\,\tiny{$\pm$0.14} & \textbf{67.99}\,\tiny{$\pm$0.18} & $+1.42$ \\
+\bottomrule
+\end{tabular}
+\end{table}
