@@ -1,0 +1,33 @@
+{
+  "source": "/home/constantin/Doctorat/GitLuggageDataset/ABODA-master/AVSSS07_MEDIUmo.mpg",
+  "fps": 29.97002997002997,
+  "frames": 1768,
+  "params": {
+    "d_own": 1.5,
+    "d_away": 2.5,
+    "ownership_sec": 2.0,
+    "owner_grace_sec": 2.0,
+    "unattended_seconds": 10.0
+  },
+  "events": [
+    {
+      "luggage_track": 12,
+      "owner_track": 9,
+      "class": "trolley",
+      "first_seen_sec": 6.04,
+      "left_at_sec": 24.62,
+      "alarm_at_sec": 34.6,
+      "alarm_frame": 1038,
+      "bag_seen_frac": 1.0,
+      "bag_drift_px": 0.4,
+      "bag_drift_w": 0.01,
+      "owner_seen_frac": 0.06,
+      "away_frames": 300,
+      "away_elapsed_s": 9.98,
+      "owner_rule": "most-evidence-among-supported",
+      "owner_margin": 0.034,
+      "owner_carry_s": 0.0,
+      "owner_d_max_h": 3.211
+    }
+  ]
+}
