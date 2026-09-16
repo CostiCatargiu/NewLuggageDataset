@@ -53,7 +53,7 @@ from ultralytics import YOLO
 # Bumped whenever the tracking or ownership logic changes. Every run prints the file it
 # came from and records it in the log, because with several checkouts of this script around
 # the most expensive mistake is analysing results produced by a copy you did not edit.
-SCRIPT_VERSION = "2026-09-16.carry-ownership"
+SCRIPT_VERSION = "2026-09-17.occlusion-hold"
 
 
 def script_identity():
@@ -314,6 +314,45 @@ GROUP_ATTENDANCE = True
 COMPANION_CARRY_MIN = 0.5  # carry seconds needed to count as a companion
 # Distance hysteresis: "away" beyond D_AWAY, "back" only inside D_RETURN_FRAC * D_AWAY.
 D_RETURN_FRAC = 0.8
+
+# =========================
+# v2026-09-17 -- fixes from the AVSSS07_MEDIUmo screenshots
+# =========================
+# (1) OCCLUSION HOLD. A person walking in front of a standing bag makes the detector report
+# a box that shrinks from one side and slides with the walker; following those boxes carried
+# the abandoned bag's track away with a passer-by (tr2 -> P9 at 5.7 s) and the bag was
+# re-born without its owner. While a NON-owner overlaps a standing bag, its box is frozen:
+# detections may keep it alive only if they overlap the frozen box well.
+OCCLUSION_HOLD = True
+OCCLUDER_OVERLAP = 0.15  # share of the bag box covered by a person box to count as occluded
+OCCLUSION_HOLD_TAIL = 0.4  # seconds the hold outlasts the last overlapping frame
+LUGGAGE_HELD_MATCH_IOU = 0.30
+
+# (2) STABLE PERSON HEIGHT. A half-hidden person gives a box a third of their height, and
+# every distance divided by it triples (P5 at 0.8 h instead of 0.2 h during the election).
+# Each person keeps a reference height from boxes that look complete; a much shorter box is
+# treated as truncated at the bottom and the feet are placed at top + reference height.
+PERSON_STABLE_HEIGHT = True
+PERSON_FULL_ASPECT = 2.0  # h / w at or above which a person box counts as complete
+PERSON_HEIGHT_EMA = 0.3  # weight of a new complete box in the reference height
+PERSON_PARTIAL_FRAC = 0.8  # a box shorter than this share of the reference is truncated
+
+# (3) PROVISIONAL OWNER. An owner elected by standing nearby with a small margin is a guess;
+# until the bag becomes unattended it goes to whoever clearly leads on that evidence.
+PROVISIONAL_OWNER = True
+PROVISIONAL_MARGIN = 0.25  # elections closer than this stay provisional
+PROVISIONAL_LEAD = 0.10  # the leader needs 10 % more evidence than the owner...
+PROVISIONAL_SEC = 2.0  # ...continuously for this long
+WEAK_OWNER_RULES = ("most-evidence-among-supported", "nearest-among-supported",
+                    "most-supported", "provisional-reelected")
+
+# (4) TAKEOVER. When the owner is away or out of sight and somebody else carries the bag for
+# a second, the bag is theirs -- however much evidence the absent owner collected earlier.
+OWNER_TAKEOVER_CARRY = 1.0  # carry seconds needed for a takeover
+
+# (5) PERSON REVIVE. Colour decides identity after a long gap, and under one light many
+# people look alike (0.60-0.69 similarity revived the wrong man as P5 at 37.6 s).
+PERSON_REVIVE_MIN_SIM = 0.70
 
 PERSON_MATCH_IOU_THR = 0.10
 PERSON_MATCH_DIST_THR = 220
@@ -595,6 +634,8 @@ def luggage_gate_ok(st, iou, dist, pbb, age, now_t, fresh_diag=None, stale_diag=
                     dbb=None):
     """Tight association gate for luggage (see LUGGAGE_TIGHT_GATING)."""
     diag = max(MATCH_DIST_MIN_PX / 2.0, box_diag(pbb))
+    if is_held(st, now_t):  # somebody is in front of it: only a box ON it is it
+        return iou >= LUGGAGE_HELD_MATCH_IOU
     if dbb is not None and iou < LUGGAGE_AREA_EXEMPT_IOU:
         a_d = max(1.0, (dbb[2] - dbb[0]) * (dbb[3] - dbb[1]))
         a_t = max(1.0, (pbb[2] - pbb[0]) * (pbb[3] - pbb[1]))
@@ -634,6 +675,9 @@ def velocity(traj, now_t, window=BAG_MOTION_WINDOW):
 
 def update_bag_motion(st, now_t):
     """Standing / moving status of a bag, from the positions it was actually matched at."""
+    if is_held(st, now_t):
+        st["moving"] = False
+        return
     bx, by = bottom_center(st["bbox"])
     diag = max(8.0, box_diag(st["bbox"]))
     anchor = st.get("static_anchor")
@@ -646,6 +690,50 @@ def update_bag_motion(st, now_t):
     v = velocity(st.get("trajectory"), now_t)
     st["bag_vel"] = v
     st["moving"] = v is not None and math.hypot(*v) / diag > BAG_MOVING_SPEED
+
+
+def is_held(st, now_t):
+    return OCCLUSION_HOLD and st.get("held_t") == now_t
+
+
+def update_occlusion_hold(luggage_tracks, person_tracks, now_t):
+    """Freeze standing bags that a person other than their owner is walking in front of."""
+    if not OCCLUSION_HOLD:
+        return
+    live = [(pid, pt["bbox"]) for pid, pt in person_tracks.items()
+            if now_t - pt["last_seen_t"] <= 0.1]
+    for lid, st in luggage_tracks.items():
+        if not is_static(st, now_t):
+            continue
+        over = {pid for pid, pb in live if overlap_frac(st["bbox"], pb) >= OCCLUDER_OVERLAP}
+        if over and st.get("owner_pid") not in over:
+            if st.get("held_until", -1e9) < now_t:
+                LOG.event("bag_held", lid=lid, by=sorted(over), owner=st.get("owner_pid"))
+            st["held_until"] = now_t + OCCLUSION_HOLD_TAIL
+        if now_t <= st.get("held_until", -1e9):
+            st["held_t"] = now_t
+
+
+def person_reference(st, frame_h=None):
+    """Update a person track's reference height from complete-looking boxes."""
+    if not PERSON_STABLE_HEIGHT:
+        return
+    x1, y1, x2, y2 = st["bbox"]
+    h, w = y2 - y1, max(1.0, x2 - x1)
+    cut = frame_h is not None and y2 >= frame_h - 2  # leaving through the bottom edge
+    if h / w >= PERSON_FULL_ASPECT and not cut:
+        ref = st.get("h_ref")
+        st["h_ref"] = h if ref is None else (1 - PERSON_HEIGHT_EMA) * ref + PERSON_HEIGHT_EMA * h
+
+
+def person_ground(p):
+    """(foot x, foot y, height) of a person, repairing boxes truncated at the bottom."""
+    x1, y1, x2, y2 = p["bbox"]
+    h = y2 - y1
+    ref = p.get("h_ref") if PERSON_STABLE_HEIGHT else None
+    if ref is not None and h < PERSON_PARTIAL_FRAC * ref:
+        return (x1 + x2) / 2.0, y1 + ref, ref
+    return (x1 + x2) / 2.0, y2, h
 
 
 def match_jumped(st, det, now_t):
@@ -937,6 +1025,16 @@ def update_tracks_with_matches(
 
         old_cx, old_cy = center_xyxy(st["bbox"])
         new_cx, new_cy = center_xyxy(d["bbox"])
+        if is_held(st, now_t):  # alive, but the partial box must not move it
+            st["conf"] = float(d.get("conf", st.get("conf", 0.0)))
+            st["vx"] = st["vy"] = 0.0
+            if "trajectory" in st:
+                st["trajectory"].append((int(old_cx), int(old_cy), now_t))
+            if strong:
+                st["last_strong_t"] = now_t
+            st["last_seen_t"] = now_t
+            st["missed_s"] = 0.0
+            continue
 
         dt_age = max(1e-6, now_t - st["last_seen_t"])
         vx_new = (new_cx - old_cx) / dt_age
@@ -1086,7 +1184,7 @@ def should_spawn_new_track(det, tracks, now_t,
 
 
 def revive_from_memory(det, retired, now_t, memory_sec, revive_iou, revive_dist,
-                       min_sim=APP_MIN_SIM_REVIVE):
+                       min_sim=None):
     """Give a re-appearing object its old ID back instead of a fresh identity.
 
     Position alone is not enough once the gap is more than a moment long, so the search
@@ -1094,6 +1192,8 @@ def revive_from_memory(det, retired, now_t, memory_sec, revive_iou, revive_dist,
     bag that means keeping its owner and its timer; for a person it means every bag that
     named them is still bound to the right human.
     """
+    if min_sim is None:
+        min_sim = APP_MIN_SIM_REVIVE
     dbx, dby = bottom_center(det["bbox"])
     best_id, best_score = None, None
     for tid, st in retired.items():
@@ -1208,10 +1308,9 @@ def person_heights_away(bag_bbox, persons):
     bx, by = bottom_center(bag_bbox)
     out = {}
     for p in persons:
-        h = p["bbox"][3] - p["bbox"][1]
+        px, py, h = person_ground(p)
         if h < MIN_PERSON_H:
             continue
-        px, py = bottom_center(p["bbox"])
         out[p["tid"]] = math.hypot(bx - px, by - py) / h
     return out
 
@@ -1426,8 +1525,12 @@ def accrue_ownership_evidence(st, persons, dists, now_t, dt):
     return pid
 
 
-def maybe_switch_owner(st, now_t):
-    """Hand the bag to somebody else only when they are seen CARRYING it (hysteresis)."""
+def maybe_switch_owner(st, now_t, owner_far=False):
+    """Hand the bag to somebody else only when they are seen CARRYING it (hysteresis).
+
+    owner_far: the owner is beyond D_AWAY or out of sight -- then a second of carrying is
+    enough, whatever evidence the absent owner collected before (fix 4).
+    """
     lid = st.get("lid")
     owner = st["owner_pid"]
     carry, score = st.get("carry", {}), st.get("score", {})
@@ -1435,6 +1538,10 @@ def maybe_switch_owner(st, now_t):
         st["challenger"] = None
         return
     ch = max(carry, key=lambda p: score.get(p, 0.0))
+    cur = st.get("carrier_pid")
+    if (owner is not None and owner_far and cur is not None and cur != owner
+            and cur in carry and now_t - st.get("carrier_t", -1e9) <= 0.5):
+        ch = cur  # the person carrying it NOW is the candidate, not the absent owner
     if owner is None:
         if carry[ch] >= OWNERLESS_CLAIM_CARRY:
             st["owner_pid"] = ch
@@ -1444,9 +1551,11 @@ def maybe_switch_owner(st, now_t):
             LOG.event("owner_elected", lid=lid, owner=ch, rule="claimed-by-carrying",
                       carry_s=round(carry[ch], 2), score=round(score.get(ch, 0.0), 3))
         return
-    if (ch == owner or carry[ch] < OWNER_SWITCH_CARRY_MIN
-            or score.get(ch, 0.0) <= OWNER_SWITCH_RATIO * score.get(owner, 0.0)
-            + OWNER_SWITCH_MARGIN):
+    takeover = (owner_far and ch != owner and carry[ch] >= OWNER_TAKEOVER_CARRY
+                and st.get("carrier_pid") == ch and now_t - st.get("carrier_t", -1e9) <= 0.5)
+    if not takeover and (ch == owner or carry[ch] < OWNER_SWITCH_CARRY_MIN
+                         or score.get(ch, 0.0) <= OWNER_SWITCH_RATIO * score.get(owner, 0.0)
+                         + OWNER_SWITCH_MARGIN):
         st["challenger"] = None
         return
     if st.get("challenger") != ch:
@@ -1457,7 +1566,8 @@ def maybe_switch_owner(st, now_t):
         return
     LOG.event("owner_switch", lid=lid, old_owner=owner, new_owner=ch,
               old_score=round(score.get(owner, 0.0), 3), new_score=round(score[ch], 3),
-              carry_s=round(carry[ch], 2), state=st["state"])
+              carry_s=round(carry[ch], 2), state=st["state"],
+              rule="takeover" if takeover else "carried-more")
     st["owner_pid"] = ch
     st["owner_rule"] = "switched-by-carrying"
     st["owner_margin"] = round(1.0 - score.get(owner, 0.0) / score[ch], 3)
@@ -1466,6 +1576,36 @@ def maybe_switch_owner(st, now_t):
     st["owner_app"] = None
     st["owner_seen_t"] = -1e9
     st["challenger"] = None
+
+
+def maybe_reelect_provisional(st, pmap, now_t):
+    """A coin-toss owner gives way to whoever clearly leads on proximity evidence (fix 3)."""
+    owner, score = st["owner_pid"], st.get("score", {})
+    visible = [p for p in score if p in pmap and p != owner]
+    if not visible:
+        st["prov_ch"] = None
+        return
+    lead = max(visible, key=score.get)
+    if score[lead] <= (1.0 + PROVISIONAL_LEAD) * score.get(owner, 0.0):
+        st["prov_ch"] = None
+        return
+    if st.get("prov_ch") != lead:
+        st["prov_ch"], st["prov_since"] = lead, now_t
+        return
+    if now_t - st["prov_since"] < PROVISIONAL_SEC:
+        return
+    LOG.event("owner_switch", lid=st.get("lid"), old_owner=owner, new_owner=lead,
+              old_score=round(score.get(owner, 0.0), 3), new_score=round(score[lead], 3),
+              carry_s=round(st.get("carry", {}).get(lead, 0.0), 2), state=st["state"],
+              rule="provisional")
+    st["owner_pid"] = lead
+    st["owner_rule"] = "provisional-reelected"
+    st["owner_margin"] = round(1.0 - score.get(owner, 0.0) / score[lead], 3)
+    st["owner_missing_s"] = 0.0
+    st["owner_bbox"] = None
+    st["owner_app"] = None
+    st["owner_seen_t"] = -1e9
+    st["prov_ch"] = None
 
 
 def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
@@ -1542,7 +1682,13 @@ def update_ownership(st, persons, now_t, dt, taken_pids=frozenset()):
         st["away_elapsed"] = now_t - st["away_since"]
         return dists
 
-    maybe_switch_owner(st, now_t)
+    op = st["owner_pid"]
+    owner_far = op is not None and (op not in pmap or dists.get(op, 0.0) > D_AWAY)
+    maybe_switch_owner(st, now_t, owner_far)
+    if (PROVISIONAL_OWNER and st["owner_pid"] is not None and st["state"] == OWNED
+            and st.get("owner_rule") in WEAK_OWNER_RULES
+            and (st.get("owner_margin") or 0.0) < PROVISIONAL_MARGIN):
+        maybe_reelect_provisional(st, pmap, now_t)
     owner_pid = st["owner_pid"]
     last_near = st.get("last_near", True)
     d_limit = D_AWAY if last_near else D_RETURN_FRAC * D_AWAY  # hysteresis
@@ -2011,7 +2157,9 @@ def run():
             # someone who walked back into view keeps the id they had, so every bag that
             # elected them as owner stays bound to the right person (note 3)
             old_pid = revive_from_memory(d, retired_persons, now_t, PERSON_MEMORY_SEC,
-                                         PERSON_REVIVE_IOU, PERSON_REVIVE_DIST)
+                                         PERSON_REVIVE_IOU, PERSON_REVIVE_DIST,
+                                         min_sim=max(APP_MIN_SIM_REVIVE,
+                                                     PERSON_REVIVE_MIN_SIM))
             if old_pid is not None:
                 st = retired_persons.pop(old_pid)
                 LOG.event("track_revived", role="person", tid=old_pid,
@@ -2057,6 +2205,10 @@ def run():
             LOG.event("track_forgotten", role="person", tid=pid)
             del retired_persons[pid]
 
+        for st in person_tracks.values():
+            if st["last_seen_t"] >= now_t:
+                person_reference(st, h)
+
         # visible persons list (recent only)
         persons = []
         for pid, st in person_tracks.items():
@@ -2069,6 +2221,7 @@ def run():
                                 "first_t": st.get("first_t", 0.0),
                                 "vel": (velocity(st.get("trajectory"), now_t)
                                         if st["last_seen_t"] >= now_t else None),
+                                "h_ref": st.get("h_ref"),
                                 "strong": now_t - st.get("last_strong_t", -1e9)
                                 <= OWNER_STRONG_MAX_AGE})
             elif DRAW_PREDICTED_WHEN_MISSING and age <= PERSON_MAX_RELINK_AGE:
@@ -2120,6 +2273,9 @@ def run():
             LOG.event("nms", role="luggage", before=n_raw, after=len(luggage_dets))
         luggage_dets_low = nms_dets_xyxy(luggage_dets_low, iou_thr=LUGGAGE_DET_NMS_IOU,
                                          class_agnostic=True)
+
+        # a standing bag somebody walks in front of keeps its box (fix 1)
+        update_occlusion_hold(luggage_tracks, person_tracks, now_t)
 
         # a carried bag is looked for next to its carrier, wherever they walked to
         for st in luggage_tracks.values():
@@ -2431,6 +2587,7 @@ def run():
                           unattended_s=round(st["unattended_s"], 2),
                           predicted=pred_flag, zone=zone_violation,
                           standing=is_static(st, now_t), moving=bool(st.get("moving")),
+                          held=is_held(st, now_t),
                           carrier=st.get("carrier_pid") if st.get("moving") else None,
                           evidence={str(p): [round(v, 2), round(st.get("carry", {}).get(p, 0.0), 2)]
                                     for p, v in sorted(st.get("score", {}).items(),
