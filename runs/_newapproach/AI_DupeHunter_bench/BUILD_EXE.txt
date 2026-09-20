@@ -1,0 +1,40 @@
+Building AI_DupeHunter.exe
+==========================
+The exe must be built ON WINDOWS (PyInstaller packages the Python that runs
+it), so this step runs on your machine, not in the chat.
+
+Where to build
+  Either folder works; both now contain the same, current code:
+    D:\TREKflow\test-sw-taf-tal\test-sw-taf-tal   (the repo, has .venv already)
+    D:\TREKflow\AI_DupeHunter_bench               (the bench copy)
+
+Steps
+  1. Close AI DupeHunter.
+  2. Open PowerShell in that folder.
+  3. If there is no .venv yet (bench folder):   setup_bench.bat
+  4. Run:                                       .\build_exe.bat
+     It installs/verifies the packages, cleans the previous build and runs
+     PyInstaller (a few minutes).
+  5. Result:
+       dist\AI_DupeHunter.exe        the application, single file
+       dist\trek_data_dir.txt        optional: point all users at one data folder
+
+What is in this build
+  * Offline download (SYT/SWT test-case text + SYR/SWR requirement modules)
+  * "not downloaded" vs "NOT FOUND IN TREK" labels
+  * Compare window: loads in the background, opens instantly, fast sort/filter
+  * Prefixes dropdown: multi-select, saved per project, nothing preselected
+  * Real arrows on dropdowns and number fields
+  * Network-share speed: compressed entries, 64 KB pages, background index load,
+    journal mode only changed when needed, mapped network drives detected
+  * Closing the app during a background task no longer crashes it
+
+After building
+  * The exe writes its data (cache, log, projects) NEXT TO itself.
+  * To use the shared database: start the exe, Edit Project -> Cache Database,
+    select the file on the share.
+  * Everyone on the shared database needs THIS version -- older builds cannot
+    read the compressed entries and would re-download them from TREK.
+  * Database maintenance (compress + 64 KB pages) is in the app:
+    Database -> "Optimize Storage...". The optimize_db.py script does the same
+    from the command line and can write an optimized copy for the share.

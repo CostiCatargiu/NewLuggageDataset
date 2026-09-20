@@ -164,21 +164,25 @@ class TrekCache:
                 pass
 
         t0 = _t.perf_counter()
-        if self._is_network:
-            # Network share: WAL needs shared memory (-shm) that SMB cannot
-            # provide -- using it there can corrupt the file. A database
-            # copied from a local WAL-mode file KEEPS WAL mode in its header,
-            # so actively switch it to DELETE (previously this only set the
-            # variable, and the file silently stayed in WAL on the share).
-            try:
-                self.journal_mode = self._conn.execute("PRAGMA journal_mode=DELETE;").fetchone()[0]
-            except sqlite3.Error:
-                self.journal_mode = "delete"
-        else:
-            try:
-                self.journal_mode = self._conn.execute("PRAGMA journal_mode=WAL;").fetchone()[0]
-            except sqlite3.Error:
-                self.journal_mode = "delete"
+        # Network share: WAL needs shared memory (-shm) that SMB cannot
+        # provide -- using it there can corrupt the file. A database copied
+        # from a local WAL-mode file KEEPS WAL mode in its header, so the
+        # mode is actively switched when it does not match.
+        #
+        # CHANGING the mode is expensive on a share (measured 4.2 s, every
+        # single start), while READING it is just the file header we already
+        # paid for -- so only write when it actually differs.
+        wanted = "delete" if self._is_network else "wal"
+        try:
+            current = (self._conn.execute("PRAGMA journal_mode;").fetchone()[0] or "").lower()
+            self.journal_mode_changed = current != wanted
+            if current == wanted:
+                self.journal_mode = current
+            else:
+                self.journal_mode = self._conn.execute(
+                    f"PRAGMA journal_mode={wanted.upper()};").fetchone()[0]
+        except sqlite3.Error:
+            self.journal_mode = "delete"
         self._init_timings["journal_mode"] = _t.perf_counter() - t0
 
         # Without this, a second user writing at the same instant fails

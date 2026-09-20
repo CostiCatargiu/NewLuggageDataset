@@ -1,14 +1,10 @@
-[2026-09-20T21:31:55.514] [INFO ] [Startup] Connect to cache database (//iads220n/D/Users/Costi/Database/trek_cache_srm.sqlite3)  (1.02 s)  | db_path=//iads220n/D/Users/Costi/Database/trek_cache_srm.sqlite3  journal_mode=delete  shared=True  init_connect=0.30s  init_journal_mode=0.11s  init_schema_migrations=0.12s
-[2026-09-20T21:31:55.850] [INFO ] [Index] Index loaded in background: 0 ids in 0.1s  (74 ms)
-[2026-09-20T21:32:00.705] [INFO ] [Modules] GET /Modules (domain_type=4)  (570 ms)  | domain_type=4  module_count=0
-[2026-09-20T21:32:00.780] [INFO ] [Modules] GET /Modules (domain_type=2)  (74 ms)  | domain_type=2  module_count=0
-[2026-09-20T21:32:01.524] [INFO ] [Modules] Load module list  (1.39 s)  | force_refresh=True  source=live  module_count=0
-[2026-09-20T21:33:14.165] [INFO ] [Index] Listing SYR modules...
-[2026-09-20T21:33:14.682] [INFO ] [Index] Indexed SYR: +0 ids (0.5s). Running total: 0 ids.
-[2026-09-20T21:33:14.684] [INFO ] [Index] Listing SWR modules...
-[2026-09-20T21:33:15.169] [INFO ] [Index] Indexed SWR: +0 ids (0.5s). Running total: 0 ids.
-[2026-09-20T21:33:15.172] [INFO ] [Index] Listing SYT modules...
-[2026-09-20T21:33:15.669] [INFO ] [Index] Indexed SYT: +0 ids (0.5s). Running total: 0 ids.
-[2026-09-20T21:33:15.671] [INFO ] [Index] Listing SWT modules...
-[2026-09-20T21:33:16.176] [INFO ] [Index] Indexed SWT: +0 ids (0.5s). Running total: 0 ids.
-[2026-09-20T21:33:16.599] [INFO ] [Index] Build id->module index  (2.43 s)  | force=False  syr=0  swr=0  syt=0  swt=0  total_ids=0
+[2026-09-20T21:18:04.783] [INFO ] [Startup] Connect to cache database (//iads220n/D/Users/Costi/Database/trek_cache_TEST.sqlite3)  (5.12 s)  | db_path=//iads220n/D/Users/Costi/Database/trek_cache_TEST.sqlite3  journal_mode=delete  shared=True  init_connect=0.30s  init_journal_mode=4.19s  init_schema_migrations=0.11s
+[2026-09-20T21:18:07.000] [INFO ] [Index] Index loaded in background: 176,635 ids in 2.0s  (1.99 s)
+[2026-09-20T21:18:10.101] [INFO ] [Results] List cached duplicate-check modules  (113 ms)  | module_count=10
+[2026-09-20T21:18:14.272] [INFO ] [Results] Load cached result for 'SYT_TS_910_Sensor_Evaluation'  (445 ms)  | pair_count=368
+[2026-09-20T21:18:43.273] [INFO ] [Results] Load cached result for 'SYT_TS_110_Terminal_Control'  (6.17 s)  | pair_count=9148
+[2026-09-20T21:18:59.647] [INFO ] [Results] Load cached result for 'SYT_TS_120_Power_Management'  (4.05 s)  | pair_count=14399
+[2026-09-20T21:19:25.783] [INFO ] [Results] Load cached result for 'SYT_TS_150_Flash_Bootloader'  (21.05 s)  | pair_count=85630
+[2026-09-20T21:19:44.762] [INFO ] [Results] Load 'SYT_TS_120_Power_Management' from memory cache  (1.66 s)  | pair_count=14399
+[2026-09-20T21:20:21.053] [INFO ] [Results] Load cached result for 'SYT_TS_150_Flash_Bootloader'  (31.64 s)  | pair_count=85630
+[2026-09-20T21:20:35.901] [INFO ] [Compare] Load comparison dupcheck:186:102758061:SYT_TS_910_Sensor_Evaluation:gemini-2.5-pro vs dupcheck:186:102758061:SYT_TS_910_Sensor_Evaluation:claude-4-8-opus-v1:0  (58 ms)  | pairs=76

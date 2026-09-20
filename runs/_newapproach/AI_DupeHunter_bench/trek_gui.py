@@ -7341,7 +7341,7 @@ class OfflineDownloadDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Offline data -- download all test-case text")
         self.setMinimumWidth(560)
-        self._syt_prefixes = list(syt_prefixes or DEFAULT_SYT_PREFIXES)
+        self._syt_prefixes = list(syt_prefixes or [])
 
         lay = QVBoxLayout(self)
         intro = QLabel(
@@ -7487,9 +7487,11 @@ class CheckableComboBox(QComboBox):
     Emits checkedChanged(list_of_texts) after every toggle."""
     checkedChanged = Signal(list)
 
-    def __init__(self, parent=None, empty_text: str = "(none)"):
+    def __init__(self, parent=None, empty_text: str = "(none selected)",
+                 no_items_text: str = "(load modules first)"):
         super().__init__(parent)
         self._empty_text = empty_text
+        self._no_items_text = no_items_text
         self.setEditable(True)                      # only to display custom text
         self.setInsertPolicy(QComboBox.NoInsert)
         le = self.lineEdit()
@@ -7549,7 +7551,10 @@ class CheckableComboBox(QComboBox):
 
     def _update_text(self):
         checked = self.checked_items()
-        text = ", ".join(checked) if checked else self._empty_text
+        if checked:
+            text = ", ".join(checked)
+        else:
+            text = self._empty_text if self.model().rowCount() else self._no_items_text
         fm = self.lineEdit().fontMetrics()
         self.lineEdit().setText(fm.elidedText(text, Qt.ElideRight, max(40, self.lineEdit().width() - 4)))
         self.lineEdit().setToolTip(text)
@@ -7609,7 +7614,7 @@ class TrekMainWindow(QMainWindow):
         self._index_bridge.done.connect(self._on_index_loaded)
         self._after_index_load = None        # action to resume once the INDEX is loaded
         self._tc_table_signal_connected = False   # tracks itemChanged wiring for the TC tree
-        self._syt_prefixes: List[str] = list(DEFAULT_SYT_PREFIXES)
+        self._syt_prefixes: List[str] = []    # chosen in Step 1 after modules load
 
         # Busy/elapsed-time indicator (⏳ <stage> (MM:SS)) shown in the status
         # bar while any background worker is running, so the user always
@@ -8197,6 +8202,13 @@ class TrekMainWindow(QMainWindow):
             return
         if self._wait_for_index(lambda: self._build_index(force), "Build"):
             return
+        if not self._syt_prefixes:
+            QMessageBox.information(
+                self, "Pick a prefix first",
+                "The index needs to know which modules are system tests.\n\n"
+                "Press 'Load Modules' and choose one or more prefixes (e.g. SYT) "
+                "in Step 1, then build the index.")
+            return
         fully_built = (INDEX.is_built("SYR") and INDEX.is_built("SWR")
                        and INDEX.is_built("SYT") and INDEX.is_built("SWT"))
         # If the user clicked the 'Build Index' button while it's already
@@ -8418,9 +8430,10 @@ class TrekMainWindow(QMainWindow):
         prefix_row.addWidget(prefix_lbl)
         self._prefix_combo = CheckableComboBox()
         self._prefix_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        # Show the project's saved prefixes straight away (the full list of
-        # available prefixes is filled in once modules are loaded).
-        self._prefix_combo.set_items(list(self._syt_prefixes), self._syt_prefixes)
+        # Starts empty on purpose -- the choices are the prefixes actually
+        # present in this project's module list, so they appear after
+        # "Load Modules" (see _on_modules_fetched / _refresh_prefix_combo).
+        self._prefix_combo.set_items([], [])
         self._prefix_combo.checkedChanged.connect(self._on_prefix_checked_changed)
         prefix_row.addWidget(self._prefix_combo, 1)
         lay.addWidget(self._prefix_row_widget)
@@ -8855,17 +8868,24 @@ class TrekMainWindow(QMainWindow):
         detected = self._detect_syt_prefixes(modules)
         self._refresh_prefix_combo(detected)
         self._apply_syt_prefix_filter()
+        if not self._get_checked_prefixes():
+            self._mod_info.setText("← Choose a prefix in 'Prefixes' to list modules")
         age = trek_cache.format_age(updated_at)
         source = f"cache ({age})" if from_cache else "TREK (live)"
         self._mod_cache_lbl.setText(f"Modules source: {source}")
-        self._set_status(f"Loaded {len(self._syt_modules)} SYT modules from {source}.")
+        if self._get_checked_prefixes():
+            self._set_status(f"Loaded {len(self._syt_modules)} modules from {source} "
+                             f"(prefix: {', '.join(self._get_checked_prefixes())}).")
+        else:
+            self._set_status(
+                f"{len(modules)} modules read from {source}. Now pick a prefix in "
+                f"'Prefixes' ({', '.join(detected[:6])}{'...' if len(detected) > 6 else ''}) "
+                f"to list them.")
 
     def _apply_syt_prefix_filter(self):
         """Rebuild self._syt_modules from self._modules using the currently
         checked prefixes in the prefix combo, then repopulate the list."""
         checked = self._get_checked_prefixes()
-        if not checked:
-            checked = list(DEFAULT_SYT_PREFIXES)
         self._syt_prefixes = checked
         self._syt_modules = [
             m for m in self._modules
@@ -8875,17 +8895,25 @@ class TrekMainWindow(QMainWindow):
         self._filter_modules(self._mod_search.text() if hasattr(self, "_mod_search") else "")
 
     def _detect_syt_prefixes(self, modules) -> List[str]:
-        """Auto-detect SY*/SW*-style prefixes present in the module list."""
+        """The prefixes actually present in THIS project's module list --
+        these become the options in the Prefixes dropdown. SY*/SW* names
+        first (the V-Model levels); if a project uses none of those, every
+        distinct prefix is offered instead of assuming a convention."""
         prefixes: List[str] = []
+        others: List[str] = []
         for m in modules:
             name = m.get("Name", "")
             if not name:
                 continue
             first = re.split(r"[ _\-]", name.strip(), maxsplit=1)[0].upper()
-            if first and (first.startswith("SY") or first.startswith("SW")):
+            if not first:
+                continue
+            if first.startswith("SY") or first.startswith("SW"):
                 if first not in prefixes:
                     prefixes.append(first)
-        return sorted(prefixes) if prefixes else list(DEFAULT_SYT_PREFIXES)
+            elif first not in others:
+                others.append(first)
+        return sorted(prefixes) if prefixes else sorted(others)
 
     def _refresh_prefix_combo(self, available: List[str]):
         """Fill the prefix dropdown with *available* prefixes (plus any saved
@@ -8903,13 +8931,10 @@ class TrekMainWindow(QMainWindow):
     def _on_prefix_checked_changed(self, checked: List[str]):
         """A prefix was ticked/unticked: keep at least one selected, save the
         choice to the active project, and re-filter the module list."""
-        if not checked:
-            # Never leave the list empty by accident -- restore the last one.
-            for p in self._syt_prefixes:
-                self._prefix_combo.set_checked(p, True)
-            self._set_status("At least one prefix must stay selected.")
-            return
         self._apply_syt_prefix_filter()
+        if not checked:
+            self._set_status("No prefix selected -- pick one (e.g. SYT) to list modules.")
+        self._selected_mod = None
         active = PROJECT_STORE.get_active()
         if active:
             try:
@@ -8918,15 +8943,14 @@ class TrekMainWindow(QMainWindow):
                 LOG.log("Modules", f"Could not save SYT prefixes: {exc}", level="WARN")
 
     def _load_syt_prefixes_for_active_project(self):
-        """Load syt_prefixes from the active project's settings, falling
-        back to DEFAULT_SYT_PREFIXES if none are stored."""
+        """Load this project's saved Step-1 prefixes. NOTHING is preselected
+        when the project has no saved choice: the options only appear (and
+        can be picked) once the module list has actually been read, so the
+        app never silently assumes a naming convention ("SYT") that a
+        project may not use."""
         active = PROJECT_STORE.get_active()
-        if active:
-            raw = active.get("syt_prefixes", "")
-            if raw:
-                self._syt_prefixes = _parse_syt_prefixes(raw)
-                return
-        self._syt_prefixes = list(DEFAULT_SYT_PREFIXES)
+        raw = (active or {}).get("syt_prefixes", "")
+        self._syt_prefixes = _parse_syt_prefixes(raw) if raw else []
 
     def _populate_module_list(self, modules):
         self._mod_list.clear()
