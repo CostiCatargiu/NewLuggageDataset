@@ -1,9 +1,13 @@
 PS C:\DISK\MAIA\test-sw-taf-tal> (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& c:\DISK\MAIA\test-sw-taf-tal\.venv\Scripts\Activate.ps1)
 (.venv) PS C:\DISK\MAIA\test-sw-taf-tal> & c:\DISK\MAIA\test-sw-taf-tal\.venv\Scripts\python.exe c:/DISK/MAIA/test-sw-taf-tal/AI_DupeHunter_bench/check_share_db.py
-DB: \\iads220n\D\Users\Costi\Database\trek_cache.sqlite3
-open                  :   0.68 s
-header                :   0.25 s   page_size=4096  journal=delete  file=3,289 MB  free_pages=319,460
-find index row        : 139.25 s   [('index:186:102758061', 'text', 9138554, '2026-09-09T12:22:23')]
-READ index bytes      :   0.39 s   9.1 MB stored as text (~2,231 pages -> 0 ms/page)
-decompress+parse      :   0.16 s   176,635 ids
-list results (small)  :   0.10 s   10 rows
+DB: C:\DISK\trek_db\trek_cache.sqlite3
+open                  :   0.00 s
+header                :   0.00 s   page_size=4096  journal=wal  file=3,289 MB  free_pages=699,125
+find index row        :   0.21 s   [('index:186:102758061', 'text', 9138554, '2026-09-09T12:22:23')]
+READ index bytes      :   0.01 s   9.1 MB stored as text (~2,231 pages -> 0 ms/page)
+decompress+parse      :   0.09 s   176,635 ids
+list results (small)  :   0.00 s   10 rows
+large entries by type :   3.95 s   [('text', 206, 146130417)]   (text = not compressed)
+raw random 64KB read  :      0 ms each
+raw sequential read   : 1121.5 MB/s
+(.venv) PS C:\DISK\MAIA\test-sw-taf-tal> 
