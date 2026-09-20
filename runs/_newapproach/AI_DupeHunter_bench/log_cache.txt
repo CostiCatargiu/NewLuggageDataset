@@ -1,13 +1,10 @@
-PS C:\DISK\MAIA\test-sw-taf-tal> (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& c:\DISK\MAIA\test-sw-taf-tal\.venv\Scripts\Activate.ps1)
-(.venv) PS C:\DISK\MAIA\test-sw-taf-tal> & c:\DISK\MAIA\test-sw-taf-tal\.venv\Scripts\python.exe c:/DISK/MAIA/test-sw-taf-tal/AI_DupeHunter_bench/check_share_db.py
-DB: C:\DISK\trek_db\trek_cache.sqlite3
-open                  :   0.00 s
-header                :   0.00 s   page_size=4096  journal=wal  file=3,289 MB  free_pages=699,125
-find index row        :   0.21 s   [('index:186:102758061', 'text', 9138554, '2026-09-09T12:22:23')]
-READ index bytes      :   0.01 s   9.1 MB stored as text (~2,231 pages -> 0 ms/page)
-decompress+parse      :   0.09 s   176,635 ids
-list results (small)  :   0.00 s   10 rows
-large entries by type :   3.95 s   [('text', 206, 146130417)]   (text = not compressed)
-raw random 64KB read  :      0 ms each
-raw sequential read   : 1121.5 MB/s
-(.venv) PS C:\DISK\MAIA\test-sw-taf-tal> 
+[2026-09-20T21:18:04.783] [INFO ] [Startup] Connect to cache database (//iads220n/D/Users/Costi/Database/trek_cache_TEST.sqlite3)  (5.12 s)  | db_path=//iads220n/D/Users/Costi/Database/trek_cache_TEST.sqlite3  journal_mode=delete  shared=True  init_connect=0.30s  init_journal_mode=4.19s  init_schema_migrations=0.11s
+[2026-09-20T21:18:07.000] [INFO ] [Index] Index loaded in background: 176,635 ids in 2.0s  (1.99 s)
+[2026-09-20T21:18:10.101] [INFO ] [Results] List cached duplicate-check modules  (113 ms)  | module_count=10
+[2026-09-20T21:18:14.272] [INFO ] [Results] Load cached result for 'SYT_TS_910_Sensor_Evaluation'  (445 ms)  | pair_count=368
+[2026-09-20T21:18:43.273] [INFO ] [Results] Load cached result for 'SYT_TS_110_Terminal_Control'  (6.17 s)  | pair_count=9148
+[2026-09-20T21:18:59.647] [INFO ] [Results] Load cached result for 'SYT_TS_120_Power_Management'  (4.05 s)  | pair_count=14399
+[2026-09-20T21:19:25.783] [INFO ] [Results] Load cached result for 'SYT_TS_150_Flash_Bootloader'  (21.05 s)  | pair_count=85630
+[2026-09-20T21:19:44.762] [INFO ] [Results] Load 'SYT_TS_120_Power_Management' from memory cache  (1.66 s)  | pair_count=14399
+[2026-09-20T21:20:21.053] [INFO ] [Results] Load cached result for 'SYT_TS_150_Flash_Bootloader'  (31.64 s)  | pair_count=85630
+[2026-09-20T21:20:35.901] [INFO ] [Compare] Load comparison dupcheck:186:102758061:SYT_TS_910_Sensor_Evaluation:gemini-2.5-pro vs dupcheck:186:102758061:SYT_TS_910_Sensor_Evaluation:claude-4-8-opus-v1:0  (58 ms)  | pairs=76
