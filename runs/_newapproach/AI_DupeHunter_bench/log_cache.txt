@@ -1,0 +1,5 @@
+[2026-09-20T16:56:52.432] [INFO ] [Startup] Connect to cache database (//iads220n/D/Users/Costi/Database/trek_cache.sqlite3)  (1.82 s)  | db_path=//iads220n/D/Users/Costi/Database/trek_cache.sqlite3  journal_mode=delete  shared=True  init_connect=0.30s  init_journal_mode=0.24s  init_schema_migrations=0.21s
+[2026-09-20T16:59:03.989] [INFO ] [Results] List cached duplicate-check modules  (128.41 s)  | module_count=10
+[2026-09-20T16:59:04.323] [INFO ] [Index] Index loaded in background: 176,635 ids in 131.4s  (131.43 s)
+[2026-09-20T16:59:18.285] [INFO ] [Results] Load cached result for 'SYT_TS_910_Sensor_Evaluation'  (2.47 s)  | pair_count=368
+[2026-09-20T16:59:22.724] [INFO ] [Results] Load cached result for 'SYT_TS_910_Sensor_Evaluation'  (632 ms)  | pair_count=368
