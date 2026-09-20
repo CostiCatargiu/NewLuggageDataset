@@ -88,6 +88,34 @@ def _decode_blob_value(value):
     return _fast_loads(value)
 
 
+# Human review states a pair can be in, plus "" = not reviewed. Kept here
+# (not imported from trek_similarity) so the cache layer stays standalone.
+_REVIEW_KEYS = ("same_scenario", "partial_overlap", "different_scenario", "")
+_VERDICT_KEYS = ("same_scenario", "partial_overlap", "different_scenario", "error", "")
+
+
+def compute_dupcheck_stats(result_dict: dict) -> dict:
+    """Count a duplicate-check result into a small matrix
+    {llm_verdict: {review_status: n}} (plus the pair total). Everything the
+    Dashboard shows -- per view, per module -- is derived from this, so it
+    never has to load the full result again."""
+    xtab: Dict[str, Dict[str, int]] = {}
+    total = 0
+    for p in result_dict.get("pairs", []) or []:
+        if not isinstance(p, dict):
+            continue
+        verdict = p.get("llm_verdict") or ""
+        if verdict not in _VERDICT_KEYS:
+            verdict = "error"
+        review = p.get("review_status") or ""
+        if review not in _REVIEW_KEYS:
+            review = ""
+        xtab.setdefault(verdict, {})
+        xtab[verdict][review] = xtab[verdict].get(review, 0) + 1
+        total += 1
+    return {"version": 1, "total": total, "xtab": xtab}
+
+
 def is_network_path(path) -> bool:
     r"""True for UNC paths (\\server\share, //server/share) AND for drive
     letters mapped to a network share (e.g. Z: -> \\server\share). The
@@ -356,6 +384,8 @@ class TrekCache:
         self._migrate_add_details_json_column()
         self._migrate_add_vector_blob_column()
         self._migrate_add_dupcheck_summary_columns()
+        self._migrate_add_dupcheck_stats_column()
+        self._migrate_add_meta_indexes()
         self._migrate_split_dupcheck_data()
         self._migrate_add_item_count_column()
 
@@ -403,6 +433,34 @@ class TrekCache:
             # set_embeddings()) to satisfy that legacy constraint cheaply.
             pass
         self._conn.commit()
+
+    def _migrate_add_dupcheck_stats_column(self):
+        """Add stats_json to duplicate_check_runs: a tiny per-module count
+        matrix (LLM verdict x human review status) written whenever a result
+        is saved. The Dashboard reads THESE instead of loading every
+        multi-MB result just to count verdicts."""
+        cols = [row[1] for row in self._conn.execute(
+            "PRAGMA table_info(duplicate_check_runs)").fetchall()]
+        if "stats_json" not in cols:
+            self._conn.execute(
+                "ALTER TABLE duplicate_check_runs ADD COLUMN stats_json TEXT NOT NULL DEFAULT ''")
+            self._conn.commit()
+
+    def _migrate_add_meta_indexes(self):
+        """Indexes that let the "Database" dialog summarise the cache without
+        scanning the big value columns (on a network share a table scan of
+        `blobs` drags every inline blob fragment across the wire)."""
+        try:
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_blobs_meta ON blobs(key, item_count, updated_at)")
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tc_content_updated ON tc_content(updated_at)")
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_embeddings_legacy ON embeddings(text_hash) "
+                "WHERE vector_blob IS NULL")
+            self._conn.commit()
+        except sqlite3.Error:
+            pass      # best-effort; never block startup on an index
 
     def _migrate_add_dupcheck_summary_columns(self):
         """Add pair_count + llm_model summary columns to duplicate_check_runs
@@ -815,6 +873,7 @@ class TrekCache:
         updated_at = _now_iso()
         pair_count = len(result_dict.get("pairs", []))
         llm_model = result_dict.get("llm_model", "")
+        stats_json = json.dumps(compute_dupcheck_stats(result_dict))
         result_json_str = _fast_dumps(result_dict)
         # Compress the JSON blob with zlib -- duplicate check results for
         # large modules are 50-100+ MB of JSON text (each pair carries full
@@ -828,16 +887,17 @@ class TrekCache:
         self._conn.execute(
             """
             INSERT INTO duplicate_check_runs
-                (module_key, syt_module, result_json, updated_at, pair_count, llm_model)
-            VALUES (?, ?, '', ?, ?, ?)
+                (module_key, syt_module, result_json, updated_at, pair_count, llm_model, stats_json)
+            VALUES (?, ?, '', ?, ?, ?, ?)
             ON CONFLICT(module_key) DO UPDATE SET
                 syt_module = excluded.syt_module,
                 result_json = '',
                 updated_at = excluded.updated_at,
                 pair_count = excluded.pair_count,
-                llm_model = excluded.llm_model
+                llm_model = excluded.llm_model,
+                stats_json = excluded.stats_json
             """,
-            (module_key, syt_module, updated_at, pair_count, llm_model),
+            (module_key, syt_module, updated_at, pair_count, llm_model, stats_json),
         )
         # Heavy blob in its own table. Store as BLOB (compressed bytes)
         # in the result_json column -- the column name is historical; new
@@ -922,19 +982,48 @@ class TrekCache:
         for network-share caches where listing every module would otherwise
         pull hundreds of MB of JSON just to populate a dropdown."""
         cur = self._conn.execute(
-            "SELECT module_key, syt_module, pair_count, llm_model, updated_at "
+            "SELECT module_key, syt_module, pair_count, llm_model, updated_at, "
+            "       COALESCE(stats_json, '') "
             "FROM duplicate_check_runs ORDER BY updated_at DESC"
         )
-        return [
-            {
+        rows = []
+        for module_key, syt_module, pair_count, llm_model, updated_at, stats_json in cur.fetchall():
+            stats = None
+            if stats_json:
+                try:
+                    stats = json.loads(stats_json)
+                except (json.JSONDecodeError, TypeError):
+                    stats = None
+            rows.append({
                 "module_key": module_key,
                 "syt_module": syt_module,
                 "pair_count": pair_count,
                 "llm_model": llm_model or "",
                 "updated_at": updated_at,
-            }
-            for module_key, syt_module, pair_count, llm_model, updated_at in cur.fetchall()
-        ]
+                "stats": stats,
+            })
+        return rows
+
+    def ensure_dupcheck_stats(self, module_key: str) -> Optional[dict]:
+        """Return the per-module count matrix, computing and storing it once
+        for results saved by an older version (which have no stats yet)."""
+        row = self._conn.execute(
+            "SELECT COALESCE(stats_json, '') FROM duplicate_check_runs WHERE module_key = ?",
+            (module_key,)).fetchone()
+        if row and row[0]:
+            try:
+                return json.loads(row[0])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        data = self.get_duplicate_check_result(module_key)      # heavy, once per module
+        if data is None:
+            return None
+        stats = compute_dupcheck_stats(data)
+        self._conn.execute(
+            "UPDATE duplicate_check_runs SET stats_json = ? WHERE module_key = ?",
+            (json.dumps(stats), module_key))
+        self._commit()
+        return stats
 
     def delete_duplicate_check_result(self, module_key: str) -> None:
         self._conn.execute("DELETE FROM duplicate_check_runs WHERE module_key = ?", (module_key,))

@@ -16,8 +16,19 @@ Steps
      It installs/verifies the packages, cleans the previous build and runs
      PyInstaller (a few minutes).
   5. Result:
-       dist\AI_DupeHunter.exe        the application, single file
-       dist\trek_data_dir.txt        optional: point all users at one data folder
+       dist\AI_DupeHunter\AI_DupeHunter.exe   the application (FOLDER build)
+       dist\AI_DupeHunter\trek_data_dir.txt   optional: one shared data folder
+
+Two build modes
+  build_exe.bat            FOLDER build (default, recommended)
+      -> dist\AI_DupeHunter\  -- starts IMMEDIATELY.
+         Ship the whole folder (zip it); the exe needs the files beside it.
+  build_exe.bat onefile    SINGLE FILE build (the old behaviour)
+      -> dist\AI_DupeHunter.exe -- convenient to copy around, but it packs
+         ~80 MB inside the exe and UNPACKS it to a temp folder on EVERY
+         launch. That unpack is the pause between double-clicking and the
+         "Connecting to cache database..." splash; it happens before any
+         app code runs, so it cannot be sped up from inside the app.
 
 What is in this build
   * Offline download (SYT/SWT test-case text + SYR/SWR requirement modules)

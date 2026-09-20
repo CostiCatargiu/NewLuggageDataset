@@ -4400,11 +4400,13 @@ class DuplicateMetricsDialog(QDialog):
 
 
 class _LoadDashboardDataWorker(QThread):
-    """Background worker: load ALL duplicate-check result_json blobs from
-    the cache DB. On a network share with many modules this is the dominant
-    bottleneck for opening the Dashboard (each result can be several MB of
-    JSON), so doing it off the UI thread keeps the app responsive."""
-    done = Signal(list)   # list of {module, model, pairs, updated_at}
+    """Background worker for the Dashboard. It reads the small per-module
+    count matrix stored with each result (trek_cache.compute_dupcheck_stats)
+    instead of loading every multi-MB result -- opening the Dashboard used
+    to parse ~200k pairs (minutes on a network share) just to count
+    verdicts. Results saved by an older version get their counts computed
+    once, here, and stored."""
+    done = Signal(list)   # list of {module, model, stats, updated_at}
     error = Signal(str)
 
     def __init__(self, cache: TrekCache):
@@ -4413,25 +4415,28 @@ class _LoadDashboardDataWorker(QThread):
 
     def run(self):
         try:
-            with LOG.timed("Dashboard", "Load all cached duplicate-check results") as t:
+            with LOG.timed("Dashboard", "Load duplicate-check statistics") as t:
                 entries = self._cache.list_duplicate_check_modules()
                 t.details["module_count"] = len(entries)
                 raw_modules = []
+                computed = 0
                 for entry in entries:
-                    data = self._cache.get_duplicate_check_result(entry["module_key"])
-                    if not data:
-                        continue
-                    result = trek_similarity.DuplicateCheckResult.from_dict(data)
-                    if not result.pairs:
+                    stats = entry.get("stats")
+                    if not stats:
+                        # Saved by an older version: compute the counts once
+                        # (loads that one result) and store them for next time.
+                        stats = self._cache.ensure_dupcheck_stats(entry["module_key"])
+                        computed += 1
+                    if not stats or not stats.get("total"):
                         continue
                     raw_modules.append({
                         "module": entry["syt_module"],
                         "model": entry.get("llm_model", ""),
-                        "pairs": result.pairs,
+                        "stats": stats,
                         "updated_at": entry.get("updated_at", ""),
                     })
-                t.details["loaded_modules"] = len(raw_modules)
-                t.details["total_pairs"] = sum(len(m["pairs"]) for m in raw_modules)
+                t.details.update(loaded_modules=len(raw_modules), computed_now=computed,
+                                 total_pairs=sum(m["stats"]["total"] for m in raw_modules))
                 self.done.emit(raw_modules)
         except Exception as exc:
             self.error.emit(str(exc))
@@ -4524,36 +4529,33 @@ class OverviewDashboardDialog(QDialog):
         """Filter pairs based on the selected view and recompute everything."""
         view = self._view_combo.currentData() if hasattr(self, "_view_combo") else "all"
 
-        # Build per-module stats from filtered pairs
+        # Every number below comes from the per-module count matrix
+        # {llm_verdict: {review_status: n}} -- no pair objects needed.
+        view_verdict = {"llm_same": "same_scenario", "llm_partial": "partial_overlap",
+                        "llm_different": "different_scenario"}.get(view)
         self._module_data = []
         for raw in self._raw_modules:
-            # Apply view filter
-            if view == "llm_same":
-                pairs = [p for p in raw["pairs"] if p.llm_verdict == "same_scenario"]
-            elif view == "llm_partial":
-                pairs = [p for p in raw["pairs"] if p.llm_verdict == "partial_overlap"]
-            elif view == "llm_different":
-                pairs = [p for p in raw["pairs"] if p.llm_verdict == "different_scenario"]
+            xtab = (raw.get("stats") or {}).get("xtab", {}) or {}
+            cells = [(v, r, n) for v, reviews in xtab.items() for r, n in reviews.items()]
+            if view_verdict:
+                cells = [c for c in cells if c[0] == view_verdict]
             elif view == "reviewed_only":
-                pairs = [p for p in raw["pairs"] if p.review_status]
-            else:
-                pairs = raw["pairs"]
+                cells = [c for c in cells if c[1]]
 
-            total = len(pairs)
+            total = sum(n for _, _, n in cells)
             if total == 0:
                 continue
 
-            reviewed = [p for p in pairs if p.review_status]
-            reviewed_count = len(reviewed)
-            llm_agree = sum(1 for p in reviewed if p.llm_verdict and p.llm_verdict == p.review_status)
-            llm_disagree = sum(1 for p in reviewed if p.llm_verdict and p.llm_verdict != p.review_status and p.llm_verdict != "error")
-            human_same = sum(1 for p in reviewed if p.review_status == "same_scenario")
-            human_partial = sum(1 for p in reviewed if p.review_status == "partial_overlap")
-            human_different = sum(1 for p in reviewed if p.review_status == "different_scenario")
+            reviewed_count = sum(n for _, r, n in cells if r)
+            llm_agree = sum(n for v, r, n in cells if r and v and v == r)
+            llm_disagree = sum(n for v, r, n in cells if r and v and v != r and v != "error")
+            human_same = sum(n for _, r, n in cells if r == "same_scenario")
+            human_partial = sum(n for _, r, n in cells if r == "partial_overlap")
+            human_different = sum(n for _, r, n in cells if r == "different_scenario")
 
-            llm_same = sum(1 for p in pairs if p.llm_verdict == "same_scenario")
-            llm_partial = sum(1 for p in pairs if p.llm_verdict == "partial_overlap")
-            llm_different = sum(1 for p in pairs if p.llm_verdict == "different_scenario")
+            llm_same = sum(n for v, _, n in cells if v == "same_scenario")
+            llm_partial = sum(n for v, _, n in cells if v == "partial_overlap")
+            llm_different = sum(n for v, _, n in cells if v == "different_scenario")
 
             accuracy_denom = llm_agree + llm_disagree
             accuracy_pct = round(llm_agree / accuracy_denom * 100, 1) if accuracy_denom else None
@@ -4577,7 +4579,7 @@ class OverviewDashboardDialog(QDialog):
             })
 
         # Update info label
-        total_all = sum(len(r["pairs"]) for r in self._raw_modules)
+        total_all = sum((r.get("stats") or {}).get("total", 0) for r in self._raw_modules)
         total_filtered = sum(m["total"] for m in self._module_data)
         view_labels = {
             "all": "All pairs",
@@ -6873,6 +6875,29 @@ def _format_bytes(n: int) -> str:
     return f"{size:.2f} TB"
 
 
+class _LoadDbSummaryWorker(QThread):
+    """Background worker for the "Database" dialog: the summary + per-key
+    listing are ordinary SQLite queries, but on a network share they still
+    take seconds -- running them here keeps the window responsive."""
+    done = Signal(object, object)   # (summary dict, entries list)
+    error = Signal(str)
+
+    def __init__(self, cache: TrekCache):
+        super().__init__()
+        self._cache = cache
+
+    def run(self):
+        try:
+            with LOG.timed("Database", "Load cache summary") as t:
+                summary = self._cache.summary()
+                entries = self._cache.list_blob_entries()
+                t.details.update(blob_keys=len(entries),
+                                 tc_content=summary.get("tc_content_count", 0))
+            self.done.emit(summary, entries)
+        except Exception as exc:   # noqa: BLE001
+            self.error.emit(str(exc))
+
+
 class TrekDatabaseDialog(QDialog):
     """Read-only viewer for the local trek_cache.sqlite3 contents.
 
@@ -6950,7 +6975,20 @@ class TrekDatabaseDialog(QDialog):
         lay.addLayout(btn_row)
 
     def _reload(self):
-        summary = self._cache.summary()
+        """Kick off the (potentially slow, network-share) read in the
+        background; _fill() renders it when it arrives."""
+        self._summary_lbl.setText("⏳ Reading database summary...")
+        self._table.setRowCount(0)
+        worker = _LoadDbSummaryWorker(self._cache)
+        worker.done.connect(self._fill)
+        worker.error.connect(lambda msg: self._summary_lbl.setText(f"⚠️ Could not read the database: {msg}"))
+        self._db_worker = worker      # keep a reference while it runs
+        _BG_COMPARE_WORKERS.add(worker)          # survives the dialog being closed
+        worker.finished.connect(lambda w=worker: _BG_COMPARE_WORKERS.discard(w))
+        worker.start()
+
+    def _fill(self, summary, entries):
+        self._last_summary = summary
         size_str = _format_bytes(summary.get("file_size_bytes", 0))
         self._path_lbl.setText(f"Database file: {summary['db_path']}  ·  {size_str} on disk")
 
@@ -6983,7 +7021,6 @@ class TrekDatabaseDialog(QDialog):
         else:
             self._optimize_hint_lbl.hide()
 
-        entries = self._cache.list_blob_entries()
         self._table.setRowCount(0)
         for e in entries:
             row = self._table.rowCount()
@@ -6996,7 +7033,7 @@ class TrekDatabaseDialog(QDialog):
             ))
 
     def _on_optimize_storage(self):
-        summary = self._cache.summary()
+        summary = getattr(self, "_last_summary", None) or self._cache.summary()
         unoptimized = summary.get("unoptimized_embeddings", 0)
         reply = QMessageBox.question(
             self, "Optimize Storage",
