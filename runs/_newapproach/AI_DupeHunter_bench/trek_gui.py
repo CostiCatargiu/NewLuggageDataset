@@ -10130,8 +10130,16 @@ def main():
     # earlier is a Qt fatal error, not a catchable exception; see
     # trek_theme._icon_path). Now that the QApplication exists, rebuild the
     # stylesheet once so the real icon files get baked into the QSS.
+    # Older versions rendered the theme's PNG icons NEXT TO the app; they now
+    # live in the per-user temp folder (trek_paths.icon_cache_dir), so clean
+    # up whatever a previous version left behind.
+    _removed_icons = trek_paths.cleanup_legacy_icon_files()
+
     global STYLESHEET
     STYLESHEET = trek_theme.build_stylesheet(trek_theme.get_active())
+    if _removed_icons:
+        LOG.log("Startup", f"Removed {_removed_icons} leftover theme icon file(s) "
+                           f"from the app folder (they are in the temp folder now).")
 
     # Applied at the QApplication level (not just TrekMainWindow) so
     # independent top-level windows (see _open_independent_window(),

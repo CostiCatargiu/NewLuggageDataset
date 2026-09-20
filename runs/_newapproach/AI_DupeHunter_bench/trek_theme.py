@@ -394,7 +394,7 @@ def _icon_path(kind: str, color: str = "white") -> str:
         p.end()
 
         fname = f"_trek_{kind}_{color.replace('#', '')}.png"
-        out = trek_paths.data_file(fname)
+        out = trek_paths.icon_cache_dir() / fname
         pix.save(str(out), "PNG")
         path = str(out).replace("\\", "/")
         _ICON_CACHE[cache_key] = path

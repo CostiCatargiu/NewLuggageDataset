@@ -116,6 +116,40 @@ def data_file(name: str) -> Path:
     return data_dir() / name
 
 
+def icon_cache_dir() -> Path:
+    """Folder for the small PNGs the theme renders at runtime (checkbox tick,
+    dropdown/spin-box arrows -- Qt stylesheets can only reference image FILES,
+    not inline data). These are throw-away build artifacts, not user data, so
+    they go to the per-user temp folder instead of cluttering the folder that
+    holds the .exe. Falls back to the data dir if temp is not writable."""
+    import tempfile
+    d = Path(tempfile.gettempdir()) / f"{APP_NAME}_icons"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        probe = d / ".write_test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return d
+    except OSError:
+        return data_dir()
+
+
+def cleanup_legacy_icon_files() -> int:
+    """Delete theme icons that older versions wrote NEXT TO the app
+    (_trek_check_white.png etc.). Best-effort; returns how many were removed."""
+    removed = 0
+    try:
+        for p in data_dir().glob("_trek_*.png"):
+            try:
+                p.unlink()
+                removed += 1
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return removed
+
+
 def resource_file(*parts: str) -> Path:
     return bundle_dir().joinpath(*parts)
 
