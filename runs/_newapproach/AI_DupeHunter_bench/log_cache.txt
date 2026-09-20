@@ -1,5 +1,9 @@
-[2026-09-20T16:56:52.432] [INFO ] [Startup] Connect to cache database (//iads220n/D/Users/Costi/Database/trek_cache.sqlite3)  (1.82 s)  | db_path=//iads220n/D/Users/Costi/Database/trek_cache.sqlite3  journal_mode=delete  shared=True  init_connect=0.30s  init_journal_mode=0.24s  init_schema_migrations=0.21s
-[2026-09-20T16:59:03.989] [INFO ] [Results] List cached duplicate-check modules  (128.41 s)  | module_count=10
-[2026-09-20T16:59:04.323] [INFO ] [Index] Index loaded in background: 176,635 ids in 131.4s  (131.43 s)
-[2026-09-20T16:59:18.285] [INFO ] [Results] Load cached result for 'SYT_TS_910_Sensor_Evaluation'  (2.47 s)  | pair_count=368
-[2026-09-20T16:59:22.724] [INFO ] [Results] Load cached result for 'SYT_TS_910_Sensor_Evaluation'  (632 ms)  | pair_count=368
+PS C:\DISK\MAIA\test-sw-taf-tal> (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& c:\DISK\MAIA\test-sw-taf-tal\.venv\Scripts\Activate.ps1)
+(.venv) PS C:\DISK\MAIA\test-sw-taf-tal> & c:\DISK\MAIA\test-sw-taf-tal\.venv\Scripts\python.exe c:/DISK/MAIA/test-sw-taf-tal/AI_DupeHunter_bench/check_share_db.py
+DB: \\iads220n\D\Users\Costi\Database\trek_cache.sqlite3
+open                  :   0.40 s
+header                :   0.20 s   page_size=4096  journal=delete  file=3,289 MB  free_pages=319,460
+find index row        :  16.97 s   [('index:186:102758061', 'text', 9138554, '2026-09-09T12:22:23')]
+READ index bytes      :   0.22 s   9.1 MB stored as text (~2,231 pages -> 0 ms/page)
+decompress+parse      :   0.11 s   176,635 ids
+list results (small)  :   0.00 s   10 rows
