@@ -448,8 +448,15 @@ class TrekCache:
 
     def _migrate_add_meta_indexes(self):
         """Indexes that let the "Database" dialog summarise the cache without
-        scanning the big value columns (on a network share a table scan of
-        `blobs` drags every inline blob fragment across the wire)."""
+        scanning the big value columns.
+
+        NEVER built automatically on a network share: CREATE INDEX is a WRITE
+        over the whole table, which on SMB costs minutes and would delay every
+        first start after an upgrade. There they are created by the offline
+        maintenance instead (optimize_storage / export_optimized_copy), i.e.
+        while the file is local."""
+        if self._is_network:
+            return
         try:
             self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_blobs_meta ON blobs(key, item_count, updated_at)")
@@ -1364,6 +1371,7 @@ class TrekCache:
 
         stats = self._compress_large_values(drop_error_judgments=drop_error_judgments,
                                             progress_cb=progress_cb)
+        self._create_meta_indexes()
 
         # VACUUM physically rewrites the file to reclaim space freed by the
         # UPDATEs above (SQLite doesn't shrink the file on its own). This
@@ -1402,6 +1410,22 @@ class TrekCache:
             "page_size_after": self._conn.execute("PRAGMA page_size;").fetchone()[0],
             **stats,
         }
+
+    def _create_meta_indexes(self) -> None:
+        """Create the summary indexes (see _migrate_add_meta_indexes). Safe to
+        call repeatedly; used by the maintenance paths so even a database that
+        lives on a share ends up with them -- built while it is still local."""
+        for ddl in (
+            "CREATE INDEX IF NOT EXISTS idx_blobs_meta ON blobs(key, item_count, updated_at)",
+            "CREATE INDEX IF NOT EXISTS idx_tc_content_updated ON tc_content(updated_at)",
+            "CREATE INDEX IF NOT EXISTS idx_embeddings_legacy ON embeddings(text_hash) "
+            "WHERE vector_blob IS NULL",
+        ):
+            try:
+                self._conn.execute(ddl)
+            except sqlite3.Error:
+                pass
+        self._commit()
 
     def _compress_large_values(self, drop_error_judgments: bool = False,
                                progress_cb: Optional[Callable[[int, int], None]] = None) -> Dict[str, int]:
@@ -1458,6 +1482,7 @@ class TrekCache:
             size_before = 0
         stats = self._compress_large_values(drop_error_judgments=drop_error_judgments,
                                             progress_cb=progress_cb)
+        self._create_meta_indexes()
         self._conn.execute(f"PRAGMA page_size={int(page_size)};")   # applies to VACUUM INTO
         self._conn.execute("VACUUM INTO ?;", (str(dst),))
 
