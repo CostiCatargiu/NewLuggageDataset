@@ -1,0 +1,18 @@
+# Runtime dependencies for the TREK Traceability GUI (trek_gui.py).
+# Built and tested on Python 3.12 / Windows.
+#
+#   py -3.12 -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements.txt
+#   python trek_gui.py
+
+PySide6==6.11.1                     # Qt GUI; PySide6-Addons supplies QtCharts (metrics pie charts)
+requests==2.34.2                    # TREK REST calls
+requests-negotiate-sspi==0.5.2      # Windows SSO auth against TREK (Windows-only)
+urllib3==2.7.0
+numpy==2.5.1                        # cosine similarity for the RAG stage
+rank-bm25==0.2.2                    # lexical BM25 scoring
+openai==2.53.0                      # LLM gateway client (embeddings + LLM judge)
+
+# Build-time only -- needed to produce the standalone .exe (build_exe.bat)
+pyinstaller==6.22.2

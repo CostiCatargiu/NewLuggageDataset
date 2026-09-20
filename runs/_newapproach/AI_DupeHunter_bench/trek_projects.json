@@ -1,0 +1,19 @@
+{
+  "active": "hcp4",
+  "projects": {
+    "bmw": {
+      "name": "bmw",
+      "project_id": 607,
+      "campaign_id": 102766584,
+      "config_id": 8579,
+      "jwt_token": "gAAAAABqqEWl6aTYfBv6i4Pb3QB8pWxd6dGANLFZtJ1Czo1XLJo0fTk1gN-ndRUnQJyaBsbNMSab9K6DIiwo-rWI4o6GUqg0d5KAaLA8LRtYSues0tD8T7dZV5Twy27Ijju5rEdECf5hQlPLydWed9wMg_g0uKTWPw=="
+    },
+    "hcp4": {
+      "name": "HCP4",
+      "project_id": 186,
+      "campaign_id": 102758061,
+      "config_id": 5190,
+      "jwt_token": "gAAAAABqrAj_YkmXEZ_GeMFHESz-vLL1s9kEkHNFgDRwBkx1S58TrGWnbCrzCUEqOoclNNCFBuhdDBNVWhpOUh-QqtFuJE60cc0pJRVov2h9QqyQCHBAYnw1Hu75BiU7q6D58_7OrZSmO4BMP9RDhFRITEq6KVhNCQ=="
+    }
+  }
+}
