@@ -1,0 +1,20 @@
+{
+  "thresholds": {
+    "relink": 0.506,
+    "verify": 0.486,
+    "revive": 0.617,
+    "resolve": 0.658,
+    "rebind": 0.658
+  },
+  "auc": {
+    "colour": 0.749,
+    "osnet": 0.923
+  },
+  "pairs": {
+    "same": 995,
+    "different": 942
+  },
+  "trace": "trace.jsonl of the AVSS 2007 medium run (development clip)",
+  "model": "osnet_x1_0 (osnet_x1_0_msmt17.pt) on cuda:0",
+  "made": "2026-09-24 23:00:10"
+}

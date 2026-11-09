@@ -139,7 +139,7 @@
 | [📦 2. Dataset](#-2-luggagedataset-v6i) | [🧬 2.3 Leakage-Free Split](#23-leakage-free-split) | [🧠 3. Method](#-3-method) |
 | [🧾 3.8 Final Configuration](#38-final-configuration-at-a-glance) | [📏 4. Protocol & Noise Floor](#-4-experimental-protocol) | [📊 5. Results](#-5-results) |
 | [🔁 5.5 Transfer Study](#55-cross-detector-transfer-nothing-transfers) | [⚡ 5.6 Speed](#56-inference-speed) | [🚨 6. Alarm Pipeline](#-6-unattended-luggage-pipeline) |
-| [🎬 6.5 Clip Gallery](#65-clip-gallery) | [🔑 7. Key Findings](#-7-key-findings) | [🚧 8. Limitations](#-8-limitations) |
+| [🎬 6.5 Clip Gallery](#65-clip-gallery) · [💻 code](#126-unattended-luggage-pipeline) | [🔑 7. Key Findings](#-7-key-findings) | [🚧 8. Limitations](#-8-limitations) |
 | [🧳 9. Released Models](#-9-released-models) | [📁 10. Repository](#-10-repository-structure) | [🔧 11. Installation](#-11-installation) |
 | [🚀 12. Usage](#-12-usage) | [❓ 13. FAQ](#-13-faq) | [✅ 14. Reproducibility](#-14-reproducibility-checklist) |
 | [🔒 15. Responsible Use](#-15-responsible-use) | [📖 16. Citation](#-16-citation) | [📜 License](#-license) · [📚 Resources](#-resources) |
@@ -244,7 +244,7 @@ and attacks that first stage directly.
 4. 📏 **A measured noise floor** — every reported configuration trained with **3 seeds**; every gain stated in standard-error units; selection bias quantified and single-draw maxima never reported.
 5. 🔁 **A transfer study** — every mechanism tested on *both* detectors; none transfers, and each failure is traced to a detail the training configuration hides.
 6. 🚨 **An owner-aware alarm pipeline** — the owner is a *person*, not a track number; evaluated on AVSS 2007 and ABODA.
-7. 🔓 **A complete release** — the six trained checkpoints, the final and the tried architecture configs, the patched code at pinned upstream commits, and runnable scripts for the full hyperparameter grids.
+7. 🔓 **A complete release** — the six trained checkpoints, the final and the tried architecture configs, the patched code at pinned upstream commits, runnable scripts for the full hyperparameter grids, and the complete unattended-luggage pipeline.
 
 ### 🔖 Classes
 
@@ -713,6 +713,8 @@ The custom YOLO26s adds only 15% compute (the stride-4 level is partly paid for 
 
 ## 🚨 6. Unattended-luggage pipeline
 
+> 💻 **The pipeline code is in [`pipeline/`](pipeline)** — run it on your own videos or reproduce the five clips below ([§12.6](#126-unattended-luggage-pipeline)).
+
 <p align="center">
   <img src="docs/figures/fig04_unattended_luggage_pipeline.png" width="900" alt="Unattended-luggage pipeline" />
   <br/><sub><b>Figure 4.</b> A YOLOv12 or YOLO26 detector provides person and luggage boxes in every frame, tracked in separate identity spaces. The ownership stage binds each bag to a <i>person</i> rather than to a track number, and the alarm logic runs one dwell clock per bag. Every decision is written to a per-frame log, so a raised alarm can be replayed against the evidence that produced it. Only the luggage detector is fine-tuned; the person detector is a pre-trained COCO model.</sub>
@@ -921,6 +923,11 @@ luggage-yolo-release/
 ├── results/
 │   ├── training_curves/                   per-epoch results.csv of each released run
 │   └── train_args/                        the args.yaml recorded by each released run
+├── pipeline/
+│   ├── unattended_luggage.py              detection + tracking + ownership + alarms (Section 6)
+│   ├── person_reid.py                     OSNet person re-identification
+│   ├── reid_thresholds.json               re-ID thresholds calibrated on the development clip
+│   └── make_grid_videos.py                2 × 2 comparison videos of the four detectors
 ├── docs/figures/                          all paper figures, with captions
 ├── original_scripts/                      the original experiment scripts, unchanged, incl. the COCO evaluator
 └── weights/copy_weights.sh                collects and checksums the released checkpoints
@@ -1037,7 +1044,25 @@ results = model.predict("path/to/frame_or_video.mp4", imgsz=640, conf=0.25, save
 
 The custom YOLO26s is the recommended detector for deployment: the same small-object accuracy as the custom YOLOv12s at about 2.5× the frame rate (§5.6).
 
-### 12.6 Sanity checks
+### 12.6 Unattended-luggage pipeline
+
+The full event-level system of Section 6 — luggage + person detection, tracking, OSNet re-identification, ownership and alarms — is in [`pipeline/`](pipeline) ([details](pipeline/README.md)). Put the clips in `videos/` (ABODA from [github.com/kevinlin311tw/ABODA](https://github.com/kevinlin311tw/ABODA); the AVSS 2007 clips are distributed separately), then from the repository root:
+
+```bash
+pip install scipy opencv-python gdown          # gdown fetches the OSNet weights once
+
+# Environment A
+python pipeline/unattended_luggage.py --model yolov12-custom videos/video1.avi
+python pipeline/unattended_luggage.py --all --models yolov12-official,yolov12-custom   # the five clips
+# Environment B
+python pipeline/unattended_luggage.py --all --models yolo26-official,yolo26-custom
+
+python pipeline/make_grid_videos.py            # 2 x 2 comparison videos (Figures 10-15 layout)
+```
+
+Each run writes the annotated video next to its input, and `events.json` plus a per-frame decision log (`trace.jsonl`) to `runs_pipeline/`; `--all` adds a summary table of alarms, alarm times and owners.
+
+### 12.7 Sanity checks
 
 <details>
 <summary><b>✅ Did it work?</b> — click to expand</summary>
@@ -1127,7 +1152,7 @@ Open a GitHub issue, or write to Constantin Catargiu at <a href="mailto:constant
 - [x] COCO evaluator for the per-size metrics shipped
 - [x] Inference-speed protocol stated (RTX 4090, batch 1, 640 px, FP16, median over 500 images, pre- and post-processing included)
 - [ ] Leakage-free split script — not included in this repository
-- [ ] Unattended-luggage pipeline code (tracking, ownership, alarm) — not included in this repository
+- [x] Unattended-luggage pipeline code (tracking, re-identification, ownership, alarms) in [`pipeline/`](pipeline), with the calibrated re-ID thresholds
 
 ---
 
