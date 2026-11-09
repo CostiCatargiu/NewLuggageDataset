@@ -19,7 +19,7 @@
 #        per-anchor stride) can be up-weighted by small_obj_boost.
 #          alpha_start, alpha_end, alpha_min, alpha_max,
 #          small_obj_px, small_obj_boost
-#        area_weight_mode ('inv'|'sqrt'|'log') reshapes the 1/area weight;
+#        area_weight_mode ('inv'|'pow075'|'sqrt'|'log') reshapes the 1/area weight;
 #        area_weight_norm ('max'|'mean') sets the normalization so shape and
 #        average magnitude can be varied independently.
 #        Optional per-class boost:
@@ -432,7 +432,7 @@ class BboxLoss(nn.Module):
         self.alpha_max = 0.9
 
         # Section A2: area-weight shape + per-class boost. Defaults = legacy.
-        self.area_weight_mode = 'inv'   # 'inv' (legacy 1/area) | 'sqrt' | 'log'
+        self.area_weight_mode = 'inv'   # 'inv' (legacy 1/area) | 'pow075' (A^-3/4) | 'sqrt' | 'log'
         # Normalization of the area weight:
         #   'max'  (legacy): divide by batch max — the shape and the average
         #          box-loss magnitude move together (entangled), and the scale
@@ -571,6 +571,8 @@ class BboxLoss(nn.Module):
         inv_area = 1.0 / target_areas[fg_mask]
         if self.area_weight_mode == 'sqrt':
             area_weight = inv_area.sqrt().unsqueeze(-1)
+        elif self.area_weight_mode == 'pow075':  # A^-3/4, between 'inv' and 'sqrt'
+            area_weight = inv_area.pow(0.75).unsqueeze(-1)
         elif self.area_weight_mode == 'log':
             area_weight = torch.log1p(inv_area).unsqueeze(-1)
         else:  # 'inv' — legacy

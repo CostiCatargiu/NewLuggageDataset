@@ -1,0 +1,9 @@
+# Dataset config template for the luggage dataset used in the paper (LuggageDataset v6i).
+# Point `path` at your local copy; images/labels in standard YOLO layout.
+path: /path/to/LuggageDataset.v6i
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 3
+names: [backpack, bag, trolley]

@@ -1,0 +1,61 @@
+# yolov12-lsshift: P2-P5 4-level detect graph.
+# DySample dynamic upsampling in place of nn.Upsample at every upsample step
+# (rows 9, 12, 21 -- "ls_shift"), plus a dedicated P2 (stride-4) branch fed by
+# backbone P2 (row 2) and the P3 head (row 14), a ZGGlobalContext2 block on
+# the new P2 output for small-object context, and ZGDSConv "snake" (k=9)
+# convs refining P3/P4/P5 before the 4-level Detect head.
+#
+# Rows 0-20 are IDENTICAL in position/module-type to stock yolov12's own
+# backbone+head layout (only nn.Upsample -> DySample, which carries zero
+# state-dict keys either way) -- a plain model.load(yolov12x.pt) transfers
+# that portion with no remap step. Only rows 21-28 (the new P2 branch, the
+# three snake convs, and the 4-input Detect head) come out randomly
+# initialized.
+#
+# NOTE: the n: row below is IDENTICAL to the x: row (1.00, 1.50, 512) -- this
+# is almost certainly a copy-paste artifact, the same bug pattern that broke
+# yolo26x.yaml earlier (its own n: row was accidentally set to its x: values).
+# Harmless for this script (we only ever request scale='x', and that row's
+# values match known-correct stock yolov12x scale numbers), but do not build
+# this at scale='n' and expect a nano-sized model until that row is fixed.
+nc: 3
+scales:
+  # [depth, width, max_channels]
+  n: [1.00, 1.50, 512]  # summary: 895 layers, 59,414,176 parameters, 59,414,160 gradients, 185.9 GFLOPs -- SUSPECT, equals x row
+  s: [0.50, 0.50, 1024]  # summary: 497 layers, 9,127,424 parameters, 9,127,408 gradients, 19.7 GFLOPs
+  m: [0.50, 1.00, 512]  # summary: 533 layers, 19,670,784 parameters, 19,670,768 gradients, 60.4 GFLOPs
+  l: [1.00, 1.00, 512]  # summary: 895 layers, 26,506,496 parameters, 26,506,480 gradients, 83.3 GFLOPs
+  x: [1.00, 1.50, 512]  # summary: 895 layers, 59,414,176 parameters, 59,414,160 gradients, 185.9 GFLOPs
+
+backbone:
+  - [-1, 1, Conv,  [64, 3, 2]]               # 0
+  - [-1, 1, Conv,  [128, 3, 2, 1, 2]]        # 1
+  - [-1, 2, C3k2,  [256, False, 0.25]]       # 2  backbone P2 (stride 4)
+  - [-1, 1, Conv,  [256, 3, 2, 1, 4]]        # 3
+  - [-1, 2, C3k2,  [512, False, 0.25]]       # 4  backbone P3 (stride 8)
+  - [-1, 1, Conv,  [512, 3, 2]]              # 5
+  - [-1, 4, A2C2f, [512, True, 4]]           # 6  backbone P4 (stride 16)
+  - [-1, 1, Conv,  [1024, 3, 2]]             # 7
+  - [-1, 4, A2C2f, [1024, True, 1]]          # 8  backbone P5 (stride 32)
+
+head:
+  - [-1, 1, DySample, [2]]                        # 9
+  - [[-1, 6], 1, Concat, [1]]                     # 10
+  - [-1, 2, A2C2f, [512, False, -1]]              # 11
+  - [-1, 1, DySample, [2]]                        # 12
+  - [[-1, 4], 1, Concat, [1]]                     # 13
+  - [-1, 2, A2C2f, [256, False, -1]]              # 14  P3 head
+  - [-1, 1, Conv, [256, 3, 2]]                    # 15
+  - [[-1, 11], 1, Concat, [1]]                    # 16
+  - [-1, 2, A2C2f, [512, False, -1]]              # 17  P4 head
+  - [-1, 1, Conv, [512, 3, 2]]                    # 18
+  - [[-1, 8], 1, Concat, [1]]                     # 19
+  - [-1, 2, C3k2, [1024, True]]                   # 20  P5 head
+  - [14, 1, DySample, [2]]                          # 21  P3 head -> stride 4
+  - [[21, 2], 1, Concat, [1]]                       # 22  + backbone P2
+  - [-1, 2, A2C2f, [256, False, -1]]                # 23  P2 head (stride 4)
+  - [23, 1, ZGGlobalContext2, [256]]                # 24  P2 + gctx2 (small objects)
+  - [14, 1, ZGDSConv, [256, 9]]                     # 25  P3 + snake k=9
+  - [17, 1, ZGDSConv, [512, 9]]                     # 26  P4 + snake k=9
+  - [20, 1, ZGDSConv, [1024, 9]]                    # 27  P5 + snake k=9
+  - [[24, 25, 26, 27], 1, Detect, [nc]]             # 28

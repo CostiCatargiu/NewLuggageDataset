@@ -1,10 +1,14 @@
-# Local helper/analysis scripts for the archAblation summaries (not part of the project)
-runs/_newapproach/luggagev6i/archAblation/check_baseline.js
-runs/_newapproach/luggagev6i/archAblation/check_snt.js
-runs/_newapproach/luggagev6i/archAblation/finalcheck.js
-runs/_newapproach/luggagev6i/archAblation/inspect.js
-runs/_newapproach/luggagev6i/archAblation/listnames.js
-runs/_newapproach/luggagev6i/archAblation/summarize.js
-runs/_newapproach/luggagev6i/archAblation/v26split.js
-runs/_newapproach/luggagev6i/_modelsSummary/TestVideos/*.mpg
-TrainedWeights/*.pt
+weights/*.pt
+runs_luggage/
+third_party/
+__pycache__/
+*.pyc
+.venv*/
+runs_sweep_arch/
+runs_sweep_loss/
+runs_tmp_cfg/
+runs_arch_*/
+runs_loss_*/
+runs_*_results.json
+arch_yamls_*/
+*.pt
