@@ -2,44 +2,230 @@
      Unattended Luggage Detection — LuggageDataset v6i + enhanced YOLO models
      ===================================================================== -->
 
+<h1 align="center">🧳 Unattended Luggage Detection with Enhanced YOLOv12s / YOLO26s & a Custom Dataset</h1>
+
+<p align="center"><sub>Official repository for the paper <b>"Unattended Luggage Detection Using Enhanced YOLO Models and a Custom Dataset"</b><br>Constantin Catargiu & Iulian B. Ciocoiu — Faculty of Electronics, Telecommunications and Information Technology,<br>Gheorghe Asachi Technical University of Iași, Romania</sub></p>
+
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e13235ef-b18c-4dce-9581-bafa0a2a11c4" width="260" />
-  <img src="https://github.com/user-attachments/assets/2055d337-f103-4d03-8238-9dbe1b9a0dfe" width="260" />
-  <img src="https://github.com/user-attachments/assets/0b9a794e-43f8-4bee-aef4-17c6908df486" width="260" />
+  <img src="https://github.com/user-attachments/assets/e13235ef-b18c-4dce-9581-bafa0a2a11c4" width="30%" />
+  <img src="https://github.com/user-attachments/assets/2055d337-f103-4d03-8238-9dbe1b9a0dfe" width="30%" />
+  <img src="https://github.com/user-attachments/assets/0b9a794e-43f8-4bee-aef4-17c6908df486" width="30%" />
 </p>
+
+<p align="center">
+  <a href="https://universe.roboflow.com/guns-detection-cvwjs/luggagedataset-24pgo/dataset/6">
+    <img src="https://img.shields.io/badge/LuggageDataset_v6i-Roboflow-6706CE?style=for-the-badge&logo=roboflow&logoColor=white" alt="LuggageDataset v6i" />
+  </a>
+  <a href="../../releases/latest">
+    <img src="https://img.shields.io/badge/Weights-GitHub_Release-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Weights" />
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Models-YOLOv12s_·_YOLO26s-red?style=flat-square" />
+  <img src="https://img.shields.io/badge/Focus-Small_Object_Detection-purple?style=flat-square" />
+  <img src="https://img.shields.io/badge/Speed-295_FPS_@_RTX_4090-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/Seeds-3_runs_·_mean±std-teal?style=flat-square" />
+  <img src="https://img.shields.io/badge/Dataset-12,184_imgs_·_57,814_boxes-6706CE?style=flat-square" />
+  <img src="https://img.shields.io/badge/Re--ID-OSNet-0aa5a5?style=flat-square" />
+  <img src="https://img.shields.io/badge/Paper-Under_review-yellow?style=flat-square" />
+  <img src="https://img.shields.io/badge/Code_License-AGPL--3.0-informational?style=flat-square" />
+</p>
+
+---
+
+## ⚡ TL;DR
+
+> **What:** small-object-aware **YOLOv12s** and **YOLO26s** detectors for **luggage in fixed-camera surveillance** — where the mean box covers 0.53% of the frame — trained and tested on **LuggageDataset v6i** (**12,184 images / 57,814 boxes**, 3 classes) with a **leakage-free** cluster-based split, and an **owner-aware alarm pipeline** built on top.
+>
+> **How:** two axes per detector, under one rule — *at initialization the modified model reproduces the pretrained baseline exactly*. **Loss / assignment:** curriculum area weighting (YOLOv12s) and a flattened task-alignment exponent **β 6 → 1** (YOLO26s). **Architecture:** a stride-4 level **appended** with level-specific gated blocks (YOLOv12s), or **inserted** into the PAN with the stride-32 head removed and depth moved to the finest levels (YOLO26s, **−27.7% parameters**).
+>
+> **Result:** small-object mAP@50 **+3.44%** (YOLO26s) and **+2.85%** (YOLOv12s) — **9.5 and 11.0 standard errors** above a measured 3-seed noise floor. Custom YOLO26s runs at **295 FPS** on an RTX 4090. With the custom YOLOv12s, the pipeline detects **5/5 abandonments**, names the **right owner in 5/5**, with **0 false alarms**. And a finding worth knowing: **none of the four mechanisms transfers** to the other detector.
+
+> 📐 **Reading the numbers.** All metrics are percentages on the test split. **Δ columns are relative gains** over the baseline (e.g. 77.26 → 79.91 is **+3.44%**). Noise-floor quantities (σ, SE) are in **percentage points**: the same gain is +2.65 pp, i.e. 9.5 × SE = 0.28 pp.
 
 <div align="center">
 
-# Unattended Luggage Detection
-### Enhanced YOLOv12s / YOLO26s detectors · a leakage-free benchmark · an owner-aware alarm pipeline
+### 🔢 By the Numbers
 
-<p>
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" />
-  <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-2.x-EE4C2C?logo=pytorch&logoColor=white" />
-  <img alt="Ultralytics" src="https://img.shields.io/badge/Ultralytics-YOLOv12s%20%7C%20YOLO26s-111827" />
-  <img alt="Dataset" src="https://img.shields.io/badge/Dataset-LuggageDataset%20v6i-6f42c1" />
-  <img alt="Re-ID" src="https://img.shields.io/badge/Re--ID-OSNet-0aa5a5" />
-  <img alt="Paper" src="https://img.shields.io/badge/Paper-under%20review-orange" />
-  <img alt="License" src="https://img.shields.io/badge/License-AGPL--3.0-2ea44f" />
-</p>
+<table>
+<tr>
+<td align="center" width="16%">
 
-**Constantin Catargiu · Iulian B. Ciocoiu**
-<br/>Faculty of Electronics, Telecommunications and Information Technology
-<br/>Gheorghe Asachi Technical University of Iași, Romania
+**12,184**
+<br><sub>images</sub>
 
-[**Dataset**](https://universe.roboflow.com/guns-detection-cvwjs/luggagedataset-24pgo/dataset/6) ·
-[**Method**](#3-method) ·
-[**Results**](#5-results) ·
-[**Pipeline**](#6-unattended-luggage-pipeline) ·
-[**Models**](#9-released-models) ·
-[**Usage**](#12-usage) ·
-[**Citation**](#13-citation)
+</td>
+<td align="center" width="16%">
+
+**57,814**
+<br><sub>luggage boxes</sub>
+
+</td>
+<td align="center" width="16%">
+
+**~21×**
+<br><sub>more luggage annotations than the largest in-domain set</sub>
+
+</td>
+<td align="center" width="16%">
+
+**+3.44%**
+<br><sub>small-object mAP@50 · YOLO26s</sub>
+
+</td>
+<td align="center" width="16%">
+
+**+2.85%**
+<br><sub>small-object mAP@50 · YOLOv12s</sub>
+
+</td>
+<td align="center" width="16%">
+
+**295**
+<br><sub>FPS · custom YOLO26s</sub>
+
+</td>
+</tr>
+<tr>
+<td align="center">
+
+**3**
+<br><sub>classes</sub>
+
+</td>
+<td align="center">
+
+**0**
+<br><sub>scenes shared between splits</sub>
+
+</td>
+<td align="center">
+
+**3 seeds**
+<br><sub>per reported configuration</sub>
+
+</td>
+<td align="center">
+
+**226**
+<br><sub>runs in the search</sub>
+
+</td>
+<td align="center">
+
+**5 / 5**
+<br><sub>abandonments, right owner</sub>
+
+</td>
+<td align="center">
+
+**0**
+<br><sub>false alarms</sub>
+
+</td>
+</tr>
+</table>
 
 </div>
 
 ---
 
-## Overview
+## 📚 Table of Contents
+
+| | | |
+|---|---|---|
+| [🏆 Research Highlights](#-research-highlights) | [📖 Overview & Contributions](#-overview--contributions) | [🌍 1. Motivation](#-1-motivation) |
+| [📦 2. Dataset](#-2-luggagedataset-v6i) | [🧬 2.3 Leakage-Free Split](#23-leakage-free-split) | [🧠 3. Method](#-3-method) |
+| [🧾 3.8 Final Configuration](#38-final-configuration-at-a-glance) | [📏 4. Protocol & Noise Floor](#-4-experimental-protocol) | [📊 5. Results](#-5-results) |
+| [🔁 5.5 Transfer Study](#55-cross-detector-transfer-nothing-transfers) | [⚡ 5.6 Speed](#56-inference-speed) | [🚨 6. Alarm Pipeline](#-6-unattended-luggage-pipeline) |
+| [🎬 6.5 Clip Gallery](#65-clip-gallery) | [🔑 7. Key Findings](#-7-key-findings) | [🚧 8. Limitations](#-8-limitations) |
+| [🧳 9. Released Models](#-9-released-models) | [📁 10. Repository](#-10-repository-structure) | [🔧 11. Installation](#-11-installation) |
+| [🚀 12. Usage](#-12-usage) | [❓ 13. FAQ](#-13-faq) | [✅ 14. Reproducibility](#-14-reproducibility-checklist) |
+| [🔒 15. Responsible Use](#-15-responsible-use) | [📖 16. Citation](#-16-citation) | [📜 License](#-license) · [📚 Resources](#-resources) |
+
+---
+
+<div align="center">
+
+## 🏆 Research Highlights
+
+</div>
+
+Both detectors are modified along **two axes** — loss/assignment and architecture — and evaluated as a **2 × 2 ablation** (Base · Loss · Arch · A+L), each configuration trained with **3 seeds**. The combined model is best on the primary metric for both detectors.
+
+<table>
+  <tr>
+    <td align="center" colspan="2">
+      <img width="95%" alt="Architectural modifications" src="docs/figures/fig03_architectures.png" />
+      <br><sub>🏗️ <b>Figure 3.</b> (a) YOLOv12s + <code>ls_shift</code>: stride-4 branch <i>appended</i>, four heads, gated level-specific blocks. (b) YOLO26s + <code>p2dys-p234rich</code>: stride 4 <i>inserted</i> into the PAN, stride-32 head removed, depth 2 → 4 at P2/P3.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img width="100%" alt="Unattended-luggage pipeline" src="docs/figures/fig04_unattended_luggage_pipeline.png" />
+      <br><sub>🚨 <b>Figure 4.</b> Detector → person & luggage trackers (separate identity spaces) → ownership (owner = a person, not a track id) → alarm logic.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img width="100%" alt="Share of frames with the abandoned bag detected" src="docs/figures/fig16_abandoned_bag_detection_share.png" />
+      <br><sub>🎯 <b>Figure 16.</b> Share of frames in which each detector found the abandoned bag — while carried and while unattended.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img width="100%" alt="AVSS 2007 easy clip" src="docs/figures/fig10_avss2007_easy.png" />
+      <br><sub>🎬 <b>Figure 10.</b> AVSS 2007 easy — the four detectors on the same frames.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img width="100%" alt="Annotated frames from LuggageDataset v6i" src="docs/figures/fig01_dataset_examples.png" />
+      <br><sub>📦 <b>Figure 1.</b> Annotated frames from LuggageDataset v6i.</sub>
+    </td>
+  </tr>
+</table>
+
+<div align="center">
+
+<table>
+  <tr>
+    <th align="center" colspan="3">📈 Test-set performance, baseline → combined model (mean over 3 seeds). Δ is <b>relative</b> to the baseline.</th>
+  </tr>
+  <tr>
+    <th align="center">Metric</th>
+    <th align="center">🔶 YOLO26s<br><sub>Base → Arch + Loss</sub></th>
+    <th align="center">🔷 YOLOv12s<br><sub>Base → Arch + Loss</sub></th>
+  </tr>
+  <tr><td align="left">🔍 <b>mAP@50 small</b> <sub>(primary)</sub></td><td align="center">77.26 → <b>79.91</b> <sub>(+3.44%)</sub></td><td align="center">77.65 → <b>79.87</b> <sub>(+2.85%)</sub></td></tr>
+  <tr><td align="left"><b>mAP@50</b></td><td align="center">80.25 → <b>83.01</b> <sub>(+3.45%)</sub></td><td align="center">80.72 → <b>82.60</b> <sub>(+2.32%)</sub></td></tr>
+  <tr><td align="left"><b>mAP@50-95</b></td><td align="center">54.90 → <b>56.43</b> <sub>(+2.79%)</sub></td><td align="center">54.75 → <b>56.09</b> <sub>(+2.44%)</sub></td></tr>
+  <tr><td align="left"><b>Precision</b></td><td align="center">81.28 → <b>84.00</b> <sub>(+3.35%)</sub></td><td align="center">80.60 → <b>83.00</b> <sub>(+2.97%)</sub></td></tr>
+  <tr><td align="left"><b>Recall</b></td><td align="center">72.79 → <b>75.89</b> <sub>(+4.25%)</sub></td><td align="center">72.23 → <b>74.94</b> <sub>(+3.76%)</sub></td></tr>
+  <tr><td align="left"><b>F1-score</b></td><td align="center">76.80 → <b>79.74</b> <sub>(+3.82%)</sub></td><td align="center">76.18 → <b>78.76</b> <sub>(+3.39%)</sub></td></tr>
+  <tr><td colspan="3" align="center"><b>Size-specific mAP@50</b> <sub>(COCO area bins 32² / 96²)</sub></td></tr>
+  <tr><td align="left">🔍 <b>Small</b></td><td align="center">77.26 → <b>79.91</b> <sub>(+3.44%)</sub></td><td align="center">77.65 → <b>79.87</b> <sub>(+2.85%)</sub></td></tr>
+  <tr><td align="left">📦 <b>Medium</b></td><td align="center">86.60 → <b>88.59</b> <sub>(+2.30%)</sub></td><td align="center">87.65 → 87.42 <sub>(−0.26%)</sub></td></tr>
+  <tr><td align="left">🟫 <b>Large</b></td><td align="center">81.82 → 80.83 <sub>(−1.21%)</sub></td><td align="center">82.93 → 82.79 <sub>(−0.17%)</sub></td></tr>
+</table>
+
+<table>
+  <tr>
+    <th align="center">⚙️ Parameters</th>
+    <th align="center">⚡ Throughput (RTX 4090, FP16, batch 1)</th>
+    <th align="center">🎯 Where the gains land</th>
+  </tr>
+  <tr>
+    <td align="center">YOLO26s: 9.68 M → <b>6.99 M</b> <sub>(−27.7%)</sub></td>
+    <td align="center">YOLO26s 341 → <b>295 FPS</b> · YOLOv12s 247 → <b>120 FPS</b></td>
+    <td align="center"><b>Small objects</b> on both detectors · the <b>bag</b> class improves without changing rank</td>
+  </tr>
+</table>
+
+<sub>🏁 <b>Best trade-off: custom YOLO26s</b> — the same small-object accuracy as the custom YOLOv12s (79.91 vs 79.87 mAP@50) at ~2.5× its frame rate. <b>Best for the alarm pipeline: custom YOLOv12s</b> — it finds the carried bag in 91% of frames, which is what names the right owner.</sub>
+
+</div>
+
+---
+
+## 📖 Overview & Contributions
 
 Luggage left unattended in an airport hall, a railway station or a metro platform is both a security and an operational concern, and an operator watching dozens of feeds cannot sustain the attention reliable detection requires. The task is conventionally split into three stages — **detect** candidate luggage, **associate** each item with an owner, **decide** when the separation constitutes abandonment. The third stage has been standardized for twenty years; **the first has not**. In fixed-camera footage the camera is mounted high and looks down, so luggage occupies a tiny fraction of the frame, and every downstream stage inherits what the detector misses: an ownership rule cannot associate a bag that was never detected, and a dwell timer cannot run on a track that does not exist.
 
@@ -50,58 +236,29 @@ This repository accompanies the paper
 
 and attacks that first stage directly.
 
-<table>
-<tr>
-<td width="50%" valign="top">
+### 🎯 Contributions
 
-**What is in this work**
+1. 📦 **LuggageDataset v6i** — 12,184 images and 57,814 boxes of `backpack`, `bag` and `trolley` from fixed or quasi-static cameras in transport hubs and public spaces; about **21× the luggage annotations** of the largest annotated in-domain alternative, with no augmentation anywhere.
+2. 🧬 **A leakage-free split** — near-duplicate frames clustered by perceptual hash before splitting, whole clusters assigned to one subset, audited: **zero scenes shared** between train, validation and test.
+3. 🧠 **Small-object-aware detectors** — loss/assignment and architecture changes for **YOLOv12s** and **YOLO26s**, each starting as an exact copy of its pretrained baseline.
+4. 📏 **A measured noise floor** — every reported configuration trained with **3 seeds**; every gain stated in standard-error units; selection bias quantified and single-draw maxima never reported.
+5. 🔁 **A transfer study** — every mechanism tested on *both* detectors; none transfers, and each failure is traced to a detail the training configuration hides.
+6. 🚨 **An owner-aware alarm pipeline** — the owner is a *person*, not a track number; evaluated on AVSS 2007 and ABODA.
+7. 🔓 **A complete release** — the six trained checkpoints, the final and the tried architecture configs, the patched code at pinned upstream commits, and runnable scripts for the full hyperparameter grids.
 
-- 🗂️ **LuggageDataset v6i** — 12,184 images, 57,814 instances, 3 classes; about **21×** more luggage annotations than the largest annotated in-domain alternative
-- 🧪 **Leakage-free split** — near-duplicate frames clustered before splitting; zero scenes shared between subsets
-- 🧠 **Small-object–aware detectors** — loss/assignment and architecture changes for **YOLOv12s** and **YOLO26s**
-- 📏 **Measured noise floor** — every reported configuration trained with **3 seeds**
-- 🔁 **Transfer study** — every mechanism tested on both detectors
-- 🚨 **Unattended-luggage pipeline** — owner = a person, not a track number
+### 🔖 Classes
 
-</td>
-<td width="50%" valign="top">
+<p>
+  <img src="https://img.shields.io/badge/backpack-E67E22?style=flat-square" />
+  <img src="https://img.shields.io/badge/bag-9B59B6?style=flat-square" />
+  <img src="https://img.shields.io/badge/trolley-3498DB?style=flat-square" />
+</p>
 
-**Headline numbers**
-
-| | YOLO26s | YOLOv12s |
-|---|:---:|:---:|
-| Small-object mAP@50 | **+3.44%** | **+2.85%** |
-| F1-score | **+3.82%** | **+3.39%** |
-| Gain in noise units | **9.5 SE** | **11.0 SE** |
-| Custom model speed | **295 FPS** | **120 FPS** |
-
-**Pipeline (custom YOLOv12s):** 5/5 abandonments detected, correct owner in 5/5, **0 false alarms**.
-
-</td>
-</tr>
-</table>
+`bag` is the hard class by construction (semantically loose, the most wide boxes, the most bimodal size distribution) — see [§2.2](#22-object-size-and-shape) and [§5.4](#54-per-class-behavior).
 
 ---
 
-## Contents
-
-1. [Motivation](#1-motivation)
-2. [LuggageDataset v6i](#2-luggagedataset-v6i)
-3. [Method](#3-method)
-4. [Experimental protocol](#4-experimental-protocol)
-5. [Results](#5-results)
-6. [Unattended-luggage pipeline](#6-unattended-luggage-pipeline)
-7. [Key findings](#7-key-findings)
-8. [Limitations](#8-limitations)
-9. [Released models](#9-released-models)
-10. [Repository structure](#10-repository-structure)
-11. [Installation](#11-installation)
-12. [Usage](#12-usage) — dataset · reproduce the models · sweeps · evaluation · inference
-13. [Citation](#13-citation)
-
----
-
-## 1. Motivation
+## 🌍 1. Motivation
 
 Three obstacles have kept the detection stage from being solved:
 
@@ -113,7 +270,19 @@ Three obstacles have kept the detection stage from being solved:
 
 ---
 
-## 2. LuggageDataset v6i
+## 📦 2. LuggageDataset v6i
+
+<table>
+  <tr><th align="left" width="210">📋 Property</th><th align="left">📊 Details</th></tr>
+  <tr><td>🖼️ <b>Images / boxes</b></td><td><code>12,184</code> images · <code>57,814</code> boxes · 4.75 boxes per image · every image labelled</td></tr>
+  <tr><td>🏷️ <b>Classes</b></td><td><code>backpack</code> · <code>bag</code> · <code>trolley</code></td></tr>
+  <tr><td>🎥 <b>Sources</b></td><td>Fixed or quasi-static surveillance cameras in transport hubs and indoor public spaces; dominant resolution 640×360</td></tr>
+  <tr><td>🌓 <b>Conditions</b></td><td>Elevated, oblique viewpoints · dense pedestrian traffic · bags occluded by their owners · daylit concourses to artificially lit interiors</td></tr>
+  <tr><td>📐 <b>Object size</b></td><td>Mean box 39×55 px in a 640-px frame (0.53% of the image) · 35.8% of training boxes under 32 px on the longest side</td></tr>
+  <tr><td>🧬 <b>Split</b></td><td>75 / 15 / 10, <b>leakage-free</b> (whole near-duplicate clusters per split, audited) — <a href="#23-leakage-free-split">details</a></td></tr>
+  <tr><td>🧰 <b>Format</b></td><td>YOLO (<code>class x_center y_center width height</code>, normalized) · no augmentation applied anywhere</td></tr>
+  <tr><td>☁️ <b>Hosting</b></td><td><a href="https://universe.roboflow.com/guns-detection-cvwjs/luggagedataset-24pgo/dataset/6"><img src="https://img.shields.io/badge/Roboflow-LuggageDataset_v6i-6706CE?style=flat-square&logo=roboflow&logoColor=white" /></a> — use <b>version 6</b>, the one in the paper</td></tr>
+</table>
 
 <p align="center">
   <img src="docs/figures/fig01_dataset_examples.png" width="860" alt="Annotated frames from LuggageDataset v6i" />
@@ -133,6 +302,34 @@ Images come from **fixed or quasi-static surveillance cameras** in transport hub
 
 Class proportions agree across splits to within 1.9%. The dominant resolution is **640×360** (80.4% of training images), reflecting fixed-camera framing rather than a photographic mixture.
 
+<table>
+<tr>
+<td width="50%">
+
+```mermaid
+pie showData
+    title Boxes per class (57,814)
+    "trolley" : 29613
+    "backpack" : 15609
+    "bag" : 12592
+```
+
+</td>
+<td width="50%">
+
+```mermaid
+pie showData
+    title Images per split (12,184)
+    "Train (75%)" : 9138
+    "Validation (15%)" : 1827
+    "Test (10%)" : 1219
+```
+
+</td>
+</tr>
+</table>
+
+
 ### 2.2 Object size and shape
 
 The mean box measures **39×55 px** in a 640-px frame — **0.53%** of the image area. Size by **maximum box side** (32 / 64 px), the quantity that decides how many stride-8 cells — and therefore anchors — a box spans:
@@ -145,6 +342,15 @@ The mean box measures **39×55 px** in a 640-px frame — **0.53%** of the image
 | *backpack (train)* | 3,699 (32.6%) | 4,600 (40.6%) | 3,039 (26.8%) |
 | *bag (train)* | 3,499 (37.8%) | 3,267 (35.3%) | 2,502 (27.0%) |
 | *trolley (train)* | 7,761 (36.6%) | 8,531 (40.2%) | 4,925 (23.2%) |
+
+```mermaid
+pie showData
+    title Boxes by longest side (57,814)
+    "Small < 32 px" : 20803
+    "Medium 32-64 px" : 22942
+    "Large > 64 px" : 14069
+```
+
 
 Per-class shape (training split; wide h/w < 0.8, tall h/w > 1.25):
 
@@ -163,6 +369,14 @@ Unlike the closest public alternative, the dataset is **not devoid of large obje
 ### 2.3 Leakage-free split
 
 Consecutive surveillance frames are near-identical: the camera is fixed and the same suitcase appears in hundreds of images that differ only by pedestrian motion. A split that assigns frames independently places the same scene in training and test, and the reported accuracy partly measures memorization — invisible in the usual sanity checks, because class proportions and size distributions still look correct. A memorizing baseline would also leave less headroom, so a per-frame split would make **every mechanism look less helpful**.
+
+| Step | What happens | Why |
+|:----:|---|---|
+| 1️⃣ **Hash** | every frame → 64-bit difference hash (dHash) | cheap, robust near-duplicate fingerprint |
+| 2️⃣ **Link** | pairs with Hamming distance ≤ 5 are linked | catches compression noise and small motion, keeps distinct scenes apart |
+| 3️⃣ **Cluster** | union-find → connected components | one cluster = one real scene |
+| 4️⃣ **Assign** | whole clusters → one split, stratified greedy 75 / 15 / 10 on images and classes | no near-duplicate can cross a split boundary |
+| 5️⃣ **Audit** | cross-split check | ✅ 0 clusters span splits · 0 cross-split near-duplicate pairs |
 
 <p align="center">
   <img src="docs/figures/fig02_leakage_free_split.png" width="860" alt="Leakage-free splitting procedure" />
@@ -188,7 +402,7 @@ Against CCTV-KD, v6i provides **~21× the luggage annotations** (57,814 vs 2,760
 
 ---
 
-## 3. Method
+## 🧠 3. Method
 
 ### 3.1 Design rule: start from the baseline, exactly
 
@@ -339,9 +553,22 @@ The β surface is flat over [0, 3] (spread below the noise floor): the gain for 
 
 The loss grids and the architecture sweep are provided as runnable scripts — see [§12.3](#123-sweeps).
 
+### 3.8 Final configuration at a glance
+
+| Component | 🔷 YOLOv12s (`ls_shift`) | 🔶 YOLO26s (`p2dys-p234rich`) |
+|---|---|---|
+| 🏛️ Backbone | stock YOLOv12s, unchanged | stock YOLO26s, unchanged (stride 32 kept, feeds the top-down path) |
+| 🔎 Detection levels | strides **4 / 8 / 16 / 32** (P2 appended) | strides **4 / 8 / 16** (P2 inserted, stride-32 head removed) |
+| ⬆️ Upsampling | DySample on the top-down path and P3 → P2 | DySample for P3 → P2 |
+| 🧩 Level blocks | gated global context (avg + max pooling) at P2 · gated dynamic snake conv **k = 9** at P3–P5 | block repeats **2 → 4** at P2 and P3 |
+| 📉 Loss / assignment | curriculum area weighting: α **0.7 → 0.3**, **A^-1/2**, p_small **32 px**, ρ **2.0** · assigner stock | task alignment **β = 1** (stock 6), α 0.5 · top-k 10 (one-to-one branch keeps 7 → 1) |
+| 🧷 Initialization | official `yolov12s.pt`; every new block zero-gated | official `yolo26s.pt`; PAN rows remapped to the shifted graph |
+| 🗂️ Config | [`configs/yolov12/yolov12s-lsshift.yaml`](configs/yolov12/yolov12s-lsshift.yaml) | [`configs/yolo26/yolo26-p2dys-p234rich.yaml`](configs/yolo26/yolo26-p2dys-p234rich.yaml) |
+| 🔬 Tried variants | [`yolov12s_architectures.yaml`](configs/yolov12/yolov12s_architectures.yaml) — 9 more, each with what / why / outcome | [`yolo26s_architectures.yaml`](configs/yolo26/yolo26s_architectures.yaml) — 9 more |
+
 ---
 
-## 4. Experimental protocol
+## 📏 4. Experimental protocol
 
 | | |
 |---|---|
@@ -368,7 +595,7 @@ The pooled within-configuration σ is **0.34%** (YOLO26s) and **0.25%** (YOLOv12
 
 ---
 
-## 5. Results
+## 📊 5. Results
 
 ### 5.1 Main results (mean ± std over three seeds)
 
@@ -387,6 +614,23 @@ The pooled within-configuration σ is **0.34%** (YOLO26s) and **0.25%** (YOLOv12
 
 - The combined configuration is best on the primary metric for **both** detectors, and the headline gains are **9.5 SE** (YOLO26s) and **11.0 SE** (YOLOv12s) — far above the noise floor.
 - The loss axis alone **trades localization for detection**: mAP@50-95 falls by 0.35% (YOLO26s) and 0.37% (YOLOv12s). The architecture improves both.
+
+```
+mAP@50 change, combined model vs baseline, by object size (relative %; ▒ = loss)
+
+🔶 YOLO26s
+  🔍 Small            +3.44%  ██████████████████████████████████
+  📦 Medium           +2.30%  ███████████████████████
+  🟫 Large            -1.21%  ▒▒▒▒▒▒▒▒▒▒▒▒
+
+🔷 YOLOv12s
+  🔍 Small            +2.85%  ████████████████████████████
+  📦 Medium           -0.26%  ▒▒▒
+  🟫 Large            -0.17%  ▒▒
+```
+
+<sub>Gains concentrate on small objects — the primary metric and, with medium objects, 75% of the instances. The large-object cost belongs to the <i>combination</i>, not to the architecture alone (§5.3).</sub>
+
 
 ### 5.2 Training dynamics
 
@@ -467,7 +711,7 @@ The custom YOLO26s adds only 15% compute (the stride-4 level is partly paid for 
 
 ---
 
-## 6. Unattended-luggage pipeline
+## 🚨 6. Unattended-luggage pipeline
 
 <p align="center">
   <img src="docs/figures/fig04_unattended_luggage_pipeline.png" width="900" alt="Unattended-luggage pipeline" />
@@ -605,7 +849,7 @@ The YOLOv12s detectors find 7 and 6 bags, the YOLO26s detectors 5 each, and the 
 
 ---
 
-## 7. Key findings
+## 🔑 7. Key findings
 
 1. **Small-object gains are real and measurable** — +3.44% (YOLO26s) and +2.85% (YOLOv12s) small-object mAP@50, at 9.5 and 11.0 standard errors above the measured noise.
 2. **The two axes behave differently** — the loss/assignment change trades localization for detection; the architectural change improves both; the combination is best.
@@ -616,7 +860,7 @@ The YOLOv12s detectors find 7 and 6 bags, the YOLO26s detectors 5 each, and the 
 
 ---
 
-## 8. Limitations
+## 🚧 8. Limitations
 
 - Seeded intervals cover the four configurations per detector; the wider exploratory sweep is single-run and is reported as a search, not as evidence.
 - The batch-size confound on the architectural axis is bounded but not eliminated.
@@ -626,7 +870,7 @@ The YOLOv12s detectors find 7 and 6 bags, the YOLO26s detectors 5 each, and the 
 
 ---
 
-## 9. Released models
+## 🧳 9. Released models
 
 Six checkpoints are published as assets of the [**GitHub Release**](../../releases/latest) (the files are too large for git). Their test-split results are reported in the paper (§5).
 
@@ -645,11 +889,11 @@ All six: 70 epochs, 640 px, seed 0, `deterministic=True`, `close_mosaic=10`, ini
 
 - ¹ The YOLOv12x run was launched with the curriculum-weighting settings (they appear in [`results/train_args/yolov12x_lsshift.yaml`](results/train_args/yolov12x_lsshift.yaml)), but the loss module installed at the time did not implement them, so the published YOLOv12x model was trained with the stock loss. `train/train_yolov12.py` reproduces it that way.
 - The YOLOv12 checkpoints are **final-epoch** weights: the training code used for those runs wrote the epoch-70 checkpoint to `best.pt`. When retraining with this repository, evaluate `weights/last.pt` to match. The YOLO26 checkpoints are the standard `best.pt`.
-- The checkpoints contain the custom modules, so load each one in its patched environment (**A** for YOLOv12, **B** for YOLO26 — see [§11](#11-installation)).
+- The checkpoints contain the custom modules, so load each one in its patched environment (**A** for YOLOv12, **B** for YOLO26 — see [§11](#-11-installation)).
 
 ---
 
-## 10. Repository structure
+## 📁 10. Repository structure
 
 ```
 luggage-yolo-release/
@@ -692,7 +936,7 @@ luggage-yolo-release/
 
 ---
 
-## 11. Installation
+## 🔧 11. Installation
 
 The YOLOv12 and YOLO26 models need **different patched code bases**. Both install a package called `ultralytics`, so use one virtual environment for each.
 
@@ -715,7 +959,7 @@ bash ultralytics_patches/setup_env.sh v26
 
 ---
 
-## 12. Usage
+## 🚀 12. Usage
 
 ### 12.1 Dataset
 
@@ -793,9 +1037,111 @@ results = model.predict("path/to/frame_or_video.mp4", imgsz=640, conf=0.25, save
 
 The custom YOLO26s is the recommended detector for deployment: the same small-object accuracy as the custom YOLOv12s at about 2.5× the frame rate (§5.6).
 
+### 12.6 Sanity checks
+
+<details>
+<summary><b>✅ Did it work?</b> — click to expand</summary>
+
+<br>
+
+- **Right environment** — `python -c "from ultralytics.nn.modules import DySample, ZGGlobalContext2, ZGDSConv"` runs without error in both environments; a YOLOv12 checkpoint only loads in Environment A, a YOLO26 checkpoint only in Environment B.
+- **Right dataset version** — the test split has **1,219 images and 6,172 boxes** (Roboflow version 6).
+- **Pretrained weights transferred** — the sweep scripts print `[init] … of parameters from yolo…s.pt`; for the final graphs this is above 80%, and the stock graphs show 100%.
+- **Loss settings live** — the `args.yaml` of a run lists the loss keys you set; compare with [`results/train_args/`](results/train_args).
+- **Ballpark** — a single seed of the combined model should land within about one point of the paper's 3-seed means (small-object mAP@50 79.91 for YOLO26s, 79.87 for YOLOv12s); the seed-to-seed spread is up to ±0.42.
+- **Per-size numbers** — use the COCO evaluator ([§12.4](#124-evaluation)); `model.val()` alone does not give the size bins.
+
+</details>
+
 ---
 
-## 13. Citation
+## ❓ 13. FAQ
+
+<details>
+<summary><b>Which checkpoint should I use?</b></summary>
+<br>
+For a detector alone, the <b>custom YOLO26s</b> (<code>yolo26s_p234rich_beta1.pt</code>): the same small-object accuracy as the custom YOLOv12s at about 2.5× the frame rate and 27.7% fewer parameters. Inside the unattended-luggage pipeline, the <b>custom YOLOv12s</b> (<code>yolov12s_lsshift_sqrt.pt</code>) did better on the five clips: it found the carried bag in 91% of frames, which is what lets the pipeline name the right owner (5/5).
+</details>
+
+<details>
+<summary><b>Why is the stride-4 level appended on YOLOv12s but inserted on YOLO26s — and why is stride 32 removed only on YOLO26s?</b></summary>
+<br>
+On YOLO26s the stride-32 level draws 0.01 positives per small object, so its head is nearly idle; removing it and moving the capacity to strides 4 and 8 gave the largest single gain (+3.33 on its own detector). On YOLOv12s the same change costs 6.1% of large-object mAP@50: a YOLOv12s anchor expresses each box edge as a 16-bin distribution in feature cells, so a stride-16 anchor reaches at most 256 px and stride 32 is needed for large boxes. YOLO26s regresses offsets directly and has no such range limit (§5.5).
+</details>
+
+<details>
+<summary><b>Why does β = 1 help YOLO26s but not YOLOv12s?</b></summary>
+<br>
+YOLO26s has no NMS: its one-to-one branch picks exactly one anchor per object by argmax, and that branch's weight rises from 0.2 to 0.9 during training, so the assigner's ranking decides the final box. On YOLOv12s a small object holds ~7.7 positives and NMS pools their predictions, which absorbs a noisy ranking (§3.4, §5.5).
+</details>
+
+<details>
+<summary><b>The loss change alone lowers mAP@50-95. Is that a bug?</b></summary>
+<br>
+No — it is the trade the paper reports: on both detectors the loss/assignment change alone trades localization for detection (mAP@50-95 −0.35% on YOLO26s, −0.37% on YOLOv12s). For β = 1 it is also the predicted signature: compressing the margins between better- and worse-localized anchors helps where IoU is noisiest (small objects) and costs a little at strict IoU. The architecture improves both metrics, and the combination is best on the primary metric (§3.4, §5.1).
+</details>
+
+<details>
+<summary><b>Why are there no "best run" numbers per cell?</b></summary>
+<br>
+Because they would tabulate selection bias. Re-running configurations that had won an exploratory round regressed by −0.55% on average; picking the best of 174 YOLO26s runs on large-object mAP@50 is expected to exceed the mean by ~7.25% from noise alone. Every reported number is a 3-seed mean of one configuration (§4, §5.3).
+</details>
+
+<details>
+<summary><b>Why two Python environments?</b></summary>
+<br>
+YOLOv12 lives in a fork of Ultralytics 8.3.63; YOLO26 needs Ultralytics 8.4.117. Both install a package called <code>ultralytics</code>, and the patched modules differ, so each checkpoint must be loaded with its own code base (§11).
+</details>
+
+<details>
+<summary><b>Why does YOLO26s miss the abandonment in ABODA video9?</b></summary>
+<br>
+Neither YOLO26s detector detects the bag once it stands still on the table, so no alarm is possible — a detection failure, not a logic failure. This is the clearest case of the paper's event-level conclusion: whether the alarm fires is decided by detecting the standing bag (§6.4).
+</details>
+
+<details>
+<summary><b>How long do the sweeps take?</b></summary>
+<br>
+About one GPU-hour per run on an RTX 4090 at 70 epochs. The architecture sweeps are 11 runs each; the full loss grids are 2,941 (YOLOv12s) and 480 (YOLO26s) runs. The grid scripts skip finished runs, so they can be stopped and resumed; delete values from the lists at the top to run a smaller grid (§12.3).
+</details>
+
+<details>
+<summary><b>Something does not reproduce. Who do I ask?</b></summary>
+<br>
+Open a GitHub issue, or write to Constantin Catargiu at <a href="mailto:constantin.catargiu95@gmail.com">constantin.catargiu95@gmail.com</a>.
+</details>
+
+---
+
+## ✅ 14. Reproducibility checklist
+
+- [x] Dataset publicly hosted (Roboflow, **version 6**) with the train / validation / test split used in the paper
+- [x] Leakage-free split protocol fully specified (64-bit dHash, Hamming ≤ 5, union-find, stratified greedy 75/15/10, cross-split audit)
+- [x] Patched code pinned to exact upstream commits (YOLOv12 `2db2bae`, Ultralytics `12d61b8`) and installed by one script
+- [x] Final architectures **and** every tried variant shipped as configs, each with what / why / outcome
+- [x] All loss / assignment search intervals and optima reported (Table 6) and shipped as runnable grid scripts
+- [x] Exact training settings (`args.yaml`) and per-epoch curves of every released run
+- [x] All six trained checkpoints released
+- [x] Headline results reported as **mean ± std over 3 seeds**; noise floor and selection bias measured
+- [x] Negative results documented — the four null transfers, β split, size-conditional β, depth 6, global context at every level, widening P2
+- [x] COCO evaluator for the per-size metrics shipped
+- [x] Inference-speed protocol stated (RTX 4090, batch 1, 640 px, FP16, median over 500 images, pre- and post-processing included)
+- [ ] Leakage-free split script — not included in this repository
+- [ ] Unattended-luggage pipeline code (tracking, ownership, alarm) — not included in this repository
+
+---
+
+## 🔒 15. Responsible use
+
+**A detector, not a decision system.** The metrics above are measured on this dataset's test split; they do not transfer automatically to another camera, mounting height, resolution or crowd density. Re-measure on footage from the deployment site before trusting any figure here, and treat every alarm as a cue for human review.
+
+**The pipeline tracks people.** Ownership relies on following individuals and re-identifying them with appearance embeddings (OSNet). Video surveillance and automated processing of personal data are regulated (e.g. GDPR in the EU); compliance — including any required impact assessment — is the deployer's responsibility.
+
+**Event-level evidence is small.** The alarm results rest on five clips and one development sequence; they show the mechanism, not a rate. A larger annotated video benchmark is needed before quoting alarm accuracy.
+
+---
+
+## 📖 16. Citation
 
 If you use LuggageDataset v6i or this code, please cite:
 
@@ -823,16 +1169,41 @@ The leakage-free splitting procedure and the curriculum area weighting build on 
 
 ---
 
-## License
+## 📜 License
 
-The code is released under the **GNU AGPL-3.0** (see [`LICENSE`](LICENSE)), inherited from [Ultralytics](https://github.com/ultralytics/ultralytics) and [YOLOv12](https://github.com/sunsmarterjie/yolov12), whose code is modified here. The dataset is distributed through Roboflow under the terms stated on its page. The event-level evaluation uses the public i-LIDS AVSS 2007 and ABODA sequences, which remain subject to their own terms.
+| Component | Terms |
+|---|---|
+| 💻 **Code** in this repository | **GNU AGPL-3.0** (see [`LICENSE`](LICENSE)) — inherited from [Ultralytics](https://github.com/ultralytics/ultralytics) and [YOLOv12](https://github.com/sunsmarterjie/yolov12), whose code is modified here |
+| 🏋️ **Trained checkpoints** | Produced with the AGPL-3.0 code above, from LuggageDataset v6i |
+| 📦 **LuggageDataset v6i** | Distributed through Roboflow under the terms stated on its [dataset page](https://universe.roboflow.com/guns-detection-cvwjs/luggagedataset-24pgo/dataset/6) |
+| 🎬 **AVSS 2007 / ABODA** | Used for the event-level evaluation only; subject to their own terms |
 
-## Acknowledgements
+---
 
-This work builds on [Ultralytics](https://github.com/ultralytics/ultralytics), [YOLOv12](https://github.com/sunsmarterjie/yolov12), DySample (content-aware upsampling), dynamic snake convolution, and OSNet for person re-identification. We thank the authors of the i-LIDS AVSS 2007 and ABODA benchmarks for making their sequences available.
+## 📚 Resources
 
-## Contact
+| Resource | Link |
+|---|---|
+| 📦 LuggageDataset v6i — **version 6**, used in the paper | https://universe.roboflow.com/guns-detection-cvwjs/luggagedataset-24pgo/dataset/6 |
+| 🏋️ Trained checkpoints | [GitHub Release](../../releases/latest) |
+| 🖼️ All paper figures with captions | [`docs/figures/`](docs/figures) |
+| 🔷 YOLOv12 (code base of Environment A) | https://github.com/sunsmarterjie/yolov12 · paper https://arxiv.org/abs/2502.12524 |
+| 🔶 YOLO26 (Ultralytics) | https://docs.ultralytics.com/models/yolo26/ |
+| ⬆️ DySample — *Learning to Upsample by Learning to Sample* | https://arxiv.org/abs/2308.15085 |
+| 🐍 Dynamic snake convolution | https://arxiv.org/abs/2307.08388 |
+| 🧍 OSNet (person re-identification) | https://arxiv.org/abs/1905.00953 |
+| 🔫 Companion work — weapon detection (leakage-free split, curriculum weighting) | https://github.com/CostiCatargiu/Yolov12_WeaponDetection |
 
-**Constantin Catargiu** — constantin.catargiu95@gmail.com
+---
+
+## 🤝 Acknowledgements
+
+This work builds on [Ultralytics](https://github.com/ultralytics/ultralytics), [YOLOv12](https://github.com/sunsmarterjie/yolov12), DySample, dynamic snake convolution and OSNet. We thank the authors of the i-LIDS AVSS 2007 and ABODA benchmarks for making their sequences available.
+
+## 📬 Contact
+
+**Constantin Catargiu** — constantin.catargiu95@gmail.com · or open a GitHub issue
 <br/>**Prof. Iulian B. Ciocoiu** (corresponding author) — iciocoiu@etti.tuiasi.ro
 <br/>Gheorghe Asachi Technical University of Iași, Bd. Carol I no. 11A, 700506 Iași, Romania
+
+<p align="center"><sub>🧳 LuggageDataset v6i · enhanced YOLOv12s / YOLO26s · owner-aware unattended-luggage alarms</sub></p>
