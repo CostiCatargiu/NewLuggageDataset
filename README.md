@@ -20,7 +20,7 @@
   <img alt="Dataset" src="https://img.shields.io/badge/Dataset-LuggageDataset%20v6i-6f42c1" />
   <img alt="Re-ID" src="https://img.shields.io/badge/Re--ID-OSNet-0aa5a5" />
   <img alt="Paper" src="https://img.shields.io/badge/Paper-under%20review-orange" />
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-2ea44f" />
+  <img alt="License" src="https://img.shields.io/badge/License-AGPL--3.0-2ea44f" />
 </p>
 
 **Constantin Catargiu · Iulian B. Ciocoiu**
@@ -31,7 +31,9 @@
 [**Method**](#3-method) ·
 [**Results**](#5-results) ·
 [**Pipeline**](#6-unattended-luggage-pipeline) ·
-[**Citation**](#10-citation)
+[**Models**](#9-released-models) ·
+[**Usage**](#12-usage) ·
+[**Citation**](#13-citation)
 
 </div>
 
@@ -91,8 +93,11 @@ and attacks that first stage directly.
 6. [Unattended-luggage pipeline](#6-unattended-luggage-pipeline)
 7. [Key findings](#7-key-findings)
 8. [Limitations](#8-limitations)
-9. [Getting started](#9-getting-started)
-10. [Citation](#10-citation)
+9. [Released models](#9-released-models)
+10. [Repository structure](#10-repository-structure)
+11. [Installation](#11-installation)
+12. [Usage](#12-usage) — dataset · reproduce the models · sweeps · evaluation · inference
+13. [Citation](#13-citation)
 
 ---
 
@@ -111,7 +116,7 @@ Three obstacles have kept the detection stage from being solved:
 ## 2. LuggageDataset v6i
 
 <p align="center">
-  <img src="assets/dataset_samples.jpg" width="860" alt="Annotated frames from LuggageDataset v6i" />
+  <img src="docs/figures/fig01_dataset_examples.png" width="860" alt="Annotated frames from LuggageDataset v6i" />
   <br/><sub><b>Figure 1.</b> Annotated frames from LuggageDataset v6i — elevated, oblique viewpoints, dense pedestrian traffic, wide illumination range, and all three classes at very different scales in one frame.</sub>
 </p>
 
@@ -159,14 +164,10 @@ Unlike the closest public alternative, the dataset is **not devoid of large obje
 
 Consecutive surveillance frames are near-identical: the camera is fixed and the same suitcase appears in hundreds of images that differ only by pedestrian motion. A split that assigns frames independently places the same scene in training and test, and the reported accuracy partly measures memorization — invisible in the usual sanity checks, because class proportions and size distributions still look correct. A memorizing baseline would also leave less headroom, so a per-frame split would make **every mechanism look less helpful**.
 
-```mermaid
-flowchart LR
-    A["Surveillance frames"] --> B["64-bit difference hash<br/>per image"]
-    B --> C["Link every pair with<br/>Hamming distance ≤ 5"]
-    C --> D["Union-find components<br/>1 cluster = 1 real scene"]
-    D --> E["Stratified greedy assignment<br/>of WHOLE clusters<br/>75 / 15 / 10 on images and classes"]
-    E --> F["Audit: 0 clusters span splits<br/>0 cross-split near-duplicate pairs"]
-```
+<p align="center">
+  <img src="docs/figures/fig02_leakage_free_split.png" width="860" alt="Leakage-free splitting procedure" />
+  <br/><sub><b>Figure 2.</b> The leakage-free splitting procedure. Step 1: each frame is reduced to a 64-bit difference hash; frames whose hashes differ in at most five bits are linked, and union-find groups them into clusters, one cluster per real scene. Step 2: each whole cluster is assigned to one split by a stratified greedy procedure, so no near-duplicate frame can cross a split boundary.</sub>
+</p>
 
 The threshold of 5 bits is small enough to keep visually distinct scenes apart and large enough to catch frames that differ only by compression noise and small motion. Because no cluster is ever divided, no near-duplicate frame can cross a split boundary *by construction*. The procedure is the one validated in our earlier work on weapon detection, applied unchanged.
 
@@ -268,7 +269,7 @@ The budget is **almost non-binding** for small objects: 38–42% of them hold fe
 ### 3.6 Architecture
 
 <p align="center">
-  <img src="assets/architecture.png" width="940" alt="Architectural modifications for YOLOv12s and YOLO26s" />
+  <img src="docs/figures/fig03_architectures.png" width="940" alt="Architectural modifications for YOLOv12s and YOLO26s" />
   <br/><sub><b>Figure 3.</b> The two architectural modifications. (a) YOLOv12s: a stride-4 branch is <i>appended</i>, giving four detection heads, each with one gated refinement block. (b) YOLO26s: the stride-4 branch is <i>inserted</i> into the PAN, the stride-32 detection branch is removed and the two finest levels are deepened. Every colored block is gated, so both networks start as their pretrained baseline.</sub>
 </p>
 
@@ -336,6 +337,8 @@ with the scope branch zero-initialized and the offsets near zero, so upsampling 
 
 The β surface is flat over [0, 3] (spread below the noise floor): the gain for β = 1 should be read as "any value well below the default 6" rather than a tuned optimum.
 
+The loss grids and the architecture sweep are provided as runnable scripts — see [§12.3](#123-sweeps).
+
 ---
 
 ## 4. Experimental protocol
@@ -388,14 +391,8 @@ The pooled within-configuration σ is **0.34%** (YOLO26s) and **0.25%** (YOLOv12
 ### 5.2 Training dynamics
 
 <p align="center">
-  <img src="assets/training_yolo26s.png" width="49%" alt="YOLO26s validation metrics, four configurations" />
-  <img src="assets/training_yolov12s.png" width="49%" alt="YOLOv12s validation metrics, four configurations" />
-  <br/><sub>Per-epoch validation metrics for the four configurations — YOLO26s (left) and YOLOv12s (right). In the mAP@50-95 panel the loss-only run (red) ends slightly <i>below</i> the baseline on both detectors, while every configuration containing the architecture ends above it.</sub>
-</p>
-
-<p align="center">
-  <img src="assets/loss_yolo26s.png" width="49%" alt="YOLO26s loss components" />
-  <img src="assets/loss_yolov12s.png" width="49%" alt="YOLOv12s loss components" />
+  <img src="docs/figures/fig06_yolo26s_loss_curves.png" width="49%" alt="YOLO26s loss components" />
+  <img src="docs/figures/fig07_yolov12s_loss_curves.png" width="49%" alt="YOLOv12s loss components" />
   <br/><sub><b>Figures 6–7.</b> Loss components, baseline vs custom — YOLO26s (left, third term is the L1 surrogate) and YOLOv12s (right, a genuine 16-bin DFL).</sub>
 </p>
 
@@ -426,8 +423,8 @@ The two detectors overfit in different terms and on different timescales. On **Y
 ### 5.4 Per-class behavior
 
 <p align="center">
-  <img src="assets/confusion_yolov12s.png" width="49%" alt="YOLOv12s confusion matrices, baseline (top) and custom (bottom)" />
-  <img src="assets/confusion_yolo26s.png" width="49%" alt="YOLO26s confusion matrices, baseline (top) and custom (bottom)" />
+  <img src="docs/figures/fig08_yolov12s_confusion_matrices.png" width="49%" alt="YOLOv12s confusion matrices, baseline (top) and custom (bottom)" />
+  <img src="docs/figures/fig09_yolo26s_confusion_matrices.png" width="49%" alt="YOLO26s confusion matrices, baseline (top) and custom (bottom)" />
   <br/><sub><b>Figures 8–9.</b> Row-normalized confusion matrices on the test split, for all objects and per size: YOLOv12s (left) and YOLO26s (right), baseline on top, custom below.</sub>
 </p>
 
@@ -473,7 +470,7 @@ The custom YOLO26s adds only 15% compute (the stride-4 level is partly paid for 
 ## 6. Unattended-luggage pipeline
 
 <p align="center">
-  <img src="assets/pipeline.png" width="900" alt="Unattended-luggage pipeline" />
+  <img src="docs/figures/fig04_unattended_luggage_pipeline.png" width="900" alt="Unattended-luggage pipeline" />
   <br/><sub><b>Figure 4.</b> A YOLOv12 or YOLO26 detector provides person and luggage boxes in every frame, tracked in separate identity spaces. The ownership stage binds each bag to a <i>person</i> rather than to a track number, and the alarm logic runs one dwell clock per bag. Every decision is written to a per-frame log, so a raised alarm can be replayed against the evidence that produced it. Only the luggage detector is fine-tuned; the person detector is a pre-trained COCO model.</sub>
 </p>
 
@@ -484,7 +481,7 @@ All timers run on **video time** (1/fps per frame), so every run is exactly repr
 ### 6.1 Keeping person identities
 
 <p align="center">
-  <img src="assets/identity_rules.png" width="860" alt="Rules that keep a person's number through a crossing" />
+  <img src="docs/figures/fig05_tracking_identity_rules.png" width="860" alt="Rules that keep a person's number through a crossing" />
   <br/><sub><b>Figure 5.</b> (a) A passer-by hides a person and only a fragment of the hidden person is detected; the fragment lies inside that person's recent box, so only their track may take it. (b) A box that no track took must fail three tests before it becomes a new person.</sub>
 </p>
 
@@ -548,7 +545,7 @@ Five clips — i-LIDS AVSS 2007 *medium* and *easy* (a metro platform; a man lea
 | **All clips** | 77 / 95 / 100 | **91 / 98 / 100** | 62 / 64 / 93 | 66 / 63 / 93 |
 
 <p align="center">
-  <img src="assets/detection_rate.png" width="860" alt="Share of frames with the abandoned bag detected" />
+  <img src="docs/figures/fig16_abandoned_bag_detection_share.png" width="860" alt="Share of frames with the abandoned bag detected" />
   <br/><sub><b>Figure 16.</b> Share of frames in which each detector found the abandoned bag, (a) while carried by its owner and (b) while it stands unattended (✗ = no alarm). Panel (b) decides whether the alarm fires at all; panel (a) decides whether the owner named with it is the right person.</sub>
 </p>
 
@@ -562,46 +559,46 @@ Each rule of the pipeline was added because the previous one exposed the next er
 
 ### 6.5 Clip gallery
 
-Every figure shows the same frames processed by all four runs — top: YOLOv12s official | YOLOv12s custom; bottom: YOLO26s official | YOLO26s custom.
+Every figure shows the same frames processed by all four runs — top: YOLOv12s official | YOLOv12s custom; bottom: YOLO26s official | YOLO26s custom. All paper figures, with their full captions, are collected in [`docs/figures`](docs/figures).
 
 <details open>
 <summary><b>AVSS 2007 easy — all four runs agree</b></summary>
-<p align="center"><img src="assets/clip_avss_easy.jpg" width="760" alt="AVSS 2007 easy clip" /></p>
+<p align="center"><img src="docs/figures/fig10_avss2007_easy.png" width="760" alt="AVSS 2007 easy clip" /></p>
 
 (a) 17.0 s: the owner walks with the trolley and all four runs pair it with him. (b) 32.6 s, 13 s after he left: the same alarm, the same owner and practically the same clock in all four runs.
 </details>
 
 <details>
 <summary><b>AVSS 2007 medium — the crowded development clip</b></summary>
-<p align="center"><img src="assets/clip_avss_medium.jpg" width="760" alt="AVSS 2007 medium clip" /></p>
+<p align="center"><img src="docs/figures/fig11_avss2007_medium.png" width="760" alt="AVSS 2007 medium clip" /></p>
 
 (a) 23.6 s: the owner (P15) has walked away from the trolley. Both YOLOv12s runs have started the clock; both YOLO26s runs have given the trolley to a passenger (P9) who is out of view, so no clock runs at all. (b) 36.9 s: all four runs are in alarm on the trolley, but the YOLO26s runs name the passenger, and their clocks lag (12 s and 10 s against 16 s and 15 s) because the clock starts when that run's elected owner is seen leaving.
 </details>
 
 <details>
 <summary><b>ABODA video1 — who carries the bag decides the owner</b></summary>
-<p align="center"><img src="assets/clip_aboda_video1.jpg" width="680" alt="ABODA video1" /></p>
+<p align="center"><img src="docs/figures/fig12_aboda_video1.png" width="680" alt="ABODA video1" /></p>
 
 (a) 11.6 s: two men enter together and one carries the bag. YOLOv12s official finds it at 0.44 and as a trolley; the two official runs elect the companion (P2), the two custom runs the man actually carrying the bag (P1). (b) 33.1 s: all four raise the alarm on the right bag, two of them naming the companion.
 </details>
 
 <details>
 <summary><b>ABODA video9 — the single missed event</b></summary>
-<p align="center"><img src="assets/clip_aboda_video9.jpg" width="680" alt="ABODA video9" /></p>
+<p align="center"><img src="docs/figures/fig13_aboda_video9.png" width="680" alt="ABODA video9" /></p>
 
 (a) 33.7 s: all four runs detect the bag while its owner carries it to the table. (b) 54.7 s: both YOLOv12s runs raise the alarm; neither YOLO26s run detects the bag once it stands still on the table ("no luggage in view"), so no alarm is possible. This is a detection failure, not a logic failure.
 </details>
 
 <details>
 <summary><b>ABODA video10 — a spurious detection that does not matter</b></summary>
-<p align="center"><img src="assets/clip_aboda_video10.jpg" width="680" alt="ABODA video10" /></p>
+<p align="center"><img src="docs/figures/fig14_aboda_video10.png" width="680" alt="ABODA video10" /></p>
 
 (a) 13.1 s: all four runs detect the backpack and its owner; YOLO26s official adds a spurious second backpack (bck3, detected with confidence 0.16) and scores the owner at 0.48 against 0.78 for YOLOv12s. (b) 33.4 s: the same alarm, owner and clock in all four runs.
 </details>
 
 <details>
 <summary><b>AVSS 2007 medium at 2.9 s — the crowd</b></summary>
-<p align="center"><img src="assets/clip_avss_crowd.jpg" width="760" alt="AVSS crowd" /></p>
+<p align="center"><img src="docs/figures/fig15_avss2007_medium_crowd.png" width="760" alt="AVSS crowd" /></p>
 
 The YOLOv12s detectors find 7 and 6 bags, the YOLO26s detectors 5 each, and the YOLO26s person model scores the same people lower (e.g. 0.30 against 0.70) — the mechanism behind its 72% owner-detection rate on this clip.
 </details>
@@ -629,9 +626,98 @@ The YOLOv12s detectors find 7 and 6 bags, the YOLO26s detectors 5 each, and the 
 
 ---
 
-## 9. Getting started
+## 9. Released models
 
-### Download the dataset
+Six checkpoints are published as assets of the [**GitHub Release**](../../releases/latest) (the files are too large for git). Their test-split results are reported in the paper (§5).
+
+| Checkpoint | Detector | Architecture | Loss / assignment | Config | Env |
+|---|---|---|---|---|:---:|
+| `yolov12s_default.pt` | YOLOv12s | stock | stock | — (official `yolov12s.pt`) | A |
+| `yolov12s_lsshift_sqrt.pt` | YOLOv12s | **ls_shift** — P2 + DySample, global context at P2, snake conv k = 9 at P3–P5 | **curriculum area weighting** (α 0.7 → 0.3, A^-1/2, p_small 32, ρ 2.0) | [`yolov12s-lsshift.yaml`](configs/yolov12/yolov12s-lsshift.yaml) | A |
+| `yolov12x_lsshift.pt` | YOLOv12x | ls_shift (x scale) | stock ¹ | [`yolov12x-lsshift.yaml`](configs/yolov12/yolov12x-lsshift.yaml) | A |
+| `yolo26s_default.pt` | YOLO26s | stock | stock | — (official `yolo26s.pt`) | B |
+| `yolo26s_p234rich_beta1.pt` | YOLO26s | **p2dys-p234rich** — P2 inserted + DySample, stride-32 head removed, depth 4 at P2/P3 | **task alignment β = 1** | [`yolo26-p2dys-p234rich.yaml`](configs/yolo26/yolo26-p2dys-p234rich.yaml) | B |
+| `yolo26x_p234rich.pt` | YOLO26x | p2dys-p234rich (x scale) | stock | [`yolo26x-p2dys-p234rich.yaml`](configs/yolo26/yolo26x-p2dys-p234rich.yaml) | B |
+
+All six: 70 epochs, 640 px, seed 0, `deterministic=True`, `close_mosaic=10`, initialized from the official COCO checkpoints. Classes: `backpack`, `bag`, `trolley`.
+
+**Notes**
+
+- ¹ The YOLOv12x run was launched with the curriculum-weighting settings (they appear in [`results/train_args/yolov12x_lsshift.yaml`](results/train_args/yolov12x_lsshift.yaml)), but the loss module installed at the time did not implement them, so the published YOLOv12x model was trained with the stock loss. `train/train_yolov12.py` reproduces it that way.
+- The YOLOv12 checkpoints are **final-epoch** weights: the training code used for those runs wrote the epoch-70 checkpoint to `best.pt`. When retraining with this repository, evaluate `weights/last.pt` to match. The YOLO26 checkpoints are the standard `best.pt`.
+- The checkpoints contain the custom modules, so load each one in its patched environment (**A** for YOLOv12, **B** for YOLO26 — see [§11](#11-installation)).
+
+---
+
+## 10. Repository structure
+
+```
+luggage-yolo-release/
+├── configs/
+│   ├── yolov12/
+│   │   ├── yolov12s-lsshift.yaml          final YOLOv12s graph (paper)
+│   │   ├── yolov12x-lsshift.yaml          same graph, x scale
+│   │   └── yolov12s_architectures.yaml    final + baseline + 9 tried graphs, each with what / why / outcome
+│   └── yolo26/
+│       ├── yolo26-p2dys-p234rich.yaml     final YOLO26s graph (paper)
+│       ├── yolo26x-p2dys-p234rich.yaml    same graph, x scale
+│       └── yolo26s_architectures.yaml     final + baseline + 9 tried graphs, each with what / why / outcome
+├── ultralytics_patches/
+│   ├── setup_env.sh                       clones the base commit, copies the patched files, pip-installs
+│   ├── v12/ultralytics/...                files changed w.r.t. sunsmarterjie/yolov12 @ 2db2bae
+│   └── v26/ultralytics/...                files changed w.r.t. ultralytics/ultralytics @ 12d61b8 (8.4.117)
+├── train/
+│   ├── train_yolov12.py                   reproduces the three released YOLOv12 models
+│   ├── train_yolo26.py                    reproduces the three released YOLO26 models
+│   ├── sweep_arch_yolov12.py              architecture sweep, 11 graphs
+│   ├── sweep_arch_yolo26.py               architecture sweep, 11 graphs
+│   ├── sweep_loss_yolov12.py              loss grid of Table 6, 2,941 runs
+│   └── sweep_loss_yolo26.py               assigner grid of Table 6, 480 runs
+├── data/luggage_v6i.yaml                  dataset config template
+├── results/
+│   ├── training_curves/                   per-epoch results.csv of each released run
+│   └── train_args/                        the args.yaml recorded by each released run
+├── docs/figures/                          all paper figures, with captions
+├── original_scripts/                      the original experiment scripts, unchanged, incl. the COCO evaluator
+└── weights/copy_weights.sh                collects and checksums the released checkpoints
+```
+
+**What the patches add**
+
+| | YOLOv12 (Environment A) | YOLO26 (Environment B) |
+|---|---|---|
+| Modules | `DySample`, `ZGGlobalContext2`, `ZGDSConv` (`nn/modules`, `nn/tasks.py`) | `DySample`, `ZGGlobalContext2`, `ZGDSConv` |
+| Loss / assignment | curriculum area weighting — α schedule, area exponent (`inv`, `pow075`, `sqrt`), small-object boost — in `utils/loss.py` | configurable task-aligned assigner (`tal_alpha`, `tal_beta`, β split, size-conditional β) in `utils/tal.py`, `utils/loss.py`; extra IoU variants in `utils/metrics.py` |
+| Settings | new keys in `cfg/default.yaml` | new keys in `cfg/default.yaml`; with all of them at their defaults the loss is identical to stock Ultralytics |
+
+---
+
+## 11. Installation
+
+The YOLOv12 and YOLO26 models need **different patched code bases**. Both install a package called `ultralytics`, so use one virtual environment for each.
+
+```bash
+git clone <this repository> && cd luggage-yolo-release
+
+# Environment A — YOLOv12 (YOLOv12 fork of Ultralytics 8.3.63)
+python -m venv .venv-v12 && source .venv-v12/bin/activate
+bash ultralytics_patches/setup_env.sh v12
+deactivate
+
+# Environment B — YOLO26 (Ultralytics 8.4.117, commit 12d61b8)
+python -m venv .venv-v26 && source .venv-v26/bin/activate
+bash ultralytics_patches/setup_env.sh v26
+```
+
+`setup_env.sh` clones the exact base commit into `third_party/`, overwrites the changed files with the versions in `ultralytics_patches/`, and installs the result in editable mode. Requirements: Python 3.10+, PyTorch 2.x with CUDA.
+
+**Weights.** Download the six `.pt` files from the [Release](../../releases/latest) into `weights/`.
+
+---
+
+## 12. Usage
+
+### 12.1 Dataset
 
 ```python
 # pip install roboflow
@@ -642,23 +728,74 @@ project = rf.workspace("guns-detection-cvwjs").project("luggagedataset-24pgo")
 dataset = project.version(6).download("yolov8")   # YOLO format: train / valid / test
 ```
 
-### Train and evaluate a baseline
+Then set `path:` in [`data/luggage_v6i.yaml`](data/luggage_v6i.yaml) to `dataset.location`. The split is already leakage-free; use it as is.
 
-```python
-# pip install ultralytics
-from ultralytics import YOLO
+### 12.2 Reproduce the released models
 
-model = YOLO("yolo26s.pt")                          # or "yolo12s.pt"
-model.train(data=f"{dataset.location}/data.yaml", epochs=70, imgsz=640, close_mosaic=10)
-metrics = model.val(data=f"{dataset.location}/data.yaml", split="test")
-print(metrics.box.map50, metrics.box.map)
+```bash
+# Environment A
+python train/train_yolov12.py --data data/luggage_v6i.yaml --model yolov12s_default
+python train/train_yolov12.py --data data/luggage_v6i.yaml --model yolov12s_lsshift_sqrt
+python train/train_yolov12.py --data data/luggage_v6i.yaml --model yolov12x_lsshift
+
+# Environment B
+python train/train_yolo26.py --data data/luggage_v6i.yaml --model yolo26s_default
+python train/train_yolo26.py --data data/luggage_v6i.yaml --model yolo26s_p234rich_beta1
+python train/train_yolo26.py --data data/luggage_v6i.yaml --model yolo26x_p234rich
 ```
 
-This repository provides the code for the leakage-free split, the custom loss/assignment and architectural modules, training, and evaluation.
+Settings are exactly those of the released runs, including the batch sizes (54 / 28 / 8 for YOLOv12 s / s-custom / x and 82 / 48 / 12 for YOLO26). These were chosen for a single 24 GB GPU; changing `--batch` changes the results. The recorded `args.yaml` of every released run is in [`results/train_args/`](results/train_args).
+
+### 12.3 Sweeps
+
+Four scripts show how the searches behind §3.7 were run. They take **no arguments**: the configuration (dataset path, epochs, batch, …) sits at the top of each file, followed by every run it will train. Each script writes one folder per run and a `<project>_results.json` with the test-split mAP@50 and mAP@50-95 of every run, updated after each run.
+
+| Script | Env | Runs | What varies |
+|---|:---:|---:|---|
+| [`sweep_arch_yolov12.py`](train/sweep_arch_yolov12.py) | A | 11 | the graph — final, baseline and 9 tried variants, each YAML embedded with what / why / outcome; stock loss, batch 32 |
+| [`sweep_arch_yolo26.py`](train/sweep_arch_yolo26.py) | B | 11 | the graph — as above; batch 48; pretrained PAN rows remapped for graphs with an inserted P2 level |
+| [`sweep_loss_yolov12.py`](train/sweep_loss_yolov12.py) | A | 2,941 | full grid α_s × α_e × area exponent × p_small × ρ = 7 × 4 × 3 × 5 × 7, plus a stock-loss reference |
+| [`sweep_loss_yolo26.py`](train/sweep_loss_yolo26.py) | B | 480 | (9 β + 6 β splits + 5 size-conditional β) × 6 α × 4 top-k |
+
+```bash
+# Environment A
+python train/sweep_arch_yolov12.py
+python train/sweep_loss_yolov12.py
+# Environment B
+python train/sweep_arch_yolo26.py
+python train/sweep_loss_yolo26.py
+```
+
+- The loss grids run the stock reference first, then the paper setting, then the rest. Runs already in the results file are skipped, so a stopped grid resumes where it stopped. To run a smaller grid, delete values from the lists at the top; to run single settings, list their names in `ONLY`.
+- One run takes about one GPU-hour (RTX 4090, 70 epochs): plan accordingly for the full grids.
+- The loss grids use the stock graph; to run one on the custom graph, set `MODEL` to the graph's YAML in `configs/` (and `BATCH` to 32 for YOLOv12, 48 for YOLO26).
+- On YOLO26 the top-k is a constructor argument of the assigner rather than a training key, so the script sets it through an `on_train_start` callback.
+
+### 12.4 Evaluation
+
+Quick check with the Ultralytics evaluator (overall mAP@50 / mAP@50-95):
+
+```bash
+yolo val model=weights/yolo26s_p234rich_beta1.pt data=data/luggage_v6i.yaml split=test imgsz=640   # Environment B
+yolo val model=weights/yolov12s_lsshift_sqrt.pt  data=data/luggage_v6i.yaml split=test imgsz=640   # Environment A
+```
+
+The paper's metrics — including mAP@50 by object size (COCO area bins 32² / 96²), precision, recall and F1 — come from the COCO evaluator in [`original_scripts/CocoEvalAllFolders_luggage.py`](original_scripts/CocoEvalAllFolders_luggage.py) (paths are set at the top of the script).
+
+### 12.5 Inference
+
+```python
+from ultralytics import YOLO   # inside Environment B
+
+model = YOLO("weights/yolo26s_p234rich_beta1.pt")
+results = model.predict("path/to/frame_or_video.mp4", imgsz=640, conf=0.25, save=True)
+```
+
+The custom YOLO26s is the recommended detector for deployment: the same small-object accuracy as the custom YOLOv12s at about 2.5× the frame rate (§5.6).
 
 ---
 
-## 10. Citation
+## 13. Citation
 
 If you use LuggageDataset v6i or this code, please cite:
 
@@ -688,7 +825,11 @@ The leakage-free splitting procedure and the curriculum area weighting build on 
 
 ## License
 
-Released under the **MIT License**. The event-level evaluation uses the public i-LIDS AVSS 2007 and ABODA sequences, which remain subject to their own terms.
+The code is released under the **GNU AGPL-3.0** (see [`LICENSE`](LICENSE)), inherited from [Ultralytics](https://github.com/ultralytics/ultralytics) and [YOLOv12](https://github.com/sunsmarterjie/yolov12), whose code is modified here. The dataset is distributed through Roboflow under the terms stated on its page. The event-level evaluation uses the public i-LIDS AVSS 2007 and ABODA sequences, which remain subject to their own terms.
+
+## Acknowledgements
+
+This work builds on [Ultralytics](https://github.com/ultralytics/ultralytics), [YOLOv12](https://github.com/sunsmarterjie/yolov12), DySample (content-aware upsampling), dynamic snake convolution, and OSNet for person re-identification. We thank the authors of the i-LIDS AVSS 2007 and ABODA benchmarks for making their sequences available.
 
 ## Contact
 
