@@ -239,7 +239,7 @@ and attacks that first stage directly.
 ### 🎯 Contributions
 
 1. 📦 **LuggageDataset v6i** — 12,184 images and 57,814 boxes of `backpack`, `bag` and `trolley` from fixed or quasi-static cameras in transport hubs and public spaces; about **21× the luggage annotations** of the largest annotated in-domain alternative, with no augmentation anywhere.
-2. 🧬 **A leakage-free split** — near-duplicate frames clustered by perceptual hash before splitting, whole clusters assigned to one subset, audited: **zero scenes shared** between train, validation and test.
+2. 🧬 **A leakage-free split** — near-duplicate frames clustered by perceptual hash before splitting, whole clusters assigned to one subset, audited: **zero scenes shared** between train, validation and test. Both the split and the audit are released as scripts.
 3. 🧠 **Small-object-aware detectors** — loss/assignment and architecture changes for **YOLOv12s** and **YOLO26s**, each starting as an exact copy of its pretrained baseline.
 4. 📏 **A measured noise floor** — every reported configuration trained with **3 seeds**; every gain stated in standard-error units; selection bias quantified and single-draw maxima never reported.
 5. 🔁 **A transfer study** — every mechanism tested on *both* detectors; none transfers, and each failure is traced to a detail the training configuration hides.
@@ -377,6 +377,8 @@ Consecutive surveillance frames are near-identical: the camera is fixed and the 
 | 3️⃣ **Cluster** | union-find → connected components | one cluster = one real scene |
 | 4️⃣ **Assign** | whole clusters → one split, stratified greedy 75 / 15 / 10 on images and classes | no near-duplicate can cross a split boundary |
 | 5️⃣ **Audit** | cross-split check | ✅ 0 clusters span splits · 0 cross-split near-duplicate pairs |
+
+> 💻 **Code:** [`dataset_tools/make_leakagefree_split.py`](dataset_tools/make_leakagefree_split.py) builds the split (steps 1–4); [`dataset_tools/dataset_duplicate_audit.py`](dataset_tools/dataset_duplicate_audit.py) runs the audit (step 5) on any `data.yaml` — exact (MD5) and near-duplicate (dHash) pairs within each split, and every cross-split near-duplicate pair.
 
 <p align="center">
   <img src="docs/figures/fig02_leakage_free_split.png" width="860" alt="Leakage-free splitting procedure" />
@@ -920,6 +922,9 @@ luggage-yolo-release/
 │   ├── sweep_loss_yolov12.py              loss grid of Table 6, 2,941 runs
 │   └── sweep_loss_yolo26.py               assigner grid of Table 6, 480 runs
 ├── data/luggage_v6i.yaml                  dataset config template
+├── dataset_tools/
+│   ├── dataset_duplicate_audit.py         near-duplicate / leakage audit of any split (dHash, Hamming ≤ 5)
+│   └── make_leakagefree_split.py          the leakage-free 75/15/10 split procedure of §2.3
 ├── results/
 │   ├── training_curves/                   per-epoch results.csv of each released run
 │   └── train_args/                        the args.yaml recorded by each released run
@@ -979,7 +984,14 @@ project = rf.workspace("guns-detection-cvwjs").project("luggagedataset-24pgo")
 dataset = project.version(6).download("yolov8")   # YOLO format: train / valid / test
 ```
 
-Then set `path:` in [`data/luggage_v6i.yaml`](data/luggage_v6i.yaml) to `dataset.location`. The split is already leakage-free; use it as is.
+Then set `path:` in [`data/luggage_v6i.yaml`](data/luggage_v6i.yaml) to `dataset.location`. The split is already leakage-free; use it as is — and verify it yourself:
+
+```bash
+python dataset_tools/dataset_duplicate_audit.py --data data/luggage_v6i.yaml
+# -> VERDICT: no cross-split near-duplicates at this threshold — splits look clean.
+```
+
+The audit also writes `duplicate_audit_report.json` (within-split redundancy, cross-split counts) and, if any leakage is found, `leakage_pairs.csv` with every offending pair. To apply the same procedure to new or extended data, edit the three paths at the top of [`dataset_tools/make_leakagefree_split.py`](dataset_tools/make_leakagefree_split.py) and run it; it writes a ready-to-train dataset with its own `data.yaml` and a `resplit_report.json` (clusters, split sizes, clusters spanning splits — must be 0).
 
 ### 12.2 Reproduce the released models
 
@@ -1070,7 +1082,7 @@ Each run writes the annotated video next to its input, and `events.json` plus a 
 <br>
 
 - **Right environment** — `python -c "from ultralytics.nn.modules import DySample, ZGGlobalContext2, ZGDSConv"` runs without error in both environments; a YOLOv12 checkpoint only loads in Environment A, a YOLO26 checkpoint only in Environment B.
-- **Right dataset version** — the test split has **1,219 images and 6,172 boxes** (Roboflow version 6).
+- **Right dataset version** — the test split has **1,219 images and 6,172 boxes** (Roboflow version 6), and `dataset_tools/dataset_duplicate_audit.py` reports 0 cross-split near-duplicates.
 - **Pretrained weights transferred** — the sweep scripts print `[init] … of parameters from yolo…s.pt`; for the final graphs this is above 80%, and the stock graphs show 100%.
 - **Loss settings live** — the `args.yaml` of a run lists the loss keys you set; compare with [`results/train_args/`](results/train_args).
 - **Ballpark** — a single seed of the combined model should land within about one point of the paper's 3-seed means (small-object mAP@50 79.91 for YOLO26s, 79.87 for YOLOv12s); the seed-to-seed spread is up to ±0.42.
@@ -1141,7 +1153,7 @@ Open a GitHub issue, or write to Constantin Catargiu at <a href="mailto:constant
 ## ✅ 14. Reproducibility checklist
 
 - [x] Dataset publicly hosted (Roboflow, **version 6**) with the train / validation / test split used in the paper
-- [x] Leakage-free split protocol fully specified (64-bit dHash, Hamming ≤ 5, union-find, stratified greedy 75/15/10, cross-split audit)
+- [x] Leakage-free split protocol fully specified (64-bit dHash, Hamming ≤ 5, union-find, stratified greedy 75/15/10, cross-split audit) — and shipped as code
 - [x] Patched code pinned to exact upstream commits (YOLOv12 `2db2bae`, Ultralytics `12d61b8`) and installed by one script
 - [x] Final architectures **and** every tried variant shipped as configs, each with what / why / outcome
 - [x] All loss / assignment search intervals and optima reported (Table 6) and shipped as runnable grid scripts
@@ -1151,7 +1163,7 @@ Open a GitHub issue, or write to Constantin Catargiu at <a href="mailto:constant
 - [x] Negative results documented — the four null transfers, β split, size-conditional β, depth 6, global context at every level, widening P2
 - [x] COCO evaluator for the per-size metrics shipped
 - [x] Inference-speed protocol stated (RTX 4090, batch 1, 640 px, FP16, median over 500 images, pre- and post-processing included)
-- [ ] Leakage-free split script — not included in this repository
+- [x] Leakage-free split script and the near-duplicate / leakage audit in [`dataset_tools/`](dataset_tools)
 - [x] Unattended-luggage pipeline code (tracking, re-identification, ownership, alarms) in [`pipeline/`](pipeline), with the calibrated re-ID thresholds
 
 ---

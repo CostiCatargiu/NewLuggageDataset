@@ -15,3 +15,5 @@ arch_yamls_*/
 videos/
 runs_pipeline/
 .~lock*
+duplicate_audit_report.json
+leakage_pairs.csv
