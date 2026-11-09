@@ -46,7 +46,7 @@ STOCK_LOSS = dict(
 # x2.0 boost for objects below 48 px. Exactly the keys that run set; the rest stay at
 # default.yaml values (their mechanisms are switched off there).
 SQRT_LOSS = dict(
-    small_obj_px=48, small_obj_boost=2.0,
+    small_obj_px=32, small_obj_boost=2.0,
     alpha_start=0.7, alpha_end=0.3, alpha_max=0.7,
     area_weight_mode="sqrt",
     center_loss_weight_min=0.0,

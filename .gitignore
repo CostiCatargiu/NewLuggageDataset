@@ -12,3 +12,4 @@ runs_loss_*/
 runs_*_results.json
 arch_yamls_*/
 *.pt
+.~lock*

@@ -134,7 +134,7 @@ _LBTAL_B = {4: 5, 8: 4, 16: 6, 32: 1}
 _SWA0703 = dict(
     area_weight_mode="sqrt",
     alpha_start=0.7, alpha_end=0.3, alpha_min=0.3, alpha_max=0.7,
-    small_obj_px=48, small_obj_boost=2.0,
+    small_obj_px=32, small_obj_boost=2.0,
 )
 
 
